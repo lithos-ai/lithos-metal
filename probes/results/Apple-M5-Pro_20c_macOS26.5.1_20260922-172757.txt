@@ -1,0 +1,44 @@
+# chip: Apple M5 Pro   gpu-cores: 20   ram: 24 GB
+# os: macOS 26.5.1 (25F80)   date: 2026-09-22T21:27:57Z   on-battery: 0
+
+################ p14_tensor_ops ################
+matmul2d probe on Apple M5 Pro (20 cores, Apple10 = 1): y[TM][17408] = x[TM][5120] . W^T; TM = T tokens (padded), TN rows of W per threadgroup, TK-wide K tiles, S SIMD-groups per threadgroup.
+
+=== gemm_fp8: FP8 weights dequantized tile by tile into threadgroup memory, then matmul2d: 89.1 MB per matrix, 24 copies per measurement (min-of-3); GB/s = weight (+scale) bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.505     176.5      2.82 | 1.6e-06
+  8   64  128 4  |     0.531     167.9      2.69 | 1.6e-06
+  8   32  64  2  |     0.493     180.7      2.89 | 1.6e-06
+  8   64  64  2  |     0.480     185.7      2.97 | 1.6e-06
+  8   64  64  1  |     0.524     170.0      2.72 | 1.6e-06
+  16  64  64  4  |     0.522     170.9      5.47 | 1.6e-06
+  32  64  64  4  |     0.566     157.5     10.08 | 1.6e-06
+  32  64  128 4  |     0.598     149.0      9.54 | 1.6e-06
+  32  128 64  4  |     0.695     128.3      8.21 | 1.6e-06
+  64  64  64  4  |     0.720     123.9     15.85 | 1.6e-06
+
+=== gemm_nvfp4: NVFP4 nibbles x E4M3 block scales dequantized into threadgroup memory, then matmul2d: 50.1 MB per matrix, 42 copies per measurement (min-of-3); GB/s = weight (+scale) bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.445     112.7      3.21 | 1.3e-06
+  8   64  128 4  |     0.425     117.9      3.35 | 1.3e-06
+  8   32  64  2  |     0.442     113.3      3.22 | 1.3e-06
+  8   64  64  2  |     0.426     117.6      3.35 | 1.3e-06
+  8   64  64  1  |     0.421     119.0      3.39 | 1.3e-06
+  16  64  64  4  |     0.471     106.4      6.05 | 1.3e-06
+  32  64  64  4  |     0.545      92.0     10.46 | 1.3e-06
+  32  64  128 4  |     0.489     102.4     11.65 | 1.3e-06
+  32  128 64  4  |     0.526      95.2     10.84 | 1.3e-06
+  64  64  64  4  |     0.674      74.4     16.94 | 1.3e-06
+
+=== gemm_half: half weights straight from device memory (accelerator upper bound): 178.3 MB per matrix, 12 copies per measurement (min-of-3); GB/s = weight (+scale) bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.881     202.4      1.62 | 1.6e-06
+  8   64  128 4  |     0.869     205.0      1.64 | 1.6e-06
+  8   32  64  2  |     0.895     199.1      1.59 | 1.6e-06
+  8   64  64  2  |     0.857     207.9      1.66 | 1.6e-06
+  8   64  64  1  |     0.873     204.1      1.63 | 1.6e-06
+  16  64  64  4  |     0.890     200.3      3.21 | 1.6e-06
+  32  64  64  4  |     0.949     187.7      6.01 | 1.6e-06
+  32  64  128 4  |     0.931     191.4      6.13 | 1.6e-06
+  32  128 64  4  |     0.891     200.1      6.40 | 1.6e-06
+  64  64  64  4  |     0.919     193.9     12.41 | 1.6e-06

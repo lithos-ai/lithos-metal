@@ -1,0 +1,690 @@
+{
+  "date": "2026-09-29",
+  "machine": "Apple M5 Pro, 20 GPU cores, 24 GB, macOS 26.5.1",
+  "monolith_revision": "03a425236039093859ba73ba4ef45ecd5ae3051a",
+  "versions": {
+    "vllm": "0.30.0+cpu",
+    "vllm_metal": "0.30.0",
+    "mlx_for_vllm": "0.32.1",
+    "mlx_lm_for_vllm": "0.32.0, pinned 9e6acca691e64d6d8bb808c328fcdea459099cca",
+    "llama_cpp": "b11146 / 7fe450e19 / 0.5.0-dev",
+    "ollama": "0.34.4"
+  },
+  "target": "Qwen3 8B; identical NVFP4 checkpoint values for Monolith/vLLM-Metal; identical Q4_K_M GGUF file for llama.cpp/Ollama. Cross-pair comparisons are not quantization- or quality-matched.",
+  "gguf_repo": "Qwen/Qwen3-8B-GGUF",
+  "gguf_revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+  "gguf_sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+  "prompt_tokens": [
+    126,
+    1023,
+    4095
+  ],
+  "output_tokens": [
+    128
+  ],
+  "sampling": "greedy; thinking disabled by a single shared raw chat template; repeat penalty 1 where applicable; natural EOS retained",
+  "timing": "Primary: decode engine wall milliseconds / 127 generated tokens after the prefill-produced first token. Monolith Generation.decode_wall_ms, vLLM per-request delta of request_decode_time_seconds_sum (count delta exactly 1), llama.cpp timings.predicted_ms, Ollama eval_duration. All 128-token completions retained. Internal engine timer boundaries differ slightly; this is not client streaming ITL. HTTP wall time is secondary only. One excluded warmup and five measured prompt variants per context; one resident engine, serial requests.",
+  "order": [
+    "llama-plain",
+    "ollama-plain",
+    "monolith-plain",
+    "monolith-n7",
+    "vllm-decode-plain",
+    "vllm-n7",
+    "llama-n7"
+  ],
+  "cache": "Warm weights, fresh prefix: vLLM prefix caching disabled; llama.cpp cache_prompt=false and cache-ram=0; Monolith resets session state per request; Ollama LLAMA_ARG_CACHE_RAM=0 plus an untimed unrelated one-token primer replaces the active slot, and prompt_eval_cached_count must be zero.",
+  "capacity": "4608 tokens everywhere. Monolith target/draft packs cloned from prior packs; only extended RoPE tables appended, all packed projection bytes and layouts unchanged. Old RoPE prefixes compare byte-identically to the new tables.",
+  "baseline_settings": "Monolith commute_norm=True, prefill_chunk_size=128 plain / 64 speculative, autotune=False. vLLM dtype=bfloat16, max-num-seqs=1, gpu-memory-utilization=0.5, default async scheduling for plain and synchronous for speculation. llama.cpp all GPU layers, flash attention on, one slot, default batch=2048/ubatch=512. Ollama one parallel request, flash attention on, f16 KV, bundled llama-server batch=1024/ubatch=1024, 37/37 layers GPU.",
+  "draft": "Monolith/vLLM: same Qwen3 0.6B MLX affine INT4 checkpoint. llama.cpp: official Qwen3 0.6B Q8_0 GGUF (revision 23749fefcc72300e3a2ad315e1317431b06b590a). N=7 configured; acceptance-dependent serving latency, not fixed verification-only timing. Ollama measured without speculation.",
+  "discarded": "Initial vLLM default-memory and ignored kv-cache-memory-bytes attempts reserved about 11.4 GiB KV; replaced by verified gpu-memory-utilization=0.5 (3.94 GiB KV). Initial Ollama attempts reused prompts; all cached-run samples excluded. Monolith startup attempts with missing native binding or too-small RoPE tables produced no measured samples. Monolith N=7 prefill chunk 128 failed allocation before producing samples: weights 4.688 GiB + state 1.125 GiB + arena 12.918 GiB exceeded the recommended working set. Chunk 64 reduced arena to 6.484 GiB. The accepted N=7 measurements use chunk 64.",
+  "limits": "One synthetic long-form writing task with request-number variants. Sequential engine blocks are not thermally interleaved. No general quality or workload-distribution claim. Five samples do not support tail-latency claims. Baseline configurations are pinned practical settings, not an exhaustive tuning search. Speculative drafter formats differ across the NVFP4 and GGUF pairs.",
+  "order_note": "An earlier vLLM plain HTTP-only pass preceded these runs; it is excluded from the decode archive. Plain llama/Ollama/Monolith runs also included one-token requests, omitted here.",
+  "sources": {
+    "vllm_metal": "https://github.com/vllm-project/vllm-metal/tree/v0.30.0",
+    "vllm_spec": "https://docs.vllm.ai/projects/vllm-metal/en/stable/speculative_decoding/",
+    "llama_metal": "https://github.com/ggml-org/llama.cpp/blob/b11146/ggml/src/ggml-metal/ggml-metal-device.m",
+    "ollama": "https://github.com/ollama/ollama/tree/v0.34.4",
+    "gguf": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/tree/7c41481f57cb95916b40956ab2f0b139b296d974"
+  },
+  "launches": {
+    "llama-n7": {
+      "command": [
+        "/tmp/mpk-serving-tools/llama/llama-b11146/llama-server",
+        "-m",
+        "/tmp/mpk-serving-tools/qwen3-8b-q4_k_m.gguf",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "18102",
+        "-c",
+        "4608",
+        "-np",
+        "1",
+        "-ngl",
+        "all",
+        "-fa",
+        "on",
+        "--cache-ram",
+        "0",
+        "--spec-type",
+        "draft-simple",
+        "--spec-draft-model",
+        "/tmp/mpk-serving-tools/qwen3-0.6b-q8_0.gguf",
+        "--spec-draft-n-max",
+        "7",
+        "--spec-draft-n-min",
+        "7",
+        "--spec-draft-ngl",
+        "all",
+        "-lv",
+        "4"
+      ],
+      "env": {}
+    },
+    "monolith-n7": {
+      "command": [
+        "/Users/zhihaojia/lithos/mpk-apple/.venv/bin/python",
+        "/tmp/mpk-serving-baselines/tools/bench/single_request_latency.py",
+        "--serve-monolith",
+        "--model",
+        "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+        "--pack",
+        "/tmp/mpk-serving-tools/monolith-legacy-4608",
+        "--drafter",
+        "/Users/zhihaojia/models/mlx-community-Qwen3-0.6B-4bit",
+        "--drafter-pack",
+        "/tmp/mpk-serving-tools/monolith-draft-legacy-4608",
+        "--prefill-chunk-size",
+        "64"
+      ],
+      "env": {}
+    },
+    "monolith-plain": {
+      "command": [
+        "/Users/zhihaojia/lithos/mpk-apple/.venv/bin/python",
+        "/tmp/mpk-serving-baselines/tools/bench/single_request_latency.py",
+        "--serve-monolith",
+        "--model",
+        "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+        "--pack",
+        "/tmp/mpk-serving-tools/monolith-legacy-4608"
+      ],
+      "env": {}
+    },
+    "ollama-plain": {
+      "command": [
+        "/tmp/mpk-serving-tools/ollama/ollama",
+        "serve"
+      ],
+      "env": {
+        "OLLAMA_HOST": "127.0.0.1:18103",
+        "OLLAMA_MODELS": "/tmp/mpk-serving-tools/ollama-models",
+        "OLLAMA_NUM_PARALLEL": "1",
+        "OLLAMA_MAX_LOADED_MODELS": "1",
+        "OLLAMA_FLASH_ATTENTION": "1",
+        "OLLAMA_NO_CLOUD": "1",
+        "LLAMA_ARG_CACHE_RAM": "0",
+        "LLAMA_ARG_ENDPOINT_SLOTS": "1"
+      }
+    },
+    "vllm-decode-plain": {
+      "command": [
+        "/tmp/mpk-serving-tools/vllm-env/bin/vllm",
+        "serve",
+        "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+        "--served-model-name",
+        "qwen3-8b",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "18101",
+        "--max-model-len",
+        "4608",
+        "--max-num-seqs",
+        "1",
+        "--no-enable-prefix-caching",
+        "--dtype",
+        "bfloat16",
+        "--gpu-memory-utilization",
+        "0.5"
+      ],
+      "env": {}
+    },
+    "vllm-n7": {
+      "command": [
+        "/tmp/mpk-serving-tools/vllm-env/bin/vllm",
+        "serve",
+        "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+        "--served-model-name",
+        "qwen3-8b",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "18101",
+        "--max-model-len",
+        "4608",
+        "--max-num-seqs",
+        "1",
+        "--no-enable-prefix-caching",
+        "--dtype",
+        "bfloat16",
+        "--gpu-memory-utilization",
+        "0.5",
+        "--no-async-scheduling",
+        "--speculative-config",
+        "{\"method\": \"draft_model\", \"model\": \"/Users/zhihaojia/models/mlx-community-Qwen3-0.6B-4bit\", \"num_speculative_tokens\": 7}"
+      ],
+      "env": {}
+    },
+    "llama-plain": {
+      "command": [
+        "/tmp/mpk-serving-tools/llama/llama-b11146/llama-server",
+        "-m",
+        "/tmp/mpk-serving-tools/qwen3-8b-q4_k_m.gguf",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "18102",
+        "-c",
+        "4608",
+        "-np",
+        "1",
+        "-ngl",
+        "all",
+        "-fa",
+        "on",
+        "--cache-ram",
+        "0"
+      ],
+      "env": {}
+    }
+  },
+  "ollama_modelfile": "FROM /tmp/mpk-serving-tools/qwen3-8b-q4_k_m.gguf\nPARAMETER num_ctx 4608\nPARAMETER temperature 0\nPARAMETER repeat_penalty 1\n",
+  "pack_layouts": {
+    "monolith-legacy-4608": {
+      "manifest_sha256": "d7a855f92fa5294a1cffe576e5256e165c34f96d7ea8650d4219c6c118a1910d",
+      "version": 1,
+      "options": {
+        "max_context": 4608
+      },
+      "nbytes": 4658839552,
+      "representative_slabs": [
+        {
+          "name": "embed_tokens.weight",
+          "format": "nvfp4",
+          "offset": 0,
+          "nbytes": 350060544,
+          "n": 151936,
+          "k": 4096,
+          "rows": 16,
+          "unit_bytes": 64,
+          "payload_bytes": 64,
+          "scale_bytes": 8,
+          "lane_order": "interleaved16",
+          "scale_group": 16,
+          "n_blocks": 9496,
+          "scale_placement": "block",
+          "row_scales_offset": 350060544,
+          "row_perm": false,
+          "segments": [
+            {
+              "source": "model.embed_tokens",
+              "row_select": null,
+              "rows": 151936,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "layers.0.self_attn.qkv.q_proj+k_proj+v_proj",
+          "format": "nvfp4",
+          "offset": 350683136,
+          "nbytes": 14155776,
+          "n": 6144,
+          "k": 4096,
+          "rows": 16,
+          "unit_bytes": 64,
+          "payload_bytes": 64,
+          "scale_bytes": 8,
+          "lane_order": "interleaved16",
+          "scale_group": 16,
+          "n_blocks": 384,
+          "scale_placement": "block",
+          "row_scales_offset": 364838912,
+          "row_perm": true,
+          "segments": [
+            {
+              "source": "model.layers.0.self_attn.q_proj",
+              "row_select": null,
+              "rows": 4096,
+              "tensor_scale": 1.0
+            },
+            {
+              "source": "model.layers.0.self_attn.k_proj",
+              "row_select": null,
+              "rows": 1024,
+              "tensor_scale": 1.0
+            },
+            {
+              "source": "model.layers.0.self_attn.v_proj",
+              "row_select": null,
+              "rows": 1024,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "layers.0.self_attn.o_proj.o_proj",
+          "format": "nvfp4",
+          "offset": 364871680,
+          "nbytes": 9437184,
+          "n": 4096,
+          "k": 4096,
+          "rows": 16,
+          "unit_bytes": 64,
+          "payload_bytes": 64,
+          "scale_bytes": 8,
+          "lane_order": "interleaved16",
+          "scale_group": 16,
+          "n_blocks": 256,
+          "scale_placement": "block",
+          "row_scales_offset": 374308864,
+          "row_perm": false,
+          "segments": [
+            {
+              "source": "model.layers.0.self_attn.o_proj",
+              "row_select": null,
+              "rows": 4096,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "layers.0.mlp.gate_up.gate_proj+up_proj",
+          "format": "nvfp4",
+          "offset": 374325248,
+          "nbytes": 56623104,
+          "n": 24576,
+          "k": 4096,
+          "rows": 16,
+          "unit_bytes": 64,
+          "payload_bytes": 64,
+          "scale_bytes": 8,
+          "lane_order": "interleaved16",
+          "scale_group": 16,
+          "n_blocks": 1536,
+          "scale_placement": "block",
+          "row_scales_offset": 430948352,
+          "row_perm": true,
+          "segments": [
+            {
+              "source": "model.layers.0.mlp.gate_proj",
+              "row_select": null,
+              "rows": 12288,
+              "tensor_scale": 1.0
+            },
+            {
+              "source": "model.layers.0.mlp.up_proj",
+              "row_select": null,
+              "rows": 12288,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "layers.0.mlp.down.down_proj",
+          "format": "nvfp4",
+          "offset": 431046656,
+          "nbytes": 29360128,
+          "n": 4096,
+          "k": 12288,
+          "rows": 16,
+          "unit_bytes": 224,
+          "payload_bytes": 192,
+          "scale_bytes": 24,
+          "lane_order": "interleaved16",
+          "scale_group": 16,
+          "n_blocks": 256,
+          "scale_placement": "inline",
+          "row_scales_offset": 460406784,
+          "row_perm": false,
+          "segments": [
+            {
+              "source": "model.layers.0.mlp.down_proj",
+              "row_select": null,
+              "rows": 4096,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "lm_head.weight",
+          "format": "nvfp4",
+          "offset": 4301324288,
+          "nbytes": 350060544,
+          "n": 151936,
+          "k": 4096,
+          "rows": 16,
+          "unit_bytes": 64,
+          "payload_bytes": 64,
+          "scale_bytes": 8,
+          "lane_order": "interleaved16",
+          "scale_group": 16,
+          "n_blocks": 9496,
+          "scale_placement": "block",
+          "row_scales_offset": 4651384832,
+          "row_perm": false,
+          "segments": [
+            {
+              "source": "lm_head",
+              "row_select": null,
+              "rows": 151936,
+              "tensor_scale": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    "monolith-draft-legacy-4608": {
+      "manifest_sha256": "bc47ed7fca3a130f5b2fff6b70b4956d4629fbe8ed09abc9e9e4bc254a4982dd",
+      "version": 1,
+      "options": {
+        "max_context": 4608
+      },
+      "nbytes": 374374400,
+      "representative_slabs": [
+        {
+          "name": "draft.embed_tokens.weight",
+          "format": "int4_affine",
+          "offset": 0,
+          "nbytes": 97239040,
+          "n": 151936,
+          "k": 1024,
+          "rows": 16,
+          "unit_bytes": 16,
+          "payload_bytes": 16,
+          "scale_bytes": 4,
+          "lane_order": "interleaved16",
+          "scale_group": 64,
+          "n_blocks": 9496,
+          "scale_placement": "block",
+          "scale_unit_bytes": 4,
+          "row_scales_offset": 97239040,
+          "row_perm": false,
+          "segments": [
+            {
+              "source": "model.embed_tokens",
+              "row_select": null,
+              "rows": 151936,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "draft.layers.0.self_attn.qkv.q_proj+k_proj+v_proj",
+          "format": "int4_affine",
+          "offset": 97861632,
+          "nbytes": 2621440,
+          "n": 4096,
+          "k": 1024,
+          "rows": 16,
+          "unit_bytes": 16,
+          "payload_bytes": 16,
+          "scale_bytes": 4,
+          "lane_order": "interleaved16",
+          "scale_group": 64,
+          "n_blocks": 256,
+          "scale_placement": "block",
+          "scale_unit_bytes": 4,
+          "row_scales_offset": 100483072,
+          "row_perm": true,
+          "segments": [
+            {
+              "source": "model.layers.0.self_attn.q_proj",
+              "row_select": null,
+              "rows": 2048,
+              "tensor_scale": 1.0
+            },
+            {
+              "source": "model.layers.0.self_attn.k_proj",
+              "row_select": null,
+              "rows": 1024,
+              "tensor_scale": 1.0
+            },
+            {
+              "source": "model.layers.0.self_attn.v_proj",
+              "row_select": null,
+              "rows": 1024,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "draft.layers.0.self_attn.o_proj.o_proj",
+          "format": "int4_affine",
+          "offset": 100499456,
+          "nbytes": 1179648,
+          "n": 1024,
+          "k": 2048,
+          "rows": 16,
+          "unit_bytes": 32,
+          "payload_bytes": 32,
+          "scale_bytes": 4,
+          "lane_order": "interleaved16",
+          "scale_group": 64,
+          "n_blocks": 64,
+          "scale_placement": "block",
+          "scale_unit_bytes": 4,
+          "row_scales_offset": 101679104,
+          "row_perm": false,
+          "segments": [
+            {
+              "source": "model.layers.0.self_attn.o_proj",
+              "row_select": null,
+              "rows": 1024,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "draft.layers.0.mlp.gate_up.gate_proj+up_proj",
+          "format": "int4_affine",
+          "offset": 101695488,
+          "nbytes": 3932160,
+          "n": 6144,
+          "k": 1024,
+          "rows": 16,
+          "unit_bytes": 16,
+          "payload_bytes": 16,
+          "scale_bytes": 4,
+          "lane_order": "interleaved16",
+          "scale_group": 64,
+          "n_blocks": 384,
+          "scale_placement": "block",
+          "scale_unit_bytes": 4,
+          "row_scales_offset": 105627648,
+          "row_perm": true,
+          "segments": [
+            {
+              "source": "model.layers.0.mlp.gate_proj",
+              "row_select": null,
+              "rows": 3072,
+              "tensor_scale": 1.0
+            },
+            {
+              "source": "model.layers.0.mlp.up_proj",
+              "row_select": null,
+              "rows": 3072,
+              "tensor_scale": 1.0
+            }
+          ]
+        },
+        {
+          "name": "draft.layers.0.mlp.down.down_proj",
+          "format": "int4_affine",
+          "offset": 105660416,
+          "nbytes": 1835008,
+          "n": 1024,
+          "k": 3072,
+          "rows": 16,
+          "unit_bytes": 48,
+          "payload_bytes": 48,
+          "scale_bytes": 8,
+          "lane_order": "interleaved16",
+          "scale_group": 64,
+          "n_blocks": 64,
+          "scale_placement": "block",
+          "scale_unit_bytes": 4,
+          "row_scales_offset": 107495424,
+          "row_perm": false,
+          "segments": [
+            {
+              "source": "model.layers.0.mlp.down_proj",
+              "row_select": null,
+              "rows": 1024,
+              "tensor_scale": 1.0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "prompt_sha256": "f37968ca94b07bc062997cbd8c072079ebfda0ad68a53de252e8bd033c2fc32c",
+  "step_followup": {
+    "date": "2026-09-29",
+    "order": [
+      "vllm-n7-steps",
+      "llama-n7-steps"
+    ],
+    "monolith": "Original N=7 samples reused; count len(accepted), verify_len always 7.",
+    "vllm": "Identical launch, rerun with per-request Prometheus draft-round, proposed-token and accepted-token counter deltas. Every round proposes seven.",
+    "llama": "Identical launch plus LLAMA_TRACE=1; consecutive accepted x/7 timestamps measure full draft/verify/accept cycles. Exclude first full round (no preceding timestamp) and the 1-7 single-token fallback iterations near output limit. Trace accepted counts and round totals checked against response counters.",
+    "statistic": "Median of five request-level average ms/full-step values. Not the median of individually instrumented steps for Monolith/vLLM. Native timer boundaries differ; all include draft and target work, not target-only verification.",
+    "launches": {
+      "vllm-n7-steps": {
+        "command": [
+          "/tmp/mpk-serving-tools/vllm-env/bin/vllm",
+          "serve",
+          "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+          "--served-model-name",
+          "qwen3-8b",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "18101",
+          "--max-model-len",
+          "4608",
+          "--max-num-seqs",
+          "1",
+          "--no-enable-prefix-caching",
+          "--dtype",
+          "bfloat16",
+          "--gpu-memory-utilization",
+          "0.5",
+          "--no-async-scheduling",
+          "--speculative-config",
+          "{\"method\": \"draft_model\", \"model\": \"/Users/zhihaojia/models/mlx-community-Qwen3-0.6B-4bit\", \"num_speculative_tokens\": 7}"
+        ],
+        "env": {}
+      },
+      "llama-n7-steps": {
+        "command": [
+          "/tmp/mpk-serving-tools/llama/llama-b11146/llama-server",
+          "-m",
+          "/tmp/mpk-serving-tools/qwen3-8b-q4_k_m.gguf",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "18102",
+          "-c",
+          "4608",
+          "-np",
+          "1",
+          "-ngl",
+          "all",
+          "-fa",
+          "on",
+          "--cache-ram",
+          "0",
+          "--spec-type",
+          "draft-simple",
+          "--spec-draft-model",
+          "/tmp/mpk-serving-tools/qwen3-0.6b-q8_0.gguf",
+          "--spec-draft-n-max",
+          "7",
+          "--spec-draft-n-min",
+          "7",
+          "--spec-draft-ngl",
+          "all",
+          "-lv",
+          "4"
+        ],
+        "env": {
+          "LLAMA_TRACE": "1"
+        }
+      }
+    }
+  },
+  "mlx_step_followup": {
+    "date": "2026-09-29",
+    "versions": {
+      "mlx": "0.32.1",
+      "mlx-lm": "0.32.0"
+    },
+    "generator_source_sha256": "5a57043b5a6497450bce14447db3caf570ffdd22adaab34e659b31aceddda522",
+    "mode": "Direct unmodified mlx_lm.generate.speculative_generate_step; num_draft_tokens=7, max_tokens=128, greedy default sampler, default unquantized KV caches, prefill_step_size=512. Same NVFP4 target and affine INT4 drafter checkpoints as Monolith/vLLM. No HTTP server or detokenization inside the measured intervals.",
+    "timing": "Timestamp each non-draft token yield (round end). Inspect suspended generator locals num_draft and n to identify full rounds. Consecutive full-seven round boundaries include cache rewind, drafting, target verification, acceptance, GPU waits and native Python loop/consumer overhead. First round and shortened tail rounds excluded. Median of five request-average step times per context; rep 0 excluded as warmup.",
+    "validation": "18 requests returned all 128 tokens with expected prompt counts; accepted-token counts reconcile with emitted tokens at every recorded boundary; all intervals and request means recomputed from raw timestamps.",
+    "command": [
+      "/tmp/mpk-serving-tools/vllm-env/bin/python",
+      "tools/bench/mlx_spec_step_latency.py",
+      "--model",
+      "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+      "--drafter",
+      "/Users/zhihaojia/models/mlx-community-Qwen3-0.6B-4bit",
+      "--prompts",
+      "tools/bench/results/qwen8b-serving-decode-20260929/prompts.json",
+      "--out",
+      "/tmp/mpk-serving-results/mlx-lm-n7-steps.jsonl"
+    ]
+  },
+  "mlx_environment_audit": {
+    "date": "2026-09-29",
+    "old_environment": {
+      "python": "3.13",
+      "mlx": "0.32.2",
+      "mlx-lm": "0.31.3"
+    },
+    "new_environment": {
+      "python": "3.12",
+      "mlx": "0.32.1",
+      "mlx-lm": "0.32.0"
+    },
+    "method": "Same mlx_spec_step_latency.py, checkpoints, saved prompts, 128 outputs, one warmup/five measurements per context; only Python environment changed. Sequential blocks, so small differences are not causally attributable solely to package versions.",
+    "speculative_loop_ast_identical": true,
+    "identical_output_sequences": 18,
+    "requests": 18,
+    "summary": [
+      {
+        "prompt_tokens": 126,
+        "old_environment_ms": 55.32238220957179,
+        "new_environment_ms": 54.865484768435216,
+        "new_vs_old_percent": -0.8258817189139789
+      },
+      {
+        "prompt_tokens": 1023,
+        "old_environment_ms": 63.108326705828816,
+        "new_environment_ms": 62.48121428680385,
+        "new_vs_old_percent": -0.9937078857250814
+      },
+      {
+        "prompt_tokens": 4095,
+        "old_environment_ms": 83.65456422810287,
+        "new_environment_ms": 82.87886259433358,
+        "new_vs_old_percent": -0.927267556680067
+      }
+    ],
+    "old_generator_source_sha256": "270778ad53eaca55a8533d82e6752660fe5d2605c4aa0879b48a50a91f69345f"
+  }
+}

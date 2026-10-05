@@ -1,0 +1,466 @@
+{
+  "128": {
+    "bf16_min_t": 2,
+    "draft_attention": "mma",
+    "draft": {
+      "mixer": {
+        "workers": 160,
+        "sgs": 8,
+        "tn": 32,
+        "compact": true,
+        "split": true,
+        "barrier": "simd",
+        "task_barrier": false,
+        "schedule": "queue",
+        "task_grain": "tile",
+        "task_seed": true,
+        "task_seed_bound": true,
+        "attention_chunk_tiles": 1,
+        "attention_qm": 24,
+        "attention_cached_prefix": true,
+        "attention_compact_partials": true,
+        "attention_key_tile": 32,
+        "attention_alias_scratch": true,
+        "attention_prepare": false,
+        "gemm_overrides": {
+          "0": {
+            "tn": 16,
+            "ksplit": 8,
+            "q_outer": 1,
+            "ragged_teams": true
+          }
+        },
+        "ksplit": 8,
+        "q_outer": 1,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16
+      },
+      "mlp": {
+        "workers": 160,
+        "sgs": 4,
+        "tn": 32,
+        "compact": true,
+        "mode": "native",
+        "staged_tk": 64,
+        "ksplit": 4,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 128,
+        "q_outer": 0
+      },
+      "feature": {
+        "workers": 80,
+        "sgs": 8,
+        "tn": 16,
+        "compact": true,
+        "mode": "native",
+        "staged_tk": 128,
+        "ksplit": 4,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 32,
+        "q_outer": 1
+      },
+      "context_kv": {
+        "workers": 160,
+        "sgs": 4,
+        "tn": 16,
+        "compact": true,
+        "mode": "native",
+        "staged_tk": 64,
+        "ksplit": 4,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 32,
+        "q_outer": 1
+      },
+      "lm_head": {
+        "workers": 160,
+        "sgs": 4,
+        "tn": 32,
+        "compact": true,
+        "ksplit": 4,
+        "mode": "native",
+        "staged_tk": 64,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16,
+        "q_outer": 0
+      },
+      "feature_scalar": {
+        "workers": 320,
+        "sgs": 8,
+        "rg": 1,
+        "rsplit": 8,
+        "x_preconvert": true,
+        "x_hoist": false
+      },
+      "context_kv_scalar": {
+        "workers": 160,
+        "sgs": 8,
+        "rg": 2,
+        "rsplit": 8,
+        "x_preconvert": true,
+        "x_hoist": false
+      },
+      "markov": {
+        "workers": 640,
+        "sgs": 16,
+        "rg": 1,
+        "rsplit": 1,
+        "x_preconvert": true,
+        "x_hoist": true
+      }
+    },
+    "target": {
+      "gdn": {
+        "shape": [
+          5120,
+          16,
+          48,
+          128,
+          128,
+          4
+        ],
+        "workers": 80,
+        "sgs": 8,
+        "tn": 32,
+        "split": true,
+        "compact": true,
+        "gdn_sl": 8,
+        "barrier": "simd",
+        "task_barrier": false,
+        "scalar_sgs": 8,
+        "fp8_layout": "tile",
+        "q_outer": 0,
+        "fp8_decode": "subtract",
+        "fp8_tile_block": 8,
+        "restrict_weights": false,
+        "gemm_overrides": {
+          "3": {
+            "tn": 32,
+            "ksplit": 4,
+            "groups": 120,
+            "ragged_teams": true
+          },
+          "0": {
+            "tn": 32,
+            "ksplit": 2,
+            "groups": 240,
+            "ragged_teams": true
+          },
+          "1": {
+            "tn": 16,
+            "ksplit": 8,
+            "groups": 240,
+            "ragged_teams": true
+          },
+          "2": {
+            "tn": 32,
+            "ksplit": 8,
+            "groups": 120,
+            "ragged_teams": true
+          }
+        },
+        "perm_sgs": 64,
+        "direct_norm": true,
+        "dual_permute": true
+      },
+      "attention": {
+        "attention_chunk_tiles": 3,
+        "attention_compact_partials": true,
+        "attention_groups": 320,
+        "attention_prepare": false,
+        "attention_qm": 8,
+        "attention_task_tiles": 1,
+        "barrier": "simd",
+        "compact": true,
+        "direct_norm": true,
+        "fp8_decode": "half",
+        "fp8_layout": "tile",
+        "fp8_tile_block": 8,
+        "gemm_overrides": {
+          "0": {
+            "ksplit": 2,
+            "q_outer": 0,
+            "tn": 32
+          },
+          "1": {
+            "fp8_tile_block": 32
+          }
+        },
+        "merge_unroll": 4,
+        "perm_sgs": 32,
+        "q_outer": 0,
+        "scalar_sgs": 2,
+        "schedule": "queue",
+        "sgs": 4,
+        "split": true,
+        "task_barrier": false,
+        "task_batch": 1,
+        "task_grain": "tile",
+        "task_seed": true,
+        "task_seed_bound": true,
+        "tn": 32,
+        "workers": 160
+      },
+      "mlp": {
+        "cache_external_inputs": false,
+        "compact": true,
+        "gemm_overrides": {
+          "1": {
+            "groups": 640
+          }
+        },
+        "ksplit": 4,
+        "mode": "native",
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 32,
+        "post_norm_loads": 16,
+        "post_norm_once": true,
+        "post_norm_prefold": false,
+        "sgs": 4,
+        "staged_tk": 64,
+        "tn": 32,
+        "workers": 160
+      }
+    },
+    "accelerator_min_t": {
+      "nvfp4": 2
+    }
+  },
+  "32768": {
+    "bf16_min_t": 2,
+    "draft_attention": "mma",
+    "draft": {
+      "mixer": {
+        "workers": 240,
+        "sgs": 4,
+        "tn": 32,
+        "compact": true,
+        "split": true,
+        "barrier": "simd",
+        "task_barrier": false,
+        "schedule": "queue",
+        "task_grain": "tile",
+        "task_seed": true,
+        "task_seed_bound": true,
+        "attention_chunk_tiles": 16,
+        "attention_qm": 16,
+        "attention_cached_prefix": true,
+        "attention_compact_partials": true,
+        "attention_key_tile": 32,
+        "attention_alias_scratch": true,
+        "attention_prepare": false,
+        "attention_task_order": "chunk",
+        "attention_task_tiles": 1,
+        "task_batch": 1,
+        "gemm_overrides": {
+          "0": {
+            "tn": 16,
+            "ksplit": 4,
+            "q_outer": 1,
+            "ragged_teams": true
+          }
+        },
+        "ksplit": 4,
+        "q_outer": 1,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 32
+      },
+      "mlp": {
+        "workers": 160,
+        "sgs": 4,
+        "tn": 32,
+        "compact": true,
+        "mode": "native",
+        "staged_tk": 64,
+        "ksplit": 4,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 128,
+        "q_outer": 0
+      },
+      "feature": {
+        "workers": 80,
+        "sgs": 8,
+        "tn": 16,
+        "compact": true,
+        "mode": "native",
+        "staged_tk": 128,
+        "ksplit": 4,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 32,
+        "q_outer": 1
+      },
+      "context_kv": {
+        "workers": 160,
+        "sgs": 4,
+        "tn": 16,
+        "compact": true,
+        "mode": "native",
+        "staged_tk": 64,
+        "ksplit": 4,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 32,
+        "q_outer": 1
+      },
+      "lm_head": {
+        "workers": 160,
+        "sgs": 4,
+        "tn": 32,
+        "compact": true,
+        "ksplit": 4,
+        "mode": "native",
+        "staged_tk": 64,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16,
+        "q_outer": 0
+      },
+      "feature_scalar": {
+        "workers": 320,
+        "sgs": 8,
+        "rg": 1,
+        "rsplit": 8,
+        "x_preconvert": true,
+        "x_hoist": false
+      },
+      "context_kv_scalar": {
+        "workers": 160,
+        "sgs": 8,
+        "rg": 2,
+        "rsplit": 8,
+        "x_preconvert": true,
+        "x_hoist": false
+      },
+      "markov": {
+        "workers": 640,
+        "sgs": 16,
+        "rg": 1,
+        "rsplit": 1,
+        "x_preconvert": true,
+        "x_hoist": true
+      }
+    },
+    "target": {
+      "gdn": {
+        "shape": [
+          5120,
+          16,
+          48,
+          128,
+          128,
+          4
+        ],
+        "workers": 80,
+        "sgs": 8,
+        "tn": 32,
+        "split": true,
+        "compact": true,
+        "gdn_sl": 8,
+        "barrier": "simd",
+        "task_barrier": false,
+        "scalar_sgs": 8,
+        "fp8_layout": "tile",
+        "q_outer": 0,
+        "fp8_decode": "subtract",
+        "fp8_tile_block": 8,
+        "restrict_weights": false,
+        "gemm_overrides": {
+          "3": {
+            "tn": 32,
+            "ksplit": 4,
+            "groups": 120,
+            "ragged_teams": true
+          },
+          "0": {
+            "tn": 32,
+            "ksplit": 2,
+            "groups": 240,
+            "ragged_teams": true
+          },
+          "1": {
+            "tn": 16,
+            "ksplit": 8,
+            "groups": 240,
+            "ragged_teams": true
+          },
+          "2": {
+            "tn": 32,
+            "ksplit": 8,
+            "groups": 120,
+            "ragged_teams": true
+          }
+        },
+        "perm_sgs": 64,
+        "direct_norm": true,
+        "dual_permute": true
+      },
+      "attention": {
+        "attention_alias_scratch": true,
+        "attention_chunk_tiles": 32,
+        "attention_groups": 160,
+        "attention_prepare": true,
+        "attention_qm": 16,
+        "attention_task_tiles": 1,
+        "barrier": "simd",
+        "compact": true,
+        "fp8_decode": "half",
+        "fp8_layout": "tile",
+        "fp8_tile_block": 8,
+        "gemm_overrides": {
+          "1": {
+            "ksplit": 1,
+            "q_outer": 1,
+            "tn": 32
+          },
+          "2": {
+            "ksplit": 4,
+            "q_outer": 0,
+            "tn": 16
+          }
+        },
+        "ksplit": 2,
+        "merge_sgs": 8,
+        "merge_unroll": 4,
+        "q_outer": 0,
+        "scalar_sgs": 8,
+        "schedule": "queue",
+        "sgs": 8,
+        "split": true,
+        "task_barrier": false,
+        "task_batch": 1,
+        "task_grain": "tile",
+        "task_seed": true,
+        "tn": 32,
+        "workers": 157
+      },
+      "mlp": {
+        "cache_external_inputs": false,
+        "compact": true,
+        "gemm_overrides": {
+          "1": {
+            "groups": 640
+          }
+        },
+        "ksplit": 4,
+        "mode": "native",
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 32,
+        "post_norm_loads": 16,
+        "post_norm_once": true,
+        "post_norm_prefold": false,
+        "sgs": 4,
+        "staged_tk": 64,
+        "tn": 32,
+        "workers": 160
+      }
+    },
+    "accelerator_min_t": {
+      "nvfp4": 2
+    }
+  }
+}

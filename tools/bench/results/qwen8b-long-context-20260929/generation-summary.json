@@ -1,0 +1,66 @@
+{
+  "results": [
+    {
+      "mode": "plain",
+      "context": 4095,
+      "requests": 5,
+      "median_ms_per_token": 18.25727001325352,
+      "median_ms_per_step": 18.25727001325352,
+      "min_ms_per_step": 18.23826706033992,
+      "max_ms_per_step": 18.2966384512233
+    },
+    {
+      "mode": "plain",
+      "context": 8191,
+      "requests": 5,
+      "median_ms_per_token": 21.119426508588116,
+      "median_ms_per_step": 21.119426508588116,
+      "min_ms_per_step": 21.102500000337916,
+      "max_ms_per_step": 21.13092421265099
+    },
+    {
+      "mode": "n7",
+      "context": 4095,
+      "requests": 5,
+      "median_ms_per_token": 21.2652785430743,
+      "median_ms_per_step": 51.916831816326486,
+      "min_ms_per_step": 51.639340000152586,
+      "max_ms_per_step": 52.207800482328125
+    },
+    {
+      "mode": "n7",
+      "context": 8191,
+      "requests": 5,
+      "median_ms_per_token": 30.2026003937083,
+      "median_ms_per_step": 71.08059916496276,
+      "min_ms_per_step": 70.99793712225828,
+      "max_ms_per_step": 73.59660925600264
+    }
+  ],
+  "prefix_checks": [
+    {
+      "mode": "plain",
+      "context": 4095,
+      "matched_tokens": 32
+    },
+    {
+      "mode": "plain",
+      "context": 8191,
+      "matched_tokens": 32
+    },
+    {
+      "mode": "n7",
+      "context": 4095,
+      "matched_tokens": 33
+    },
+    {
+      "mode": "n7",
+      "context": 8191,
+      "matched_tokens": 32
+    }
+  ],
+  "plain_spec_token_matches": [
+    "p8192-r2"
+  ],
+  "measured_plain_spec_pairs": 10
+}

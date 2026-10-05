@@ -1,0 +1,89 @@
+{
+ "model": "HuggingFaceTB-SmolLM2-1.7B-Instruct",
+ "architecture": "LlamaForCausalLM",
+ "prompt": "Once upon a time,",
+ "prompt_ids": [
+  6403,
+  1980,
+  253,
+  655,
+  28
+ ],
+ "gen_ids": [
+  281,
+  253,
+  1165,
+  6560,
+  32047,
+  826,
+  827,
+  1109,
+  8718,
+  28,
+  665,
+  4161,
+  253,
+  1805,
+  44586,
+  3365,
+  414,
+  3792,
+  30,
+  2306,
+  436,
+  253,
+  10632,
+  392,
+  10247,
+  28,
+  1343,
+  327,
+  874,
+  28418,
+  18375,
+  284,
+  874,
+  2470,
+  288,
+  6382,
+  260,
+  9615,
+  282,
+  260,
+  1782,
+  905,
+  281,
+  897,
+  6566,
+  30,
+  414,
+  3792
+ ],
+ "text": " in a small village nestled between two great mountains, there lived a young apprentice named Eira. She was a skilled weaver, known for her exquisite fabrics and her ability to capture the essence of the natural world in every thread. Eira",
+ "top_k": 8,
+ "device": "cpu",
+ "transformers": "5.17.0",
+ "torch": "2.14.0",
+ "attn_implementation": "eager",
+ "dtype": "bfloat16",
+ "param_dtypes": {
+  "weight": "bfloat16"
+ },
+ "checkpoint_sha256_prefix": {
+  "model.safetensors": "03e5296d8ed11b8d"
+ },
+ "hidden_states": {
+  "shape": [
+   25,
+   5,
+   2048
+  ],
+  "note": "as transformers' output_hidden_states returns them: [0] = embeddings (input of layer 0), [i] = output of layer i-1, and the last entry replaced by last_hidden_state (after the final norm)"
+ },
+ "created": "2026-09-28 14:02:26",
+ "source_checkpoint": {
+  "repo": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+  "revision": "31b70e2e869a7173562077fd711b654946d38674",
+  "preprocessing": "none"
+ }
+}

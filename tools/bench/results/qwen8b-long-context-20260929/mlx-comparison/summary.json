@@ -1,0 +1,308 @@
+{
+  "results": [
+    {
+      "engine": "monolith",
+      "mode": "plain",
+      "context": 4095,
+      "n": 5,
+      "ms_per_token": 20.66570144375478,
+      "ms_per_token_range": [
+        20.60030577408047,
+        20.785103017889607
+      ]
+    },
+    {
+      "engine": "monolith",
+      "mode": "plain",
+      "context": 8191,
+      "n": 5,
+      "ms_per_token": 23.627634185505663,
+      "ms_per_token_range": [
+        23.613832348913657,
+        23.72621981647071
+      ]
+    },
+    {
+      "engine": "monolith",
+      "mode": "n7",
+      "context": 4095,
+      "n": 5,
+      "ms_per_token": 24.175667979585842,
+      "ms_per_token_range": [
+        22.514693241419753,
+        25.339610565365767
+      ],
+      "ms_per_round": 58.511464396390046,
+      "ms_per_round_range": [
+        57.18732083320618,
+        60.58934935698142
+      ],
+      "completed_full_round_upper_ms": 59.59501003336023
+    },
+    {
+      "engine": "monolith",
+      "mode": "n7",
+      "context": 8191,
+      "n": 5,
+      "ms_per_token": 30.92668471092314,
+      "ms_per_token_range": [
+        25.291481627254036,
+        31.61689566908859
+      ],
+      "ms_per_round": 72.92371296441114,
+      "ms_per_round_range": [
+        71.3781814813614,
+        73.75931250095367
+      ],
+      "completed_full_round_upper_ms": 74.29963207694719
+    },
+    {
+      "engine": "mlx-native",
+      "mode": "plain",
+      "context": 4095,
+      "n": 5,
+      "ms_per_token": 20.888533795208442,
+      "ms_per_token_range": [
+        20.83650032263689,
+        20.923239827031402
+      ]
+    },
+    {
+      "engine": "mlx-native",
+      "mode": "plain",
+      "context": 8191,
+      "n": 5,
+      "ms_per_token": 23.496187330538948,
+      "ms_per_token_range": [
+        23.4641502675505,
+        23.64241075610346
+      ]
+    },
+    {
+      "engine": "mlx-native",
+      "mode": "n7",
+      "context": 4095,
+      "n": 5,
+      "ms_per_token": 33.313391078446855,
+      "ms_per_token_range": [
+        31.840638780057077,
+        34.960507220903956
+      ],
+      "ms_per_round": 83.38408916024491,
+      "ms_per_round_range": [
+        83.33859981454832,
+        83.47239504039932
+      ],
+      "full_steps_ms_per_token": 34.15592213077318
+    },
+    {
+      "engine": "mlx-native",
+      "mode": "n7",
+      "context": 8191,
+      "n": 5,
+      "ms_per_token": 36.77129560685533,
+      "ms_per_token_range": [
+        35.38917585855394,
+        40.38005118078633
+      ],
+      "ms_per_round": 99.86308980215755,
+      "ms_per_round_range": [
+        99.81302806052702,
+        99.90252325647012
+      ],
+      "full_steps_ms_per_token": 37.139165628901566
+    },
+    {
+      "engine": "mlx-prefill64",
+      "mode": "plain",
+      "context": 4095,
+      "n": 5,
+      "ms_per_token": 18.695941275557665,
+      "ms_per_token_range": [
+        18.683929463819137,
+        18.700466866194322
+      ]
+    },
+    {
+      "engine": "mlx-prefill64",
+      "mode": "plain",
+      "context": 8191,
+      "n": 5,
+      "ms_per_token": 21.06700327493045,
+      "ms_per_token_range": [
+        21.027623031354384,
+        21.099226047856895
+      ]
+    },
+    {
+      "engine": "mlx-prefill64",
+      "mode": "n7",
+      "context": 4095,
+      "n": 5,
+      "ms_per_token": 30.32397834573117,
+      "ms_per_token_range": [
+        29.52107840939975,
+        31.796845471794445
+      ],
+      "ms_per_round": 75.2133663118002,
+      "ms_per_round_range": [
+        75.18903906263101,
+        75.23687916109338
+      ],
+      "full_steps_ms_per_token": 30.831094261556558
+    },
+    {
+      "engine": "mlx-prefill64",
+      "mode": "n7",
+      "context": 8191,
+      "n": 5,
+      "ms_per_token": 39.681463583013205,
+      "ms_per_token_range": [
+        37.138900912997464,
+        42.736461283419075
+      ],
+      "ms_per_round": 99.60485289671591,
+      "ms_per_round_range": [
+        99.5876466599293,
+        99.87149119395046
+      ],
+      "full_steps_ms_per_token": 40.814609286856275
+    }
+  ],
+  "comparisons": [
+    {
+      "mode": "plain",
+      "context": 4095,
+      "baseline": "mlx-native",
+      "token_latency_reduction_pct": 1.0667687528397862,
+      "round_latency_reduction_pct": null
+    },
+    {
+      "mode": "plain",
+      "context": 4095,
+      "baseline": "mlx-prefill64",
+      "token_latency_reduction_pct": -10.535763560470212,
+      "round_latency_reduction_pct": null
+    },
+    {
+      "mode": "plain",
+      "context": 8191,
+      "baseline": "mlx-native",
+      "token_latency_reduction_pct": -0.5594390831054952,
+      "round_latency_reduction_pct": null
+    },
+    {
+      "mode": "plain",
+      "context": 8191,
+      "baseline": "mlx-prefill64",
+      "token_latency_reduction_pct": -12.154699352149168,
+      "round_latency_reduction_pct": null
+    },
+    {
+      "mode": "n7",
+      "context": 4095,
+      "baseline": "mlx-native",
+      "token_latency_reduction_pct": 27.429579526573477,
+      "round_latency_reduction_pct": 29.82898178099115
+    },
+    {
+      "mode": "n7",
+      "context": 4095,
+      "baseline": "mlx-prefill64",
+      "token_latency_reduction_pct": 20.275408114485906,
+      "round_latency_reduction_pct": 22.20602897385514
+    },
+    {
+      "mode": "n7",
+      "context": 8191,
+      "baseline": "mlx-native",
+      "token_latency_reduction_pct": 15.894492700014007,
+      "round_latency_reduction_pct": 26.976310157353435
+    },
+    {
+      "mode": "n7",
+      "context": 8191,
+      "baseline": "mlx-prefill64",
+      "token_latency_reduction_pct": 22.062641045926036,
+      "round_latency_reduction_pct": 26.7869879392036
+    }
+  ],
+  "exact_token_matches": {
+    "monolith vs mlx-native plain": [
+      "p4096-r1"
+    ],
+    "monolith vs mlx-native n7": [
+      "p4096-r1",
+      "p4096-r2"
+    ],
+    "mlx-native vs mlx-prefill64 plain": [
+      "p4096-r1"
+    ],
+    "mlx-native vs mlx-prefill64 n7": [
+      "p4096-r2"
+    ]
+  },
+  "plain_controls": [
+    {
+      "engine": "monolith",
+      "context": 4095,
+      "n": 3,
+      "ms_per_token": 18.296959646104828,
+      "range_ms": [
+        18.29628838516596,
+        18.31182742682029
+      ]
+    },
+    {
+      "engine": "mlx64",
+      "context": 4095,
+      "n": 3,
+      "ms_per_token": 18.677845472601923,
+      "range_ms": [
+        18.671287070615143,
+        18.717233267590757
+      ]
+    },
+    {
+      "engine": "mlx2048",
+      "context": 4095,
+      "n": 3,
+      "ms_per_token": 18.694865818898098,
+      "range_ms": [
+        18.667759843111977,
+        18.699054787756772
+      ]
+    },
+    {
+      "engine": "monolith",
+      "context": 8191,
+      "n": 3,
+      "ms_per_token": 21.19276443616612,
+      "range_ms": [
+        21.17133202139787,
+        21.197725393640713
+      ]
+    },
+    {
+      "engine": "mlx64",
+      "context": 8191,
+      "n": 3,
+      "ms_per_token": 21.092600393563686,
+      "range_ms": [
+        21.072157810801478,
+        21.130314306722674
+      ]
+    },
+    {
+      "engine": "mlx2048",
+      "context": 8191,
+      "n": 3,
+      "ms_per_token": 21.072351708311558,
+      "range_ms": [
+        21.055513448411908,
+        21.13880905484062
+      ]
+    }
+  ],
+  "n7_gate": "All 10 measured prompt pairs beat both MLX configurations in per-output latency and the conservative completed-full-round bound."
+}

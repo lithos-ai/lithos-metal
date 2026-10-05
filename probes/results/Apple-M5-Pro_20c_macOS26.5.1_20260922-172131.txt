@@ -1,0 +1,54 @@
+# chip: Apple M5 Pro   gpu-cores: 20   ram: 24 GB
+# os: macOS 26.5.1 (25F80)   date: 2026-09-22T21:21:31Z   on-battery: 0
+
+################ p12_stream_geometry ################
+Streaming 3.2 GB on Apple M5 Pro (20 cores; crew geometry = 240 SIMD-groups). Cells: GB/s, min-of-3. Blocked modes use 64 KB blocks.
+
+=== (1) pattern x load width x ILP x SIMD-groups per core, threadgroups of 384 ===
+SIMD-groups per core:                            12     24     48     96    192    384
+  striped 4B                                   85.1   83.4   94.5  129.0  202.7  202.8
+  interleaved 4B                              114.2  203.7  188.6  260.0  279.6  281.2
+  blocked lane-contig 4B (p5b/D8)             211.0  208.7  208.4  207.8  205.4  210.5
+  interleaved 16B                             282.9  248.7  280.5  282.6  285.8  286.2
+  interleaved 16B x4 in flight                285.9  286.4  289.7  285.8  283.1  289.4
+  blocked lane-contig 16B                     216.4  197.9  214.0  216.4  205.3  214.5
+  blocked lane-contig 16B, 4 streams/lane     203.3  211.0  203.1  204.6  201.6  205.9
+  blocked lane-contig 16B, 64B bursts         211.0  204.2  214.9  211.4  207.8  212.5
+  blocked lane-interleaved 16B x4             283.9  287.3  293.4  293.0  290.0  291.7
+
+=== (2) threadgroup size at 96 SIMD-groups per core (8 x 384 / 3 x 1024 / 12 x 256 per core) ===
+  blocked lane-contig 4B (p5b/D8)            TG= 256:  193.8 TG= 384:  202.7 TG= 512:  204.3 TG=1024:  209.5
+  interleaved 16B                            TG= 256:  275.5 TG= 384:  277.9 TG= 512:  271.9 TG=1024:  284.1
+  interleaved 16B x4 in flight               TG= 256:  290.0 TG= 384:  289.0 TG= 512:  291.0 TG=1024:  289.7
+  blocked lane-contig 16B                    TG= 256:  212.9 TG= 384:  207.8 TG= 512:  212.3 TG=1024:  213.5
+  blocked lane-contig 16B, 4 streams/lane    TG= 256:  204.7 TG= 384:  212.4 TG= 512:  210.3 TG=1024:  210.8
+  blocked lane-contig 16B, 64B bursts        TG= 256:  211.5 TG= 384:  213.8 TG= 512:  213.0 TG=1024:  206.4
+  blocked lane-interleaved 16B x4            TG= 256:  287.0 TG= 384:  287.7 TG= 512:  293.5 TG=1024:  286.7
+
+=== (3) block size for the blocked modes, at 12 and 48 SIMD-groups per core ===
+  blocked lane-contig 16B                     12 SG/core:    16 KB:  213.0    64 KB:  213.3   256 KB:  208.9  1024 KB:  206.1
+  blocked lane-contig 16B                     48 SG/core:    16 KB:  211.1    64 KB:  216.8   256 KB:  212.9  1024 KB:  209.4
+  blocked lane-contig 16B, 4 streams/lane     12 SG/core:    16 KB:  276.9    64 KB:  205.1   256 KB:  216.4  1024 KB:  213.7
+  blocked lane-contig 16B, 4 streams/lane     48 SG/core:    16 KB:  273.1    64 KB:  206.9   256 KB:  215.5  1024 KB:  214.3
+  blocked lane-contig 16B, 64B bursts         12 SG/core:    16 KB:  206.1    64 KB:  210.7   256 KB:  210.7  1024 KB:  206.5
+  blocked lane-contig 16B, 64B bursts         48 SG/core:    16 KB:  208.3    64 KB:  210.4   256 KB:  210.6  1024 KB:  210.5
+  blocked lane-interleaved 16B x4             12 SG/core:    16 KB:  291.6    64 KB:  289.9   256 KB:  284.0  1024 KB:  291.5
+  blocked lane-interleaved 16B x4             48 SG/core:    16 KB:  285.1    64 KB:  287.5   256 KB:  282.1  1024 KB:  291.5
+
+=== (4) p11 (1) again: cores needed to saturate the bus with ONE 384-thread threadgroup per core, best ILP kernels ===
+  cores:                                          1      2      4      6     10     13     16     20
+  blocked lane-contig 4B (p5b/D8)              29.4   56.4  106.0  145.5  193.0  209.8  216.7  215.9
+  blocked lane-contig 16B, 4 streams/lane      61.5   99.7  181.6  216.1  211.7  207.8  205.7  201.2
+  blocked lane-contig 16B, 64B bursts          40.1   77.0  135.1  172.8  204.4  213.5  213.5  214.3
+  blocked lane-interleaved 16B x4              71.5  134.8  240.6  290.8  296.3  297.3  293.9  291.6
+
+=== (5) p11 (3b) again: ALU-bound op B hidden inside the SATURATING bus-bound op A (mode 8, crew geometry), no barrier, both on all cores ===
+  A alone: 10.93 ms (294.7 GB/s)
+  B = 1x work (alone  2.35 ms =  21% of A): serial  13.93 ms | no barrier A,B  11.07 ms (hidden 121% of B) | B,A  10.96 ms (hidden 126%)
+  B = 2x work (alone  4.78 ms =  44% of A): serial  16.01 ms | no barrier A,B  15.82 ms (hidden   4% of B) | B,A  11.10 ms (hidden 103%)
+  B = 4x work (alone  9.32 ms =  85% of A): serial  20.83 ms | no barrier A,B  20.75 ms (hidden   1% of B) | B,A  12.12 ms (hidden  93%)
+  B = 8x work (alone 19.01 ms = 174% of A): serial  29.89 ms | no barrier A,B  30.01 ms (hidden  -1% of B) | B,A  18.81 ms (hidden  58%)
+
+=== (6) p11 (4) again: two SATURATING bus-bound ops, 1.6 GB each ===
+  serial    : A1 then A2, all cores each                   10.90 ms ->  295.6 GB/s
+  no barrier: A1 || A2, all cores each (2x oversubscribed)  10.93 ms ->  294.8 GB/s

@@ -1,0 +1,15 @@
+{
+  "barrier": "simd",
+  "cache_external_inputs": false,
+  "compact": true,
+  "k_unroll": 2,
+  "ksplit": 4,
+  "nvfp4_layout": "tile",
+  "nvfp4_tile_block": 16,
+  "post_norm_loads": 16,
+  "post_norm_once": true,
+  "post_norm_prefold": false,
+  "sgs": 8,
+  "tn": 32,
+  "workers": 116
+}

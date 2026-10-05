@@ -1,0 +1,14 @@
+{
+  "mlp_native": "selected-native.json",
+  "mlp_megakernel": "selected-mega.json",
+  "attention_contexts": "../attention-optimization/selected-contexts.json",
+  "gdn_profile": "../../config.json",
+  "contexts": [
+    128,
+    4096,
+    8192,
+    16384,
+    32768
+  ],
+  "scope": "Explicit fixed-eight-row compiler/benchmark recipes; MLP is not automatically selected by generation."
+}

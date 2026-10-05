@@ -1,0 +1,14 @@
+{
+ "temperatures": [
+  1.1746,
+  1.1746,
+  1.0272,
+  1.2731,
+  0.6687,
+  1.0838,
+  1.1746
+ ],
+ "gamma": 7,
+ "prompts": "code,math,chat,text",
+ "new_tokens": 128
+}

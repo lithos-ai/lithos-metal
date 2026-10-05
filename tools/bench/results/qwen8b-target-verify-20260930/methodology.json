@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-30",
+  "runtime_revision": "577ff80",
+  "machine": "Apple M5 Pro, 20 GPU cores, 24GB",
+  "model": "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+  "target_pack": "/tmp/mpk-long-context/target-pack",
+  "drafter": "/Users/zhihaojia/models/mlx-community-Qwen3-0.6B-4bit",
+  "drafter_pack": "/tmp/mpk-long-context/draft-pack",
+  "monolith_python": "3.13.15",
+  "mlx_python": "3.12.14",
+  "scope": "Target forward only: embedding, 36 decoder layers, final normalization and vocabulary projection. Excludes prefill, drafting, sampling, acceptance, rollback and output reads.",
+  "configuration": "N=7 means T=8: anchor plus seven draft proposals. Same exact prefix and target input IDs across engines. Monolith autotune=True, commute_norm=True, attention=auto, safe math, capacity8704. All 77 chosen launch configurations match the archived long-context cache. Prefill64 in both engines.",
+  "method": "One real prefix and first-round batch per context, 5 excluded warmups followed by 20 fixed-state replays per engine/context. Monolith replays the unchanged 220-dispatch speculative program prefix before argmax, leaves StepState unchanged and overwrites the same KV tail. MLX directly evaluates the native target model to materialized logits and trims eight KV entries outside timing. Logit hashes are constant across repeats within each engine; no cross-engine numerical equivalence claimed.",
+  "timing": "Host perf_counter around one synchronous target forward in each engine. Native Monolith GPU times also retained. Model loading, graph compilation, prefix preparation, cache rewind and output hashing are untimed.",
+  "order": "Serial, one inference process resident: Monolith 4K, Monolith 8K, MLX 8K, MLX 4K.",
+  "limitations": "Fixed-state target microbenchmark, not end-to-end generation or acceptance-adjusted throughput. One prefix/batch per context. Separate engine blocks can drift; 20 repeats do not represent 20 independent prompts.",
+  "script_sha256": "7a8a0575a1e35323c1273af196d1f05bf8de3207de51976af548eb098d104e1b"
+}

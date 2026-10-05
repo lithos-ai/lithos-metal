@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-29",
+  "chip": "Apple M5 Pro",
+  "gpu_cores": 20,
+  "memory_gb": 24,
+  "os": "macOS 26.5.1",
+  "implementation_revision": "aadbaf4",
+  "target": "/Users/zhihaojia/models/mlx-Qwen3-8B-nvfp4",
+  "draft": "/Users/zhihaojia/models/mlx-community-Qwen3-0.6B-4bit",
+  "pack": "/tmp/mpk-long-context/target-pack",
+  "draft_pack": "/tmp/mpk-long-context/draft-pack",
+  "max_context": 8704,
+  "prefill_chunk_size": 64,
+  "temperature": 0,
+  "commute_norm": true,
+  "gamma": 7,
+  "verify_length": 7,
+  "tuning": {
+    "reused_choices": 68,
+    "completed_missing_choices": 9,
+    "new_keys": [
+      "gemm3|int4_affine|1024x2048|R16|interleaved16|block|TM16|residual|tile16ux64u|compact-partials",
+      "gemm3|int4_affine|1024x3072|R16|interleaved16|block|TM16|residual|tile16ux64u|compact-partials",
+      "gemm3|int4_affine|151936x1024|R16|interleaved16|block|TM16|plain|tile16ux64u|compact-partials",
+      "gemm3|int4_affine|151936x1024|R16|interleaved16|block|TM16|plain|tile16ux64u|compact-partials|perm|norm|P64",
+      "gemm3|int4_affine|4096x1024|R16|interleaved16|block|TM16|plain|tile16ux64u|compact-partials",
+      "gemm3|int4_affine|6144x1024|R16|interleaved16|block|TM16|silu_mul|tile16ux64u|compact-partials",
+      "gemm3|int4_affine|6144x1024|R16|interleaved16|block|TM16|silu_mul|tile16ux64u|compact-partials|perm|norm|P64",
+      "gemm3|nvfp4|151936x4096|R16|interleaved16|block|TM8|plain|tile16ux128u",
+      "gemm3|nvfp4|151936x4096|R16|interleaved16|block|TM8|plain|tile16ux128u|perm|norm|P256"
+    ],
+    "attention": "auto",
+    "geometry_policy": "Retain the default unless whole-round improvement exceeds the design 3% noise margin."
+  },
+  "screen": {
+    "prefill": "Real 4095/8191-token p*-r1 prompts, identical across candidates",
+    "repetitions": 5,
+    "excluded_warmups": 1,
+    "n7_rounds_per_replay": 8,
+    "plain_tokens_per_replay": 32,
+    "candidate_order": "alternating forward/reverse",
+    "state_restore": "All small mutable buffers; KV tails from prefix-16 to capacity. Large transient arenas overwritten. All per-configuration token lists repeat exactly.",
+    "timer": "native wall ms per round/token; GPU time retained"
+  },
+  "generation": {
+    "method": "unmodified Session.generate",
+    "outputs": 128,
+    "decode_tokens": 127,
+    "prompts_per_context": 6,
+    "excluded_warmups": 1,
+    "timer": "Generation.decode_wall_ms"
+  },
+  "rejected": [
+    {
+      "configuration": "plain attention=v2",
+      "reason": "Compiler workspace capacity is 136 chunks; v2 requests 272 at capacity 8704. No timing produced."
+    },
+    {
+      "configuration": "MMA 160 groups x 8 SIMD-groups",
+      "reason": "1.4%/2.5% full-round reduction in geometry screen, below 3% promotion margin."
+    }
+  ],
+  "target_pack_preparation": {
+    "slabs_unchanged": true,
+    "method": "APFS clone; append extended BF16 RoPE tables and update only their aux entries/capacity. Every old RoPE prefix checked byte-identical.",
+    "manifest_sha256": "3a9c82ad94c95e8247e1f079877a700dcf10321237e704e2703d7a3f65583789"
+  },
+  "draft_pack_preparation": {
+    "slabs_unchanged": true,
+    "method": "APFS clone; append extended BF16 RoPE tables and update only their aux entries/capacity. Every old RoPE prefix checked byte-identical.",
+    "manifest_sha256": "e5bceb1689bb81ef133e5d5832ebb570073b74270472d04fd1a6507ecef84646"
+  }
+}

@@ -1,0 +1,4 @@
+include CMakeLists.txt LICENSE
+recursive-include runtime CMakeLists.txt *.mm *.h *.hpp
+recursive-include kernels *.metal
+recursive-include monolith/backends/metal *.json

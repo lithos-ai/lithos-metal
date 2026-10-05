@@ -1,0 +1,40 @@
+{
+  "attention": {
+    "attention_cached_prefix": true,
+    "attention_chunk_tiles": 32,
+    "attention_groups": 160,
+    "attention_prepare": false,
+    "attention_qm": 16,
+    "attention_task_tiles": 1,
+    "barrier": "simd",
+    "compact": true,
+    "fp8_decode": "half",
+    "fp8_layout": "tile",
+    "fp8_tile_block": 8,
+    "gemm_overrides": {
+      "0": {
+        "ksplit": 8,
+        "q_outer": 1,
+        "tn": 16
+      },
+      "2": {
+        "ksplit": 4,
+        "q_outer": 1,
+        "tn": 32
+      }
+    },
+    "merge_sgs": 8,
+    "merge_unroll": 2,
+    "q_outer": 0,
+    "scalar_sgs": 2,
+    "schedule": "queue",
+    "sgs": 8,
+    "split": true,
+    "task_barrier": false,
+    "task_batch": 1,
+    "task_grain": "tile",
+    "task_seed": true,
+    "tn": 32,
+    "workers": 120
+  }
+}

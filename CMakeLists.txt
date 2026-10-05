@@ -1,0 +1,16 @@
+# Top-level build: the C++/Objective-C++ runtime lands here in the runtime-core PR (plan M2). Until then this file only
+# fixes the project name and the toolchain requirements so `cmake -S . -B build` is a valid smoke test of the setup.
+cmake_minimum_required(VERSION 3.24)
+project(monolith LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+option(MONOLITH_BUILD_RUNTIME "Build the Metal runtime and its Python bindings" ON)
+if(NOT APPLE)
+  message(STATUS "monolith: not on macOS; the Metal runtime is skipped (the Python package still works).")
+  set(MONOLITH_BUILD_RUNTIME OFF)
+endif()
+if(MONOLITH_BUILD_RUNTIME AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/CMakeLists.txt")
+  message(STATUS "monolith: runtime/ is not in this checkout yet (arrives with the runtime-core PR).")
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/CMakeLists.txt")
+  add_subdirectory(runtime)
+endif()

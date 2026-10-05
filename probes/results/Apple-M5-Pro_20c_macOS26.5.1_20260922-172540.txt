@@ -1,0 +1,31 @@
+# chip: Apple M5 Pro   gpu-cores: 20   ram: 24 GB
+# os: macOS 26.5.1 (25F80)   date: 2026-09-22T21:25:40Z   on-battery: 0
+
+################ p14_tensor_ops ################
+matmul2d probe on Apple M5 Pro (20 cores, Apple10 = 1): y[TM][17408] = x[TM][5120] . W^T; TM = T tokens (padded), TN rows of W per threadgroup, TK-wide K tiles, S SIMD-groups per threadgroup.
+
+=== gemm_fp8: FP8 weights dequantized tile by tile into threadgroup memory, then matmul2d: 89 MB per matrix, 24 copies per measurement (min-of-3); GB/s = weight bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.506     176.2      2.82 | 1.6e-06
+  8   64  128 4  |     0.537     165.8      2.65 | 1.6e-06
+  8   32  64  2  |     0.513     173.6      2.78 | 1.6e-06
+  8   64  64  2  |     0.479     186.0      2.98 | 1.6e-06
+  8   64  64  1  |     0.527     169.1      2.71 | 1.6e-06
+  16  64  64  4  |     0.528     168.8      5.40 | 1.6e-06
+  32  64  64  4  |     0.559     159.3     10.20 | 1.6e-06
+  32  64  128 4  |     0.597     149.3      9.56 | 1.6e-06
+  32  128 64  4  |     0.698     127.8      8.18 | 1.6e-06
+  64  64  64  4  |     0.734     121.4     15.54 | 1.6e-06
+
+=== gemm_half: half weights straight from device memory (accelerator upper bound): 178 MB per matrix, 12 copies per measurement (min-of-3); GB/s = weight bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.850     209.7      1.68 | 1.6e-06
+  8   64  128 4  |     0.863     206.6      1.65 | 1.6e-06
+  8   32  64  2  |     0.866     205.8      1.65 | 1.6e-06
+  8   64  64  2  |     0.862     206.7      1.65 | 1.6e-06
+  8   64  64  1  |     0.871     204.7      1.64 | 1.6e-06
+  16  64  64  4  |     0.883     201.9      3.23 | 1.6e-06
+  32  64  64  4  |     0.911     195.7      6.26 | 1.6e-06
+  32  64  128 4  |     0.900     198.0      6.34 | 1.6e-06
+  32  128 64  4  |     0.863     206.6      6.61 | 1.6e-06
+  64  64  64  4  |     1.027     173.5     11.10 | 1.6e-06

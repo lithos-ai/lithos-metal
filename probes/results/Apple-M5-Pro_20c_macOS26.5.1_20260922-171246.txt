@@ -1,0 +1,43 @@
+# chip: Apple M5 Pro   gpu-cores: 20   ram: 24 GB
+# os: macOS 26.5.1 (25F80)   date: 2026-09-22T21:12:46Z   on-battery: 0
+
+################ p12_stream_geometry ################
+Streaming 3.2 GB on Apple M5 Pro (20 cores; crew geometry = 240 SIMD-groups). Cells: GB/s, min-of-3. Blocked modes use 64 KB blocks.
+
+=== (1) pattern x load width x ILP x SIMD-groups per core, threadgroups of 384 ===
+SIMD-groups per core:                            12     24     48     96    192    384
+  striped 4B                                   85.2   82.8   92.5  128.1  197.1  202.4
+  interleaved 4B                              113.6  203.2  278.5  228.1  241.7  254.3
+  blocked lane-contig 4B (p5b/D8)             199.3  206.7  202.7  204.2  208.1  211.1
+  interleaved 16B                             277.5  240.6  274.5  272.2  279.1  280.2
+  interleaved 16B x4 in flight                280.7  280.8  274.7  279.1  286.3  278.4
+  blocked lane-contig 16B                     211.8  208.9  211.1  208.8  205.3  204.9
+  blocked lane-contig 16B, 4 streams/lane     217.7  207.9  206.5  204.2  207.3  200.8
+  blocked lane-contig 16B, 64B bursts         214.7  207.7  210.6  209.7  210.8  206.8
+  blocked lane-interleaved 16B x4             290.6  292.0  290.5  284.6  287.5  285.0
+
+=== (2) threadgroup size at 96 SIMD-groups per core (8 x 384 / 3 x 1024 / 12 x 256 per core) ===
+  blocked lane-contig 4B (p5b/D8)            TG= 256:  211.9 TG= 384:  206.3 TG= 512:  212.0 TG=1024:  208.5
+  interleaved 16B                            TG= 256:  266.2 TG= 384:  272.9 TG= 512:  274.5 TG=1024:  276.7
+  interleaved 16B x4 in flight               TG= 256:  287.7 TG= 384:  285.5 TG= 512:  285.5 TG=1024:  273.3
+  blocked lane-contig 16B                    TG= 256:  194.5 TG= 384:  206.8 TG= 512:  206.3 TG=1024:  211.1
+  blocked lane-contig 16B, 4 streams/lane    TG= 256:  195.0 TG= 384:  205.7 TG= 512:  203.9 TG=1024:  207.6
+  blocked lane-contig 16B, 64B bursts        TG= 256:  208.2 TG= 384:  209.5 TG= 512:  206.9 TG=1024:  200.9
+  blocked lane-interleaved 16B x4            TG= 256:  258.9 TG= 384:  274.9 TG= 512:  288.2 TG=1024:  284.5
+
+=== (3) block size for the blocked modes, at 12 and 48 SIMD-groups per core ===
+  blocked lane-contig 16B                     12 SG/core:    16 KB:  208.3    64 KB:  210.8   256 KB:  207.5  1024 KB:  203.8
+  blocked lane-contig 16B                     48 SG/core:    16 KB:  211.2    64 KB:  214.4   256 KB:  205.5  1024 KB:  208.0
+  blocked lane-contig 16B, 4 streams/lane     12 SG/core:    16 KB:  269.8    64 KB:  216.0   256 KB:  216.3  1024 KB:  204.7
+  blocked lane-contig 16B, 4 streams/lane     48 SG/core:    16 KB:  269.4    64 KB:  197.9   256 KB:  212.0  1024 KB:  211.4
+  blocked lane-contig 16B, 64B bursts         12 SG/core:    16 KB:  210.8    64 KB:  211.3   256 KB:  209.4  1024 KB:  205.7
+  blocked lane-contig 16B, 64B bursts         48 SG/core:    16 KB:  211.8    64 KB:  213.9   256 KB:  209.6  1024 KB:  207.7
+  blocked lane-interleaved 16B x4             12 SG/core:    16 KB:  294.5    64 KB:  291.3   256 KB:  292.9  1024 KB:  287.2
+  blocked lane-interleaved 16B x4             48 SG/core:    16 KB:  286.1    64 KB:  288.5   256 KB:  291.2  1024 KB:  290.2
+
+=== (4) p11 (1) again: cores needed to saturate the bus with ONE 384-thread threadgroup per core, best ILP kernels ===
+  cores:                                          1      2      4      6     10     13     16     20
+  blocked lane-contig 4B (p5b/D8)              29.2   55.9  104.8  144.8  192.4  209.2  214.6  214.8
+  blocked lane-contig 16B, 4 streams/lane      66.7  126.6  193.7  215.6  210.9  207.7  202.7  210.3
+  blocked lane-contig 16B, 64B bursts          40.3   76.3  134.3  172.3  202.6  216.4  215.1  208.8
+  blocked lane-interleaved 16B x4              71.4  134.5  230.8  278.3  286.2  289.3  293.5  286.0

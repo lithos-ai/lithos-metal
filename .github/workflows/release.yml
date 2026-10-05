@@ -1,0 +1,63 @@
+name: macOS release
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify tag and build the offline wheel bundle
+        run: |
+          python - <<'PY'
+          import os, tomllib
+          version = tomllib.load(open('pyproject.toml', 'rb'))['project']['version']
+          if os.environ['GITHUB_REF_TYPE'] == 'tag':
+              assert os.environ['GITHUB_REF_NAME'] == 'v' + version
+          PY
+          python tools/release/build_macos.py --repository "$GITHUB_REPOSITORY"
+      - name: Validate Homebrew formula requirements
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_ANALYTICS: "1"
+        run: |
+          tap="$(brew --repository)/Library/Taps/lithos-ai/homebrew-release-check"
+          mkdir -p "$tap/Formula"
+          cp dist/lithos-metal.rb "$tap/Formula/lithos-metal.rb"
+          if brew command trust >/dev/null 2>&1; then brew trust lithos-ai/release-check; fi
+          brew readall lithos-ai/release-check
+      - name: Smoke test outside the source checkout
+        run: |
+          mkdir /tmp/lithos-metal-release-test
+          tar -xzf dist/lithos-metal-*-macos-arm64.tar.gz -C /tmp/lithos-metal-release-test
+          python -m venv /tmp/lithos-metal-release-venv
+          /tmp/lithos-metal-release-venv/bin/pip install --no-index --find-links /tmp/lithos-metal-release-test/lithos-metal-*/wheels 'lithos-metal[serve]'
+          cd /tmp
+          /tmp/lithos-metal-release-venv/bin/lithos-metal --version
+          /tmp/lithos-metal-release-venv/bin/lithos-metal models
+          /tmp/lithos-metal-release-venv/bin/python -c 'from monolith.runtime import is_available; from monolith.resources import kernel_root; assert is_available(); assert (kernel_root()/"common"/"embed.metal").is_file()'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lithos-metal-macos-arm64
+          path: dist/
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: lithos-metal-macos-arm64
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

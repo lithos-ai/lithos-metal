@@ -1,0 +1,24 @@
+{
+  "name": "apple-m5-max-32c",
+  "backend": "m5_max_32c",
+  "chip": "Apple M5 Max",
+  "gpu_family": "Apple10",
+  "gpu_cores": 32,
+  "nominal_gbps": 0,
+  "validation": "unmeasured",
+  "note": "Conservative native-kernel fallback. No latency, bandwidth, fusion or acceptance claims; tune on this exact device.",
+  "engine": {
+    "family": "Apple10",
+    "lane_order": "interleaved16",
+    "scale_placement": "block",
+    "threadgroups_per_core": 1,
+    "sibling_order": "either",
+    "max_cb_ms": 16,
+    "attention": "v1",
+    "attention_rows": 4,
+    "accelerator": "off",
+    "accelerator_min_t": {},
+    "cost_T": {},
+    "gdn_mixer_fusion": {}
+  }
+}

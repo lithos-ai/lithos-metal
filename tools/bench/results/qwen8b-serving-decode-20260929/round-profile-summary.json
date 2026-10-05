@@ -1,0 +1,35 @@
+{
+  "autotune_off": {
+    "whole_gpu_ms": 53.777005217853,
+    "whole_wall_ms": 53.96889580786228,
+    "target_layers": 25.014500017277896,
+    "target_head_sample": 1.572395907714963,
+    "accept": 0.008125032763928175,
+    "draft_layers": 23.91587500460446,
+    "draft_heads": 3.653104300610721,
+    "select": 0.008499948307871819,
+    "split_total": 54.2628956027329
+  },
+  "cached_choices": {
+    "whole_gpu_ms": 35.86242710298393,
+    "whole_wall_ms": 36.01835937798023,
+    "target_layers": 17.922562488820404,
+    "target_head_sample": 1.6437500016763806,
+    "accept": 0.008770788554102182,
+    "draft_layers": 13.685645768418908,
+    "draft_heads": 2.999854157678783,
+    "select": 0.008375034667551517,
+    "split_total": 36.497624998446554
+  },
+  "cached_generation": {
+    "ms_per_full_step": 35.83497279030936,
+    "ms_per_decode_token": 16.630533791902497
+  },
+  "notes": [
+    "Stage medians: GPU milliseconds, 24 rounds per configuration; whole controls: six four-round runs, one step/CB and two in flight.",
+    "Splitting the original dispatch stream into stage ICBs adds measurement overhead; compare GPU time, not split wall time.",
+    "Cached-choice probe reuses available choices; cache misses use original default GEMV/GEMM choices, with no new search.",
+    "128-output generation: one warmup plus five measured 126-token prompts. Two of five measured decoded texts match the untuned run; not an accuracy validation.",
+    "Dispatch counts: autotune off 1892, cached choices 1493."
+  ]
+}

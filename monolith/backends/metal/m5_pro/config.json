@@ -1,0 +1,546 @@
+{
+  "chip": "Apple M5 Pro",
+  "gpu_family": "Apple10",
+  "gpu_cores": 20,
+  "memory_gb": 24,
+  "measured": "2026-09-22",
+  "os": "macOS 26.5.1",
+  "power": "AC",
+  "nominal_gbps": 307,
+  "nominal_note": "[S] 307 GB/s for the M5 Pro; not verified for the 24 GB configuration",
+  "hosts_target_model": false,
+  "hosts_target_model_note": "21 GB of weights against recommendedMaxWorkingSetSize 17.76 GB, maxBufferLength 13.32 GB",
+  "crew": {
+    "threadgroups": 20,
+    "threads_per_threadgroup": 384,
+    "simdgroups_per_core_full_speed": 12,
+    "one_threadgroup_per_core": true,
+    "probe": "p4 (flat to G=20, 2x at G=22; k<=14 SIMD-groups full speed in one threadgroup)"
+  },
+  "alu_per_simdgroup_vs_m3pro": 1.12,
+  "in_flight_simdgroups_max": {
+    "value": 1536,
+    "note": "1536 as 48x1024 was marginal (38k spins); 2048 times out",
+    "probe": "p3a"
+  },
+  "streaming": {
+    "best_raw_gbps": [
+      285,
+      295
+    ],
+    "best_raw_pattern": "blocked (16 KB-1 MB), lanes interleaved at 16 B, 4 loads in flight per lane; flat from 12 to 384 SIMD-groups per core",
+    "lane_order": "interleaved16 (lane-contiguous caps at 200-218 GB/s = 65-71 % regardless of load width, unrolling, occupancy or block size)",
+    "crew_geometry_raw_gbps": 291,
+    "per_core_uncontended_gbps": 71.4,
+    "cores_to_saturate": 6,
+    "cores_to_saturate_note": "278 GB/s on 6 cores, 286 on 10, 289-294 on 13-20",
+    "probe": "p5b, p12"
+  },
+  "decode_gemv": {
+    "shape": "17408x5120, K=5120, static slices, min-of-3 over ~2.1 GB",
+    "fp8_t1_gbps": {
+      "crew_interleaved_R16": 275,
+      "crew_contiguous_R8": 238,
+      "conventional_1block_per_simdgroup_tg64_R16": 277
+    },
+    "fp8_gbps_vs_T_best_geometry": {
+      "1": 277,
+      "2": 255,
+      "4": 249,
+      "8": 76
+    },
+    "nvfp4_t1_gbps_useful": {
+      "crew_interleaved_R4": 137,
+      "conventional_tg64_R4": 182,
+      "note": "ALU-bound: ~275 G weights/s at the crew geometry for both formats"
+    },
+    "nvfp4_gbps_vs_T_best_geometry": {
+      "1": 182,
+      "2": 143,
+      "4": 102,
+      "8": 35
+    },
+    "tail_quantization_note": "static slices at 240 SIMD-groups: R=32 -> 544 blocks -> 76 % efficiency; R=16 -> 91 %; R=4 -> 95 %",
+    "probe": "p13",
+    "harness_2026_09_24": {
+      "note": "tools/bench/results/apple-m5-pro-20c_{gemv_m1,nvfp4_decode}.jsonl; best geometry per shape at T=1",
+      "fp8_t1_gbps": {
+        "17408x5120": 260,
+        "5120x17408": 279,
+        "248320x5120": 291,
+        "crew_x1_17408x5120": 254
+      },
+      "nvfp4_v2_t1_gbps": {
+        "17408x5120": 252,
+        "5120x17408": 226,
+        "248320x5120": 273,
+        "crew_x1_17408x5120": 161,
+        "crew_x4_17408x5120": 211
+      },
+      "defaults": {
+        "nvfp4_decode": 2,
+        "rg": 2,
+        "nvfp4_rows": 4,
+        "fp8_rows": 8,
+        "geometry_t1": "one block per SIMD-group, 64-thread threadgroups"
+      }
+    }
+  },
+  "tensor_ops": {
+    "available_from_clt": true,
+    "msl": "4.0 (4.1 needs macOS 27)",
+    "fp8_staged_matmul2d_gbps_vs_TM": {
+      "8": 186,
+      "16": 169,
+      "32": 159,
+      "64": 121
+    },
+    "half_direct_matmul2d_gbps": [
+      196,
+      210
+    ],
+    "tflops_at_TM64": [
+      15.5,
+      16.9
+    ],
+    "crossover_vs_shader_alu": "shader ALU faster for FP8 T <= 4 and NVFP4 T <= 2; accelerator faster from FP8 T ~ 5-8 (186 vs 76 GB/s at T = 8) and NVFP4 T ~ 3 (119 GB/s at TM = 8 vs 102 at shader T = 4)",
+    "accumulation_rel_err": 1.6e-06,
+    "probe": "p14",
+    "nvfp4_staged_matmul2d_gbps_useful_vs_TM": {
+      "8": 119,
+      "16": 106,
+      "32": 102,
+      "64": 74
+    },
+    "pass_cost_vs_T1": {
+      "TM8_fp8": 1.49,
+      "TM8_nvfp4": 1.53,
+      "TM32_fp8": 1.74,
+      "TM32_nvfp4": 1.78
+    }
+  },
+  "dispatch": {
+    "boundary_us": [
+      1.38,
+      1.4
+    ],
+    "gpu_per_dispatch_us": [
+      1.3,
+      1.6
+    ],
+    "icb_replay_ms_per_1240": 0.01,
+    "sync_roundtrip_ms": 0.15,
+    "probe": "p7, p10"
+  },
+  "in_kernel_barrier_us": {
+    "static_slices": [
+      1.97,
+      2.47
+    ],
+    "own_steal": [
+      4.25,
+      4.78
+    ],
+    "with_30us_blocks_us_per_op": {
+      "dispatch_per_op": 81.5,
+      "static": [
+        81.7,
+        84.7
+      ],
+      "own_steal": [
+        83.5,
+        88.1
+      ]
+    },
+    "probe": "p10"
+  },
+  "sharing": {
+    "inside_dispatch": "sometimes: 2 of 12 trials every foreign dispatch got in at 0.2-0.4 ms; 5 of 12 the first one waited the whole ~1.1 s; 5 of 12 a later one waited 0.5-1.0 s",
+    "typical_behind_short_dispatches": "one whole command buffer: 1.04-1.05 s behind an 800-dispatch buffer in 3 of 4 runs (8 dispatches got in first in the other)",
+    "behind_145ms_buffers_max_ms": [
+      44,
+      129
+    ],
+    "behind_15ms_buffers_max_ms": [
+      0.3,
+      1.3
+    ],
+    "max_cb_ms_default": 16,
+    "probe": "p6 x4, p6b x4",
+    "frame_pacing": {
+      "probe": "p15 (2026-09-25, ALU-bound heavy queue, 3 command buffers in flight, 120 Hz display)",
+      "late_frames_pct_by_cb_ms": {
+        "0": 0.2,
+        "8": 0.0,
+        "16": 0.0,
+        "33": 0.0,
+        "66": 0.0,
+        "133": 0.0
+      },
+      "mean_frame_ms_by_cb_ms": {
+        "0": 8.35,
+        "8": 8.33,
+        "16": 8.33,
+        "33": 8.33,
+        "66": 8.33,
+        "133": 8.33
+      },
+      "note": "the display path kept its vsync at every buffer length: max_cb_ms is a latency knob here, not a pacing constraint; the bus-bound pass is pending an unlocked screen"
+    },
+    "max_cb_ms_note": "16 ms kept as the latency choice (the pump's over-run past a request); frame pacing does not constrain it on this chip (p15)"
+  },
+  "overlap": {
+    "alu_hidden_in_saturating_bus_op_pct": {
+      "alu_encoded_first": {
+        "B=22%": [
+          121,
+          126
+        ],
+        "B=43%": [
+          102,
+          121
+        ],
+        "B=85%": [
+          84,
+          93
+        ],
+        "B=170%": [
+          57,
+          61
+        ]
+      },
+      "bus_encoded_first": {
+        "B=22%": [
+          100,
+          122
+        ],
+        "B=43%": [
+          -5,
+          29
+        ],
+        "B=85%": [
+          1,
+          5
+        ]
+      }
+    },
+    "encode_order_matters": true,
+    "rule": "encode the ALU-bound sibling before the bus-bound op",
+    "two_bus_bound_gain_pct": [
+      -1,
+      3
+    ],
+    "split_cores_by_hand": "slower than serial (23.3 vs 17.8 ms)",
+    "probe": "p11, p12(5)(6)"
+  },
+  "threadgroup_memory_faster": false,
+  "hot_read_ns": {
+    "device": 37.2,
+    "threadgroup": 36.2,
+    "thread_private": 42.7,
+    "probe": "p8"
+  },
+  "clock_simdgroup_ns_per_tick": [
+    38.3,
+    38.6
+  ],
+  "atomic_handoff_ns": [
+    142,
+    196
+  ],
+  "results_files": 11,
+  "engine": {
+    "family": "Apple10",
+    "lane_order": "interleaved16",
+    "scale_placement": "block",
+    "threadgroups_per_core": 1,
+    "sibling_order": "alu_first",
+    "max_cb_ms": 16,
+    "attention": "auto",
+    "attention_v2_threadgroups": 2,
+    "accelerator": "on",
+    "accelerator_min_t": {
+      "nvfp4": 2,
+      "fp8": 2,
+      "int4_affine": 2,
+      "bf16": 4
+    },
+    "cost_T": {
+      "nvfp4": {
+        "1": 1.0,
+        "2": 1.598,
+        "4": 2.5,
+        "8": 7.638
+      },
+      "fp8": {
+        "1": 1.0,
+        "2": 1.083,
+        "4": 2.128,
+        "8": 3.264
+      },
+      "int4_affine": {
+        "1": 1.0,
+        "2": 1.793,
+        "4": 2.738,
+        "8": 8.25
+      },
+      "bf16": {
+        "1": 1.0,
+        "2": 1.022,
+        "4": 1.06,
+        "8": 2.615
+      },
+      "accelerator_nvfp4": {
+        "8": 1.044,
+        "16": 1.064,
+        "32": 2.572
+      },
+      "accelerator_fp8": {
+        "8": 1.106,
+        "16": 1.136,
+        "32": 2.007
+      },
+      "accelerator_int4_affine": {
+        "8": 1.174,
+        "16": 1.207,
+        "32": 2.777
+      },
+      "accelerator_bf16": {
+        "8": 1.069,
+        "16": 1.082,
+        "32": 1.268
+      }
+    },
+    "note": "written by tools/profile_writer.py from the kernel harnesses (min-of-N over >= 2 GB streamed per point): cost_T = the pass cost relative to a T = 1 shader pass at the best geometry per T; accelerator_<fmt> = gemm_tile at TM rows in the same unit; sibling_order and max_cb_ms are the probes' (p11, p6/p6b) and carry over"
+  },
+  "gpu_working_set_gb": 17.76,
+  "max_buffer_gb": 13.32,
+  "writer": {
+    "tool": "tools/profile_writer.py",
+    "written": "2026-09-26",
+    "command": "python tools/profile_writer.py",
+    "decisions": {
+      "lane_order": "interleaved16 at 259 GB/s against 230",
+      "threadgroups_per_core": "a tie (x1 0.344 ms, x2 0.353 ms): keeps 1",
+      "accelerator": "nvfp4: the tile from T = 2 (tile TM8 1.04, TM16 1.06, TM32 2.57 vs shader T2 1.60, T4 2.50, T8 7.64); fp8: the tile from T = 2 (tile TM8 1.11, TM16 1.14, TM32 2.01 vs shader T2 1.08, T4 2.13, T8 3.26); int4_affine: the tile from T = 2 (tile TM8 1.17, TM16 1.21, TM32 2.78 vs shader T2 1.79, T4 2.74, T8 8.25); bf16: the tile from T = 4 (tile TM8 1.07, TM16 1.08, TM32 1.27 vs shader T2 1.02, T4 1.06, T8 2.62)",
+      "attention": "auto = v3 (2026-09-27, #113): one dispatch, a threadgroup per query row - 0.39-0.80x v2's core + merge at T = 1 from 128 to 8192 keys (0.6B geometry, 128 keys: 4.9 vs 12.6 us; 8B: 7.6 vs 18.1) and 0.42-0.89x at 4-32 query rows (8B, 32 rows, 128 keys: 47 vs 86 us, v1 86), so v2 and v1 stay explicit choices; v2 with two threadgroups per core is 2-3x v1 at T = 1 and at 1024 keys; the writer's own points were (4096, 4): 0.823 vs 0.674 ms with one threadgroup per core"
+    },
+    "measurements": {
+      "family": "Apple10",
+      "chip": "Apple M5 Pro",
+      "shape": "17408x5120",
+      "copies": null,
+      "reps": 3,
+      "lane_order_gbps": {
+        "interleaved16": 259.2,
+        "contiguous": 230.2
+      },
+      "lane_order_measured_with": "interleaved16",
+      "threadgroups_ms": {
+        "1": 0.3442,
+        "2": 0.3531
+      },
+      "shader_ms": {
+        "nvfp4": {
+          "1": 0.2021,
+          "2": 0.323,
+          "4": 0.5053,
+          "8": 1.5437
+        },
+        "fp8_e4m3": {
+          "1": 0.3233,
+          "2": 0.3501,
+          "4": 0.6879,
+          "8": 1.0554
+        },
+        "int4_affine": {
+          "1": 0.23,
+          "2": 0.4125,
+          "4": 0.6297,
+          "8": 1.8975
+        },
+        "bf16": {
+          "1": 0.6093,
+          "2": 0.6228,
+          "4": 0.646,
+          "8": 1.5935
+        }
+      },
+      "shader_geometry": {
+        "nvfp4": {
+          "1": "1blk/SG tg64",
+          "2": "1blk/SG tg64",
+          "4": "1blk/SG tg64",
+          "8": "crew x1"
+        },
+        "fp8_e4m3": {
+          "1": "1blk/SG tg64",
+          "2": "1blk/SG tg64",
+          "4": "1blk/SG tg64",
+          "8": "1blk/SG tg64"
+        },
+        "int4_affine": {
+          "1": "1blk/SG tg64",
+          "2": "1blk/SG tg64",
+          "4": "1blk/SG tg64",
+          "8": "crew x1"
+        },
+        "bf16": {
+          "1": "crew x1",
+          "2": "crew x1",
+          "4": "1blk/SG tg64",
+          "8": "1blk/SG tg64"
+        }
+      },
+      "shader_gbps": {
+        "nvfp4": {
+          "1": 248.1,
+          "2": 155.2,
+          "4": 99.2,
+          "8": 32.5
+        },
+        "fp8_e4m3": {
+          "1": 275.7,
+          "2": 254.6,
+          "4": 129.6,
+          "8": 84.5
+        },
+        "int4_affine": {
+          "1": 242.2,
+          "2": 135.1,
+          "4": 88.5,
+          "8": 29.4
+        },
+        "bf16": {
+          "1": 292.6,
+          "2": 286.2,
+          "4": 275.9,
+          "8": 111.9
+        }
+      },
+      "tile_ms": {
+        "nvfp4": {
+          "8": 0.211,
+          "16": 0.215,
+          "32": 0.5199
+        },
+        "fp8_e4m3": {
+          "8": 0.3576,
+          "16": 0.3674,
+          "32": 0.6488
+        },
+        "int4_affine": {
+          "8": 0.2701,
+          "16": 0.2777,
+          "32": 0.6387
+        },
+        "bf16": {
+          "8": 0.6515,
+          "16": 0.659,
+          "32": 0.7723
+        }
+      },
+      "tile_gbps": {
+        "nvfp4": {
+          "8": 237.6,
+          "16": 233.1,
+          "32": 96.4
+        },
+        "fp8_e4m3": {
+          "8": 249.3,
+          "16": 242.6,
+          "32": 137.4
+        },
+        "int4_affine": {
+          "8": 206.3,
+          "16": 200.6,
+          "32": 87.2
+        },
+        "bf16": {
+          "8": 273.6,
+          "16": 270.5,
+          "32": 230.8
+        }
+      },
+      "attention_ms": {
+        "v1": {
+          "(1024, 1)": 0.082,
+          "(1024, 4)": 0.2024,
+          "(4096, 1)": 0.2458,
+          "(4096, 4)": 0.6739
+        },
+        "v2": {
+          "(1024, 1)": 0.0709,
+          "(1024, 4)": 0.2218,
+          "(4096, 1)": 0.2317,
+          "(4096, 4)": 0.8229
+        }
+      }
+    },
+    "previous_engine": {
+      "family": "Apple10",
+      "lane_order": "interleaved16",
+      "threadgroups_per_core": 1,
+      "sibling_order": "alu_first",
+      "max_cb_ms": 16,
+      "attention": "v1",
+      "accelerator": "on",
+      "accelerator_min_t": {
+        "nvfp4": 2,
+        "fp8": 2,
+        "int4_affine": 2,
+        "bf16": 4
+      },
+      "cost_T": {
+        "nvfp4": {
+          "1": 1.0,
+          "2": 1.623,
+          "4": 2.459,
+          "8": 7.159
+        },
+        "fp8": {
+          "1": 1.0,
+          "2": 1.094,
+          "4": 2.141,
+          "8": 3.266
+        },
+        "int4_affine": {
+          "1": 1.0,
+          "2": 1.787,
+          "4": 2.736,
+          "8": 8.203
+        },
+        "bf16": {
+          "1": 1.0,
+          "2": 1.018,
+          "4": 1.048,
+          "8": 2.594
+        },
+        "accelerator_nvfp4": {
+          "8": 1.348,
+          "16": 1.356,
+          "32": 2.308
+        },
+        "accelerator_fp8": {
+          "8": 1.108,
+          "16": 1.149,
+          "32": 2.003
+        },
+        "accelerator_int4_affine": {
+          "8": 1.163,
+          "16": 1.198,
+          "32": 2.781
+        },
+        "accelerator_bf16": {
+          "8": 1.062,
+          "16": 1.069,
+          "32": 1.261
+        }
+      },
+      "note": "written by tools/profile_writer.py from the kernel harnesses (min-of-N over >= 2 GB streamed per point): cost_T = the pass cost relative to a T = 1 shader pass at the best geometry per T; accelerator_<fmt> = gemm_tile at TM rows in the same unit; sibling_order and max_cb_ms are the probes' (p11, p6/p6b) and carry over"
+    }
+  },
+  "name": "apple-m5-pro-20c",
+  "backend": "m5_pro",
+  "validation": "measured"
+}

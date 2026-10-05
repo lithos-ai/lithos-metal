@@ -1,0 +1,52 @@
+{
+  "n7-screen": [
+    {"context": 4095, "configuration": "tuned-draft-v1", "median_wall_ms": 76.77838280797005, "min_wall_ms": 76.76452082395554, "max_wall_ms": 76.78946875035763, "repeats": 4},
+    {"context": 4095, "configuration": "tuned-v1", "median_wall_ms": 117.48256509751081, "min_wall_ms": 117.43788020312786, "max_wall_ms": 117.55092187225819, "repeats": 4},
+    {"context": 4095, "configuration": "tuned-mma", "median_wall_ms": 62.58260156214237, "min_wall_ms": 62.16984894871712, "max_wall_ms": 62.877979174256325, "repeats": 4},
+    {"context": 4095, "configuration": "tuned-auto", "median_wall_ms": 51.691739581525326, "min_wall_ms": 51.63384374976158, "max_wall_ms": 51.86845834553242, "repeats": 4},
+    {"context": 4095, "configuration": "off-auto", "median_wall_ms": 69.6570677086711, "min_wall_ms": 69.5808072835207, "max_wall_ms": 69.78956770896912, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-draft-v1", "median_wall_ms": 110.07770051807165, "min_wall_ms": 110.06335414946079, "max_wall_ms": 110.11788541078568, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-v1", "median_wall_ms": 187.8696432262659, "min_wall_ms": 187.8387656211853, "max_wall_ms": 187.90173438191414, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-mma", "median_wall_ms": 90.03720312565565, "min_wall_ms": 89.73631772398949, "max_wall_ms": 90.47265625, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-auto", "median_wall_ms": 71.52583594620228, "min_wall_ms": 71.51471875607967, "max_wall_ms": 71.60502083599567, "repeats": 4},
+    {"context": 8191, "configuration": "off-auto", "median_wall_ms": 89.60349218547344, "min_wall_ms": 89.55400522053242, "max_wall_ms": 89.64934375882149, "repeats": 4}
+  ],
+  "plain-screen": [
+    {"context": 4095, "configuration": "v3-sg8", "median_wall_ms": 19.12466862052679, "min_wall_ms": 19.115324217826128, "max_wall_ms": 19.186720050871372, "repeats": 4},
+    {"context": 4095, "configuration": "v3-sg16", "median_wall_ms": 19.20809244737029, "min_wall_ms": 19.19857681915164, "max_wall_ms": 19.242640625685453, "repeats": 4},
+    {"context": 4095, "configuration": "tuned-v1", "median_wall_ms": 24.652016278356314, "min_wall_ms": 24.626954425126314, "max_wall_ms": 24.680617187172174, "repeats": 4},
+    {"context": 4095, "configuration": "tuned-mma", "median_wall_ms": 18.84016601368785, "min_wall_ms": 18.7765091098845, "max_wall_ms": 18.927097655832767, "repeats": 4},
+    {"context": 4095, "configuration": "tuned-auto", "median_wall_ms": 18.245068358257413, "min_wall_ms": 18.228634119033813, "max_wall_ms": 18.266444012522697, "repeats": 4},
+    {"context": 4095, "configuration": "off-auto", "median_wall_ms": 18.268166013062, "min_wall_ms": 18.260683596134186, "max_wall_ms": 18.30958854034543, "repeats": 4},
+    {"context": 8191, "configuration": "v3-sg8", "median_wall_ms": 22.934354167431593, "min_wall_ms": 22.87791796773672, "max_wall_ms": 22.987752605229616, "repeats": 4},
+    {"context": 8191, "configuration": "v3-sg16", "median_wall_ms": 23.156908854842186, "min_wall_ms": 23.112807296216488, "max_wall_ms": 23.179997395724058, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-v1", "median_wall_ms": 31.045458983629942, "min_wall_ms": 30.997169267386198, "max_wall_ms": 31.077553384006023, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-mma", "median_wall_ms": 22.059863284230232, "min_wall_ms": 22.020666662603617, "max_wall_ms": 22.07423046603799, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-auto", "median_wall_ms": 21.095799481496215, "min_wall_ms": 21.081287760287523, "max_wall_ms": 21.475509110838175, "repeats": 4},
+    {"context": 8191, "configuration": "off-auto", "median_wall_ms": 21.105820963159204, "min_wall_ms": 21.084929689764977, "max_wall_ms": 21.127165365964174, "repeats": 4}
+  ],
+  "n7-geometry": [
+    {"context": 4095, "configuration": "v3-sg8", "median_wall_ms": 59.03019791841507, "min_wall_ms": 59.012031242251396, "max_wall_ms": 59.035374999046326, "repeats": 4},
+    {"context": 4095, "configuration": "v3-sg16", "median_wall_ms": 52.716632820665836, "min_wall_ms": 52.51232813298702, "max_wall_ms": 52.81369270384312, "repeats": 4},
+    {"context": 4095, "configuration": "mma-g80-sg16", "median_wall_ms": 52.92468750476837, "min_wall_ms": 52.91086979210377, "max_wall_ms": 53.0044427216053, "repeats": 4},
+    {"context": 4095, "configuration": "mma-g160-sg8", "median_wall_ms": 50.905283853411674, "min_wall_ms": 50.842552080750465, "max_wall_ms": 50.994598954916, "repeats": 4},
+    {"context": 4095, "configuration": "mma-g40-sg8", "median_wall_ms": 55.130981773138046, "min_wall_ms": 55.10261978209019, "max_wall_ms": 55.19089062511921, "repeats": 4},
+    {"context": 4095, "configuration": "mma-g160-sg4", "median_wall_ms": 54.28012239187956, "min_wall_ms": 54.1710000038147, "max_wall_ms": 54.305005207657814, "repeats": 4},
+    {"context": 4095, "configuration": "mma-g80-sg4", "median_wall_ms": 54.40410416573286, "min_wall_ms": 54.313739597797394, "max_wall_ms": 54.45963542163372, "repeats": 4},
+    {"context": 4095, "configuration": "mma-g40-sg4", "median_wall_ms": 63.08865884691477, "min_wall_ms": 63.080078125, "max_wall_ms": 63.14790625870228, "repeats": 4},
+    {"context": 4095, "configuration": "mma-g20-sg4", "median_wall_ms": 80.96847396343946, "min_wall_ms": 80.95486977696419, "max_wall_ms": 80.97814582288265, "repeats": 4},
+    {"context": 4095, "configuration": "tuned-auto", "median_wall_ms": 51.640789069235325, "min_wall_ms": 51.586713552474976, "max_wall_ms": 51.69042706489563, "repeats": 4},
+    {"context": 4095, "configuration": "off-auto", "median_wall_ms": 69.04939322918653, "min_wall_ms": 68.98506772518158, "max_wall_ms": 69.11395311355591, "repeats": 4},
+    {"context": 8191, "configuration": "v3-sg8", "median_wall_ms": 85.77212762087584, "min_wall_ms": 85.67852082848549, "max_wall_ms": 86.07007290422916, "repeats": 4},
+    {"context": 8191, "configuration": "v3-sg16", "median_wall_ms": 72.92908854037523, "min_wall_ms": 72.86221873760223, "max_wall_ms": 73.11218750476837, "repeats": 4},
+    {"context": 8191, "configuration": "mma-g80-sg16", "median_wall_ms": 73.44098437577486, "min_wall_ms": 73.42234897613525, "max_wall_ms": 73.49097396433353, "repeats": 4},
+    {"context": 8191, "configuration": "mma-g160-sg8", "median_wall_ms": 69.42838282138109, "min_wall_ms": 69.40799480676651, "max_wall_ms": 69.70232293009758, "repeats": 4},
+    {"context": 8191, "configuration": "mma-g40-sg8", "median_wall_ms": 78.32378385215998, "min_wall_ms": 78.29700519144535, "max_wall_ms": 78.47933332622051, "repeats": 4},
+    {"context": 8191, "configuration": "mma-g160-sg4", "median_wall_ms": 76.41928906738758, "min_wall_ms": 76.40439583361149, "max_wall_ms": 76.99164582788944, "repeats": 4},
+    {"context": 8191, "configuration": "mma-g80-sg4", "median_wall_ms": 76.38715884834528, "min_wall_ms": 76.37105730175972, "max_wall_ms": 76.42981250584126, "repeats": 4},
+    {"context": 8191, "configuration": "mma-g40-sg4", "median_wall_ms": 94.07944270968437, "min_wall_ms": 94.02663542330265, "max_wall_ms": 94.12777602672577, "repeats": 4},
+    {"context": 8191, "configuration": "mma-g20-sg4", "median_wall_ms": 129.68003646284342, "min_wall_ms": 129.56520833075047, "max_wall_ms": 129.80196875333786, "repeats": 4},
+    {"context": 8191, "configuration": "tuned-auto", "median_wall_ms": 71.2324296683073, "min_wall_ms": 71.18075519800186, "max_wall_ms": 72.73988543450832, "repeats": 4},
+    {"context": 8191, "configuration": "off-auto", "median_wall_ms": 88.6006171926856, "min_wall_ms": 88.54581773281097, "max_wall_ms": 88.71262501180172, "repeats": 4}
+  ]
+}

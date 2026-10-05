@@ -1,0 +1,20 @@
+{
+  "cache_external_inputs": false,
+  "compact": true,
+  "gemm_overrides": {
+    "1": {
+      "groups": 640
+    }
+  },
+  "ksplit": 4,
+  "mode": "native",
+  "nvfp4_layout": "tile",
+  "nvfp4_tile_block": 32,
+  "post_norm_loads": 16,
+  "post_norm_once": true,
+  "post_norm_prefold": false,
+  "sgs": 4,
+  "staged_tk": 64,
+  "tn": 32,
+  "workers": 160
+}

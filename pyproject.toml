@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "cmake>=3.24; sys_platform == 'darwin'", "nanobind>=2; sys_platform == 'darwin'"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lithos-metal"
+version = "0.1.2"
+description = "lithos-metal: local LLM inference on Apple silicon."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26"]
+
+[project.urls]
+Homepage = "https://github.com/lithos-ai/lithos-metal"
+Repository = "https://github.com/lithos-ai/lithos-metal"
+Issues = "https://github.com/lithos-ai/lithos-metal/issues"
+
+[project.scripts]
+lithos-metal = "monolith.cli:main"
+
+[project.optional-dependencies]
+# Oracles, goldens and weight loading. The contract tier and the runtime never need these.
+oracle = ["torch>=2.4", "safetensors>=0.4", "transformers>=5.0", "huggingface_hub>=0.30"]
+dev = ["pytest>=8"]
+serve = ["fastapi>=0.115", "pydantic>=2.9", "uvicorn>=0.30", "transformers>=5.0", "safetensors>=0.4", "huggingface_hub>=0.30", "jinja2>=3.1"]
+
+[tool.setuptools.packages.find]
+include = ["monolith*"]
+
+[tool.setuptools.package-data]
+"monolith.backends.metal" = ["*/config*.json", "*/recipes/*/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

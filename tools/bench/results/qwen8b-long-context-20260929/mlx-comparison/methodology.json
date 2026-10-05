@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-29",
+  "runtime_revision": "81a2f80",
+  "machine": "Apple M5 Pro, 20 GPU cores, 24GB, macOS 26.5.1",
+  "power": "AC power, 100% battery reported. No GPU frequency lock.",
+  "monolith_python": "3.13.15",
+  "mlx_python": "3.12.14",
+  "mlx_versions": {
+    "mlx": "0.32.1",
+    "mlx-lm": "0.32.0"
+  },
+  "same_inputs": "All 12 input token-ID SHA256 values match across both Python/tokenizer environments; same checkpoint paths and exact raw prompts.",
+  "configuration": "Greedy, batch 1, unquantized full KV, fresh request state, 128 output tokens. Monolith: autotune+commute_norm, attention auto, capacity 8704, prefill64. MLX uses unmodified generators: native plain prefill2048/N7 prefill512, then prefill64 for both. Same NVFP4 Qwen3 8B and affine-INT4 Qwen3 0.6B.",
+  "order": "One resident engine/process, serial requests. At 4K: MLX then Monolith per mode; at 8K the order reverses. Then MLX prefill64 sensitivity runs. Finally 3-prompt plain controls with both MLX prefill sizes and reversed engine order at 8K. Exact launches retained.",
+  "samples": {
+    "primary": 48,
+    "matched_prefill": 24,
+    "plain_controls": 24,
+    "total_requests": 96,
+    "measured": 78,
+    "warmups": 18
+  },
+  "timing": {
+    "monolith": "Generation.decode_wall_ms/127 for per-output latency; /len(accepted) for N7 round average.",
+    "mlx": "First-to-last native token yield /127 for per-output latency. Full N7 round intervals between consecutive non-draft yields whose proposed count is seven. First round and shortened tail rounds excluded; no detokenization in timed loop.",
+    "caveats": "MLX first yield follows an entire verification round, so its first-to-last per-token timer excludes computation for other tokens in that first burst. Monolith terminal round may skip its following draft chain. These endpoints slightly favor opposite engines on the two metrics.",
+    "round_bound": "Monolith total decode wall/(executed rounds-1) bounds the average of the preceding completed full cycles from above: charge all terminal/queued work to those cycles. Every measured prompt still beats each corresponding MLX full-round mean.",
+    "drift": "Absolute latency shifted between blocks with unchanged Monolith cache/pack and 24/24 identical output+acceptance sequences versus the prior tuning run. Late MLX plain controls converge for both prefill sizes, so do not attribute the initial large shift to prefill size alone."
+  },
+  "limits": "One prompt family and two context lengths. Generated outputs differ across engines and prefill modes; not a reference-accuracy or universal workload claim. No meaningful plain-decode advantage is established.",
+  "instrumentation_sha256": "33f5d942c8e5617443b8a06f9730f249b0f62776bc42e605215780ebeff53abd"
+}

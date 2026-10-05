@@ -1,0 +1,119 @@
+{
+  "chip": "Apple M3 Pro",
+  "gpu_family": "Apple9",
+  "gpu_cores": 18,
+  "memory_gb": 36,
+  "measured": "2026-09-19",
+  "os": "macOS 26.6.2",
+  "power": "battery",
+  "nominal_gbps": 153.6,
+  "crew": {
+    "threadgroups": 18,
+    "threads_per_threadgroup": 384,
+    "simdgroups_per_core_full_speed": 12,
+    "one_threadgroup_per_core": true,
+    "probe": "p4"
+  },
+  "in_flight_simdgroups_max": {
+    "value": 1536,
+    "probe": "p3a"
+  },
+  "streaming": {
+    "best_raw_gbps": [
+      124,
+      134
+    ],
+    "best_raw_pattern": "blocked 64KB, lane-contiguous 2KB sub-range, 4B loads (p5b); lane-interleaved not measured with 16B loads on this chip",
+    "lane_order": "either (lane-contiguous 134 vs interleaved-4B-at-16x-occupancy 132 GB/s tie)",
+    "per_core_uncontended_gbps": [
+      18.0,
+      18.7
+    ],
+    "cores_to_saturate": 12,
+    "probe": "p5b, p11(1)"
+  },
+  "dispatch": {
+    "boundary_us": [
+      1.6,
+      2.7
+    ],
+    "gpu_per_dispatch_us": [
+      1.3,
+      1.8
+    ],
+    "icb_replay_ms_per_1240": [
+      0.01,
+      0.02
+    ],
+    "sync_roundtrip_ms": [
+      0.12,
+      0.13
+    ],
+    "probe": "p7, p10"
+  },
+  "in_kernel_barrier_us": {
+    "static_slices": [
+      2.1,
+      2.6
+    ],
+    "static_slices_fenced": [
+      3.1,
+      3.9
+    ],
+    "own_steal": [
+      4.7,
+      6.1
+    ],
+    "probe": "p10"
+  },
+  "sharing": {
+    "inside_dispatch": "never (p6: 1.24-1.42 s wait)",
+    "typical": "per dispatch",
+    "worst_case": "one command buffer (130-140 ms behind 155 ms buffers; once 1.13 s)",
+    "max_cb_ms_default": 16,
+    "probe": "p6, p6b"
+  },
+  "overlap": {
+    "alu_hidden_in_bus_bound_pct": [
+      86,
+      114
+    ],
+    "encode_order_matters": false,
+    "two_bus_bound_gain_pct": [
+      -3,
+      10
+    ],
+    "probe": "p11"
+  },
+  "threadgroup_memory_faster": false,
+  "hot_read_ns": {
+    "device": [
+      62,
+      64
+    ],
+    "threadgroup": [
+      61,
+      64
+    ],
+    "probe": "p8"
+  },
+  "clock_simdgroup_ns_per_tick": [
+    47,
+    53
+  ],
+  "decode_gemv": {
+    "note": "p13/p14 not run on this chip yet"
+  },
+  "engine": {
+    "family": "Apple9",
+    "lane_order": "contiguous",
+    "threadgroups_per_core": 1,
+    "sibling_order": "either",
+    "max_cb_ms": 16,
+    "cost_T": {},
+    "note": "lane orders tied on this chip (p5b: contiguous 134 vs interleaved 132 GB/s); p12-p14 not run here yet, so no cost_T table"
+  },
+  "name": "apple-m3-pro-18c",
+  "backend": "m3_pro",
+  "validation": "measured"
+}

@@ -1,0 +1,23 @@
+# chip: Apple M5 Pro   gpu-cores: 20   ram: 24 GB
+# os: macOS 26.5.1 (25F80)   date: 2026-09-22T21:13:03Z   on-battery: 0
+
+################ p6_preemption ################
+Small dispatch on idle GPU: mean 0.177 ms, max 0.228 ms
+
+LONG dispatch on G=20 threadgroups x 384 (of 20 cores): long GPU time 1252 ms
+   5 small dispatches submitted while it ran; 5 completed before it ended: mean latency 198.617 ms, max 992.068 ms
+   first 6 latencies (ms): 0.33 0.24 0.22 0.23 992.07 
+
+LONG dispatch on G=18 threadgroups x 384 (of 20 cores): long GPU time 1252 ms
+   3 small dispatches submitted while it ran; 3 completed before it ended: mean latency 346.393 ms, max 1038.701 ms
+   first 6 latencies (ms): 0.26 0.22 1038.70 
+
+LONG dispatch on G=13 threadgroups x 384 (of 20 cores): long GPU time 1257 ms
+   1 small dispatches submitted while it ran; 1 completed before it ended: mean latency 1106.673 ms, max 1106.673 ms
+   first 6 latencies (ms): 1106.67 
+
+
+################ p6b_interleave ################
+1 command buffer  x 800 dispatches of ~1.5 ms        total 1159 ms | small dispatches on a 2nd queue meanwhile: n=1  mean 1048.24 ms  max 1048.24 ms | last sample (may straddle the end): 1048.2 ms
+8 command buffers x 100 dispatches                   total 1156 ms | small dispatches on a 2nd queue meanwhile: n=62  mean 2.82 ms  max 129.45 ms | last sample (may straddle the end): 0.2 ms
+80 command buffers x 10 dispatches (~15 ms each)     total 1153 ms | small dispatches on a 2nd queue meanwhile: n=57  mean 0.21 ms  max 1.23 ms | last sample (may straddle the end): 0.2 ms

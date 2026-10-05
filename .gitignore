@@ -1,0 +1,19 @@
+*.egg-info/
+*.metallib
+*.pack
+*.pyc
+.DS_Store
+.pytest_cache/
+.venv/
+__pycache__/
+build/
+dist/
+probes/build/
+monolith/runtime/_native*.so
+
+# Generated M5 Max evidence; retained locally and in the archived study commit.
+docs/research/figures/
+tools/bench/results/m5max-27b-n7/
+tools/bench/results/m5max-27b-dspark/
+tools/bench/results/m5max-qwen-llama/
+probes/results/Apple-M5-Max_40c_macOS26.5.1_20261001-130937.txt

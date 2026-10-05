@@ -1,0 +1,89 @@
+{
+  "implementation_commit": "40a78fd",
+  "chip": "Apple M5 Pro",
+  "date": "2026-09-28",
+  "tokens": [
+    1,
+    4,
+    6,
+    8
+  ],
+  "contexts": [
+    128,
+    1024
+  ],
+  "individual": {
+    "bf16": {
+      "cases": 192,
+      "minimum_latency_wins": 192,
+      "all_pair_wins": 192,
+      "mlx_numerical_passes": 192,
+      "worst_minimum_ratio": 0.9099857537376765,
+      "min_cosine": 0.9998827454620104,
+      "failures": [],
+      "raw_url": "https://github.com/jiazhihao/mpk-apple/blob/5c11bb494530f9ad31ccf39be55771a69c40a018/tools/bench/results/apple-m5-pro-20c_final_individual_bf16_20260928.jsonl"
+    },
+    "nvfp4": {
+      "cases": 288,
+      "minimum_latency_wins": 288,
+      "all_pair_wins": 287,
+      "mlx_numerical_passes": 288,
+      "worst_minimum_ratio": 0.9562221846519002,
+      "min_cosine": 0.9996764171271497,
+      "failures": [],
+      "raw_url": "https://github.com/jiazhihao/mpk-apple/blob/5c11bb494530f9ad31ccf39be55771a69c40a018/tools/bench/results/apple-m5-pro-20c_final_individual_nvfp4_20260928.jsonl"
+    },
+    "int4": {
+      "cases": 224,
+      "minimum_latency_wins": 224,
+      "all_pair_wins": 221,
+      "mlx_numerical_passes": 223,
+      "worst_minimum_ratio": 0.9775432566995373,
+      "min_cosine": 0.9989583830269275,
+      "failures": [
+        {
+          "layers": [
+            24
+          ],
+          "T": 1,
+          "context": 1024,
+          "cosine": 0.9989583830269275
+        }
+      ],
+      "raw_url": "https://github.com/jiazhihao/mpk-apple/blob/5c11bb494530f9ad31ccf39be55771a69c40a018/tools/bench/results/apple-m5-pro-20c_final_individual_int4_20260928.jsonl"
+    }
+  },
+  "streaming": {
+    "bf16": {
+      "cases": 8,
+      "minimum_latency_wins": 8,
+      "all_pair_wins": 7,
+      "mlx_numerical_passes": 8,
+      "worst_minimum_ratio": 0.9905162449773401,
+      "min_cosine": 0.999937703937908,
+      "failures": [],
+      "raw_url": "https://github.com/jiazhihao/mpk-apple/blob/5c11bb494530f9ad31ccf39be55771a69c40a018/tools/bench/results/apple-m5-pro-20c_final_stack_bf16_20260928.jsonl"
+    },
+    "nvfp4": {
+      "cases": 8,
+      "minimum_latency_wins": 8,
+      "all_pair_wins": 5,
+      "mlx_numerical_passes": 8,
+      "worst_minimum_ratio": 0.9987073910087138,
+      "min_cosine": 0.9999386231778313,
+      "failures": [],
+      "raw_url": "https://github.com/jiazhihao/mpk-apple/blob/5c11bb494530f9ad31ccf39be55771a69c40a018/tools/bench/results/apple-m5-pro-20c_final_stack_nvfp4_20260928.jsonl"
+    },
+    "int4": {
+      "cases": 8,
+      "minimum_latency_wins": 8,
+      "all_pair_wins": 8,
+      "mlx_numerical_passes": 8,
+      "worst_minimum_ratio": 0.9758338814750289,
+      "min_cosine": 0.99990337484377,
+      "failures": [],
+      "raw_url": "https://github.com/jiazhihao/mpk-apple/blob/5c11bb494530f9ad31ccf39be55771a69c40a018/tools/bench/results/apple-m5-pro-20c_final_stack_int4_20260928.jsonl"
+    }
+  },
+  "evidence_commit": "5c11bb494530f9ad31ccf39be55771a69c40a018"
+}

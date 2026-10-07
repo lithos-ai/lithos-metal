@@ -68,7 +68,7 @@ class Backend:
 
         assets = getattr(self, 'assets', None)
         recipe_key, options = assets.options(prompt_tokens) if assets else (None, {'max_context': self.max_context})
-        sampling = (request.temperature, request.top_p, request.seed, recipe_key)
+        sampling = (request.temperature, request.top_p, request.top_k, request.seed, recipe_key)
         if self.session is not None and sampling == self.sampling:
             return
         # Keep CPU programs for a bounded number of recipe/sampling variants.
@@ -85,7 +85,7 @@ class Backend:
         self.session = sessions.pop(sampling, None)
         if self.session is None:
             self.session = load_session(self.model_dir, self.pack_dir, **options,
-                temperature=request.temperature, top_p=request.top_p, seed=request.seed,
+                temperature=request.temperature, top_p=request.top_p, top_k=request.top_k, seed=request.seed,
                 autotune=False, prefill_chunk_size=self.prefill_chunk_size, prefix_cache=True,
                 # exact chunks follow the 128-row chunking, its reusable prefixes included
                 prefix_cache_min_tokens=min(self.prefill_chunk_size, 128) if self.prefill_exact else self.prefill_chunk_size,

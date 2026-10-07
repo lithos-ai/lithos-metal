@@ -76,6 +76,7 @@ class ChatRequest(BaseModel):
     max_completion_tokens: int | None = Field(default=None, ge=1)
     temperature: float = Field(default=0.0, ge=0, le=2)
     top_p: float = Field(default=1.0, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=2**32 - 1)
     seed: int = Field(default=0, ge=0, le=2**64 - 1)
     stop: str | list[str] | None = None
     stream: bool = False
@@ -329,7 +330,7 @@ def anthropic_request(body):
         raise APIError('output_format is not supported')
     return ChatRequest(model=body['model'], messages=messages, tools=tools, tool_choice=converted,
         parallel_tool_calls=not choice.get('disable_parallel_tool_use', False), max_tokens=body['max_tokens'],
-        temperature=body.get('temperature', 0.0), top_p=body.get('top_p', 1.0),
+        temperature=body.get('temperature', 0.0), top_p=body.get('top_p', 1.0), top_k=body.get('top_k', 0),
         stop=body.get('stop_sequences'), stream=body.get('stream', False))
 
 
@@ -380,6 +381,6 @@ def responses_request(body):
         choice = {'type': 'function', 'function': {'name': choice['name']}}
     request = ChatRequest(model=body['model'], messages=messages, tools=tools, tool_choice=choice,
         parallel_tool_calls=body.get('parallel_tool_calls', True), max_tokens=body.get('max_output_tokens'),
-        temperature=body.get('temperature', 0.0), top_p=body.get('top_p', 1.0), stream=body.get('stream', False),
-        reasoning_effort=body.get('reasoning', {}).get('effort'))
+        temperature=body.get('temperature', 0.0), top_p=body.get('top_p', 1.0), top_k=body.get('top_k', 0),
+        stream=body.get('stream', False), reasoning_effort=body.get('reasoning', {}).get('effort'))
     return request, custom

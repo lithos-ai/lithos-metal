@@ -64,10 +64,14 @@ class MetalBackend:
     def optimize_draft(self, program, drafter, *, prefill=False):
         return drafter.optimize_program(program, prefill=prefill)
 
-    def optimize_prefill(self, program):
-        """Chip-owned tuning for large prompt chunks, before scratch reuse."""
+    def optimize_prefill(self, program, exact=False):
+        """Chip-owned tuning for large prompt chunks, before scratch reuse; ``exact`` must keep 128-row results."""
         return program
 
     def serving_recipes(self, model, drafter, quantization):
         """Only opt matching workloads into recipes validated on this chip."""
         return {}
+
+    def serving_prefill_chunk(self, recipes):
+        """Prompt rows per pass that ``optimize_prefill`` is tuned for on a served workload, if any."""
+        return None

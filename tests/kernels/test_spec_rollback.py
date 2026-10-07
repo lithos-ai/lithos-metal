@@ -64,6 +64,34 @@ def test_speculative_equals_plain_greedy(packs, verify):
     assert st["error"] == 0
 
 
+def test_speculative_equals_plain_greedy_without_the_dead_verify_state_store(packs, monkeypatch):
+    """decoder_fusion.elide_dead_gdn_state: the forward recurrence skips the state store its commit pass rewrites; with
+    almost every draft rejected the tokens still equal plain greedy."""
+    from monolith.compiler.decoder_fusion import elide_dead_gdn_state
+
+    tdir, ddir = packs
+    plain = Session(_model(tdir), str(tdir / "pack"), eos=-1, autotune=False)
+    model = _model(tdir)
+    drafter, _, cfg, _ = build(ddir, target_lm_head=model.lm_head)
+    pack_model(drafter, str(ddir), str(ddir / "pack"), PackLayout(rows=16))
+    spec = Session(model, str(tdir / "pack"), eos=-1, autotune=False, drafter=drafter, drafter_pack=str(ddir / "pack"), verify="threshold")
+    original, elided = Session._compile, []
+
+    def compile_(self, bound, *, dynamic, prefill):
+        prog = original(self, bound, dynamic=dynamic, prefill=prefill)
+        if self.drafter is not None and not prefill:
+            elide_dead_gdn_state(prog)
+            elided.append(sum(k.macros.get("DEAD_STATE") == "1" for k in prog.kernels.values()))
+        return prog
+
+    monkeypatch.setattr(Session, "_compile", compile_)
+    rng = np.random.default_rng(11)
+    for n_prompt, n_new in ((5, 24), (11, 20), (1, 12)):
+        ids = [int(x) for x in rng.integers(0, 50, n_prompt)]
+        assert spec.generate(ids, n_new).tokens == plain.generate(ids, n_new).tokens, n_prompt
+    assert elided and all(n > 0 for n in elided)
+
+
 def test_speculative_equals_plain_greedy_with_a_requantized_drafter(packs, tmp_path):
     """The drafter's BF16 matrices quantized at pack time (#103; INT4 affine here — its K % 256 fits the synthetic
     widths, nvfp4 needs K % 512 and the drafter's hidden must match the target head's): the session binds a fresh

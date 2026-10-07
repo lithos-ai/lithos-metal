@@ -66,6 +66,12 @@
 #ifndef SINGLE_PASS
 #define SINGLE_PASS 0
 #endif
+#ifndef DEAD_STATE
+#define DEAD_STATE 0                 // 1: a commit pass rewrites the slot this pass writes; skip the dead final store
+#endif
+#if DEAD_STATE && (COMMIT || !STEP_STATE)
+#error "dead-state elision needs a forward recurrence that reads StepState"
+#endif
 #if SINGLE_PASS && (!LOCAL_PREPARE || COMMIT)
 #error "single-pass recurrence requires local preparation and one state slice per SIMD group"
 #endif
@@ -445,6 +451,9 @@ kernel void gdn_mixer(device const ushort* proj [[buffer(0)]], device const usho
           }
 #endif
         }
+#if DEAD_STATE
+        if (st->prefill_left > 0u || t0 + TP < T)          // prompt chunks skip the commit; a later token pass re-reads it
+#endif
         for (uint i = 0; i < KR; i++) {
           for (uint j = 0; j < SL; j++) rec_out[((ulong)(h * DK + lane + 32u * i)) * DV + s * SL + j] = S[i][j];
         }

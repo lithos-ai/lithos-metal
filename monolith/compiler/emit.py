@@ -1149,7 +1149,26 @@ def _gdn_norm(ctx: _Ctx, op: Op) -> None:
             (ctx.t * hv, 1, 1), (32, 1, 1), op.kind, writes=[3], perm_out=bool(fused))
 
 
+def _draft_q(ctx: _Ctx, op: Op) -> None:
+    """A drafter's Markov step that samples: d_k ~ softmax(logits / temperature) by Gumbel-max; the logits row goes to
+    ``q_logits[k]`` and its log-sum-exp to ``q_lse[k]`` (drafter state: the next verify step evaluates q from them)."""
+    logits, q_logits, q_lse = op.inputs
+    k, temperature = op.attrs["draft_q"]
+    src = kernels.sample_source()
+    kp, kf = (ctx.kernel("sample", src, f, {"DRAFT_K": f"{k}u"}) for f in ("draft_q_partial", "draft_q_final"))
+    n = ctx.n_sg
+    pv, pi, pm, ps = (ctx.scratch(f"draft_q.{x}", n * 4, shared=True) for x in ("val", "idx", "max", "sum"))
+    prm = ctx.params("draft_q", kernels.sample_params(vocab=ctx.shape(logits)[1], t_active=1, n_sg=n, temperature=temperature))
+    grid, tg = ctx.crew_grid()
+    ctx.add(kp, [(0, *ctx.buf(logits)), (1, pv, 0), (2, pi, 0), (3, prm, 0), (4, pm, 0), (5, ps, 0), (6, *ctx.buf(q_logits))], grid, tg,
+            "draft_q_partial", writes=[1, 2, 4, 5, 6])
+    ctx.add(kf, [(0, pv, 0), (1, pi, 0), (2, *ctx.buf(op.outputs[0])), (3, prm, 0), (4, pm, 0), (5, ps, 0), (6, *ctx.buf(q_lse))], (1, 1, 1), (32, 1, 1),
+            "draft_q_final", writes=[2, 6])
+
+
 def _argmax(ctx: _Ctx, op: Op) -> None:
+    if "draft_q" in op.attrs:
+        return _draft_q(ctx, op)
     logits, = op.inputs
     token = op.outputs[0]
     t_c, t_src = ctx.rows_of(op)
@@ -1170,25 +1189,41 @@ def _argmax(ctx: _Ctx, op: Op) -> None:
 
 
 def _sample(ctx: _Ctx, op: Op) -> None:
-    logits, = op.inputs
+    logits, q = op.inputs[0], op.inputs[1:]                            # q = (q_logits, q_lse) of sampled drafts (lower_round)
     token = op.outputs[0]
     vocab = ctx.shape(logits)[1]
     a = op.attrs
     src = kernels.sample_source()
     macros = {"STEP_STATE": "1"}                                       # seed and step always come from StepState
-    kh, ks, kg, kf = (ctx.kernel("sample", src, f, macros) for f in ("sample_hist", "sample_select", "sample_gumbel", "argmax_final"))
+    kg, kf = (ctx.kernel("sample", src, f, macros) for f in ("sample_gumbel", "argmax_final"))
+    kh, ks = (ctx.kernel("sample", src, f, dict(macros, KEPT_STATS="1") if q else macros) for f in ("sample_hist", "sample_select"))
     hb, tb, pb = kernels.sample_workspace(ctx.t, ctx.n_sg)
     hist, tau = ctx.scratch("sample.hist", hb), ctx.scratch("sample.tau", tb)
     pv, pi = ctx.scratch("sample.val", pb), ctx.scratch("sample.idx", pb)
     prm = ctx.params("sample", kernels.sample_params(vocab=vocab, t_active=ctx.t, n_sg=ctx.n_sg, top_k=int(a.get("top_k", 0)),
                                                      temperature=float(a.get("temperature", 1.0)), top_p=float(a.get("top_p", 0.0)),
-                                                     min_p=float(a.get("min_p", 0.0)), seed=int(a.get("seed", 0)), step=0))
+                                                     min_p=float(a.get("min_p", 0.0)), seed=int(a.get("seed", 0)), step=0,
+                                                     topp_in_topk=bool(a.get("topp_in_topk"))))
     st = ctx.program.step_state
     grid, tg = ctx.crew_grid()
-    ctx.add(kh, [(0, *ctx.buf(logits)), (1, hist, 0), (3, prm, 0), (15, st, 0)], grid, tg, op.kind, writes=[1])
-    ctx.add(ks, [(1, hist, 0), (2, tau, 0), (3, prm, 0), (15, st, 0)], (ctx.t, 1, 1), (32, 1, 1), "sample_select", writes=[2])
+    bounds, stats = (ctx.scratch(f"sample.{x}", ctx.t * 8) for x in ("bounds", "stats")) if q else (None, None)
+    ctx.add(kh, [(0, *ctx.buf(logits)), (1, hist, 0), (3, prm, 0), (15, st, 0)] + ([(2, bounds, 0)] if q else []), grid, tg, op.kind,
+            writes=[1, 2] if q else [1])
+    ctx.add(ks, [(1, hist, 0), (2, tau, 0), (3, prm, 0), (15, st, 0)] + ([(4, stats, 0), (5, bounds, 0)] if q else []), (ctx.t, 1, 1), (32, 1, 1),
+            "sample_select", writes=[2, 4, 5] if q else [2])
     ctx.add(kg, [(0, *ctx.buf(logits)), (2, tau, 0), (3, prm, 0), (4, pv, 0), (5, pi, 0), (15, st, 0)], grid, tg, "sample_gumbel", writes=[4, 5])
     ctx.add(kf, [(0, pv, 0), (1, pi, 0), (2, *ctx.buf(token)), (3, prm, 0), (15, st, 0)], (ctx.t, 1, 1), (32, 1, 1), "argmax_final", writes=[2])
+    if q:
+        # accept each verified draft with min(1, p / q), rewrite token[] for the accept scan and draw the correction of
+        # the first rejected one from norm(max(p - q, 0)) (sample.metal)
+        ka, kr, krf = (ctx.kernel("sample", src, f, macros) for f in ("spec_q_accept", "spec_residual_partial", "spec_residual_final"))
+        flag = ctx.scratch("spec_q.flag", 16)
+        rv, ri = ctx.scratch("spec_q.val", ctx.n_sg * 4), ctx.scratch("spec_q.idx", ctx.n_sg * 4)
+        common = [(0, *ctx.buf(logits)), (1, tau, 0), (2, stats, 0), (3, prm, 0), (4, *ctx.buf(q[0])), (5, *ctx.buf(q[1])), (15, st, 0)]
+        ctx.add(ka, common + [(6, *ctx.buf(token)), (7, flag, 0)], (1, 1, 1), (32, 1, 1), "spec_q_accept", writes=[6, 7])
+        ctx.add(kr, common + [(7, flag, 0), (8, rv, 0), (9, ri, 0)], grid, tg, "spec_residual_partial", writes=[8, 9])
+        ctx.add(krf, [(0, rv, 0), (1, ri, 0), (2, *ctx.buf(token)), (3, prm, 0), (7, flag, 0), (15, st, 0)], (1, 1, 1), (32, 1, 1),
+                "spec_residual_final", writes=[2])
 
 
 # ---- the DSpark round (design §5.8; issue #24) ------------------------------------------------------------------
@@ -1485,6 +1520,13 @@ def lower_round(g: Graph, model: Model, drafter: Any, token: Value, profile: Pro
 
     acc = g.value("accepted", (1,), DType.U32)
     lm = bool(getattr(drafter, "lm_drafter", False))          # an LM drafter: the scan's bookkeeping differs (design §5.8)
+    if getattr(drafter, "sampling", None):
+        # sampled drafts: the target's sampler also runs the accept test against q, which the previous step's draft
+        # pass left in the drafter's state
+        sample = next((op for op in g.ops if op.kind == "sample" and op.outputs[0] is token), None)
+        if sample is None:
+            raise ValueError("lower_round: sampled drafts need the target's stochastic sampler")
+        sample.inputs.extend(drafter.q_state(g))
     g.op("accept_scan", [token], [acc], domain=BlockDomain("span", 1), klass=OpClass.SERIAL, **({"lm": True} if lm else {}))
     for op in list(g.ops):
         ck = op.attrs.get("commit_kind")

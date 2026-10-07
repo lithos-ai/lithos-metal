@@ -33,7 +33,7 @@ def test_response_and_auth():
     {"messages": []}, {"messages": [{"role": "tool", "content": "no"}]},
     {"messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "x"}}]}]},
     {"max_tokens": 0}, {"max_tokens": 2, "max_completion_tokens": 3},
-    {"temperature": -1}, {"top_p": 0}, {"stop": ""}, {"stop": ["a"] * 5},
+    {"temperature": -1}, {"top_p": 0}, {"top_k": -1}, {"top_k": 2**32}, {"stop": ""}, {"stop": ["a"] * 5},
     {"n": 2}, {"max_tokens": True}, {"tools": [{"type": "web_search"}]},
 ])
 def test_reject_unsupported_and_invalid_requests(options):
@@ -113,11 +113,14 @@ def test_template_sampling_context_and_stop(monkeypatch, eos):
     response = client.post("/v1/chat/completions", json=payload(max_tokens=2, temperature=0.7, top_p=0.9, seed=42))
     assert response.json()["choices"][0]["finish_reason"] == "length"
     assert calls[-1]["temperature"] == 0.7 and calls[-1]["top_p"] == 0.9 and calls[-1]["seed"] == 42
-    assert len(calls) == 2
+    assert len(calls) == 2 and calls[-1]["top_k"] == 0
+    for _ in range(2):                                                  # top_k is part of the session key
+        client.post("/v1/chat/completions", json=payload(max_tokens=2, temperature=0.7, top_p=0.9, top_k=20, seed=42))
+    assert len(calls) == 3 and calls[-1]["top_k"] == 20
     response = client.post("/v1/chat/completions", json=payload(max_tokens=7))
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "context_length_exceeded"
-    assert len(calls) == 2
+    assert len(calls) == 3
     parts = [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]
     client.post("/v1/chat/completions", json=payload(max_tokens=2, messages=[{"role": "user", "content": parts}]))
     assert prompts[-1][0] == [{"role": "user", "content": "ab"}]
@@ -126,8 +129,9 @@ def test_template_sampling_context_and_stop(monkeypatch, eos):
 def test_cli_accepts_hub_ids_and_optional_cache():
     from monolith.serve import parse_args
     args = parse_args(['--model', 'org/target', '--draft', 'org/draft'])
-    assert args.pack is None and args.draft == 'org/draft' and args.draft_kind == 'dspark'
-    for flags in (['--draft-kind', 'lm'], ['--draft-pack', 'pack'], ['--kernel-config-key', '128']):
+    assert args.pack is None and args.draft == 'org/draft' and args.draft_kind == 'dspark' and args.draft_sampling == 'argmax'
+    assert parse_args(['--model', 'org/target', '--draft', 'org/draft', '--draft-sampling', 'sample']).draft_sampling == 'sample'
+    for flags in (['--draft-kind', 'lm'], ['--draft-pack', 'pack'], ['--kernel-config-key', '128'], ['--draft-sampling', 'sample']):
         with pytest.raises(SystemExit):
             parse_args(['--model', 'org/target', *flags])
 
@@ -157,4 +161,15 @@ def test_draft_options_survive_sampling_changes_and_metrics_are_per_request(monk
         assert response.headers['x-monolith-verify-tokens'] == '8'
     assert len(calls) == 2
     assert all(c['drafter_dir'] == 'draft' and c['drafter_pack'] == 'draft-pack'
-               and c['verify_length'] == 7 for c in calls)
+               and c['verify_length'] == 7 and c['draft_sampling'] == 'argmax' for c in calls)
+
+
+def test_cli_prefill_chunk_is_a_size_an_exact_size_or_the_chips_exact_size():
+    from monolith.serve import parse_args
+    parse = lambda *flags: parse_args(['--model', 'org/target', *flags]).prefill_chunk_size
+    assert parse() == (None, True) == parse('--prefill-chunk-size', 'auto-exact')
+    assert parse('--prefill-chunk-size', '128') == (128, False)
+    assert parse('--prefill-chunk-size', '512-exact') == (512, True)
+    for value in ('auto', '0', '0-exact', 'exact', '-exact'):
+        with pytest.raises(SystemExit):
+            parse('--prefill-chunk-size', value)

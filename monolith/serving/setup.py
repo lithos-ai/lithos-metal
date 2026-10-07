@@ -30,6 +30,8 @@ class ServingAssets:
     gamma: int = 0
     recipes: dict | None = None
     recipe_key: str | None = None
+    prefill_chunk_size: int | None = None
+    draft_sampling: str = 'argmax'
 
     def options(self, prompt_tokens):
         profile = copy.deepcopy(self.profile)
@@ -38,7 +40,7 @@ class ServingAssets:
         if self.draft_dir:
             options.update(drafter_dir=str(self.draft_dir), drafter_pack=str(self.draft_pack),
                            drafter_kind='dspark', verify='fixed', verify_length=self.gamma,
-                           drafter_options=dict(block_size=self.gamma))
+                           drafter_options=dict(block_size=self.gamma), draft_sampling=self.draft_sampling)
         if self.recipes:
             keys = sorted(int(k) for k in self.recipes)
             key = self.recipe_key or str(max((k for k in keys if k <= prompt_tokens), default=keys[0]))
@@ -130,4 +132,5 @@ def prepare(args, *, device_info=None):
     LOG.info('Serving backend=%s, target=%s, draft=%s, verify=%s, recipe contexts=%s',
              profile.backend, model_dir, draft_dir, gamma + 1 if gamma else 1, sorted(recipes))
     return ServingAssets(model_dir, pack, args.max_context, capacity, profile,
-                         draft_dir, draft_pack, gamma, recipes, args.kernel_config_key)
+                         draft_dir, draft_pack, gamma, recipes, args.kernel_config_key,
+                         backend.serving_prefill_chunk(recipes), getattr(args, 'draft_sampling', 'argmax'))

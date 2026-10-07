@@ -297,3 +297,37 @@ def test_explicit_dynamic_decoder_recipe(layers, rows):
         for n,b in original.buffers.items():
             if b.role=='state':
                 assert engines[1].read(n)==engines[2].read(n)
+
+
+def test_fused_mixer_skips_the_state_store_a_commit_pass_rewrites(layers):
+    """DEAD_STATE reaches the megakernel: the read-out is unchanged and the write slot is stored only in prompt chunks."""
+    from monolith.compiler.decoder_fusion import optimize
+    dev, profile, build = layers
+    profile = copy.deepcopy(profile)
+    profile.accelerator_min_t['bf16'] = 2
+    original, output = build(profile=profile, dynamic_t=True, t_min=2, gdn_mixer_fusion=False)
+    marked = copy.deepcopy(original)
+    for kernel in marked.kernels.values():
+        if kernel.function == 'gdn_mixer':
+            kernel.macros['DEAD_STATE'] = '1'
+    programs = [optimize(p, {'gdn': profile.gdn_mixer_fusion})[1] for p in (original, marked)]
+    assert all(sum(o.name.endswith('_megakernel') for o in p.ops) == 2 for p in programs)
+    stored, skipping = [Engine(p, dev) for p in programs]
+    recurrent = [n for n in original.buffers if n.endswith('rec_state')]
+    assert len(recurrent) == 2
+    rng = np.random.default_rng(31)
+    for step, prefill_left in enumerate((1, 0)):
+        x = f32_to_bf16(rng.normal(0, .1, (8, 1024)).astype(np.float32)).tobytes()
+        before = {n: skipping.read(n) for n in recurrent}
+        for e in (stored, skipping):
+            e.buffers['hidden'].write(x, 0)
+            e.buffers[e.program.step_state].write(e.program.layout.pack(dict(step=step, t_this_step=8, prefill_left=prefill_left)), 0)
+            e.run(1, steps_per_cb=1, in_flight=1)
+        assert stored.read(output) == skipping.read(output)
+        for n in recurrent:
+            half = len(before[n]) // 2
+            written = slice(((step + 1) & 1) * half, (((step + 1) & 1) + 1) * half)
+            if prefill_left:
+                assert stored.read(n) == skipping.read(n) != before[n]
+            else:
+                assert skipping.read(n) == before[n] and stored.read(n)[written] != before[n][written]

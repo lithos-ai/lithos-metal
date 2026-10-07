@@ -121,3 +121,76 @@ def test_direct_operands_reject_quantized_weight_expansion(fmt):
     with pytest.raises(ValueError, match='quantized weights must stay compact'):
         direct_bf16_projection(p, op)
     assert p.buffers == {}
+
+
+def test_exact_policy_reads_decoder_layouts_and_keeps_bf16_operands(monkeypatch):
+    from monolith.backends.metal.m5_max_40c import prefill
+    record, calls = {'tn': 32}, []
+    monkeypatch.setattr(prefill, 'decoder_layout', lambda program, op, tn, rows: record)
+    monkeypatch.setattr(prefill, 'decoder_projection', lambda program, op, layout: calls.append(('decoder', layout)))
+    monkeypatch.setattr(prefill, 'packed_nvfp4_projection', lambda *args: calls.append('private'))
+    monkeypatch.setattr(prefill, 'direct_bf16_projection', lambda *args: calls.append('direct'))
+
+    def program(fmt, n, k):
+        params = struct.pack('<IIIIfIII', n, n//32, 960, 512, 1., 0, n//16, 0)
+        kernel = KernelSpec('', 'gemm_tile', {'TK': '128u', 'TN': '32u', 'TM': '32', 'T_SRC': '0'})
+        op = OpSpec('gemm', [(0, 'weights', 0), (4, 'params', 0)], (80, 16, 1), (384, 1, 1),
+                    meta={'format': fmt, 'n': n, 'k': k, 't_variant': 512})
+        return Program({'gemm': kernel}, {'params': BufferSpec(32, params, 'params'),
+                                        'weights': BufferSpec(64, role='weights')}, [op])
+    p = get_backend('m5_max_40c').optimize_prefill(program('nvfp4', 34816, 5120), exact=True)
+    assert calls == [('decoder', record)]
+    assert (p.ops[0].grid, p.ops[0].threadgroup, p.kernels[p.ops[0].kernel].macros['TN']) == ((80, 16, 1), (256, 1, 1), '32u')
+    record = None                                          # no verification graph: the private layout, as without exact
+    get_backend('m5_max_40c').optimize_prefill(program('nvfp4', 34816, 5120), exact=True)
+    get_backend('m5_max_40c').optimize_prefill(program('nvfp4', 34816, 5120))
+    original = program('bf16', 96, 5120)
+    assert get_backend('m5_max_40c').optimize_prefill(copy.deepcopy(original), exact=True).to_json() == original.to_json()
+    assert calls == [('decoder', {'tn': 32}), 'private', 'private']
+
+
+@pytest.mark.parametrize('fmt', ['nvfp4', 'fp8_e4m3'])
+def test_decoder_projection_maps_the_file_a_verification_graph_derived(tmp_path, monkeypatch, fmt):
+    import numpy as np
+    from monolith.compiler import fp8_tiles, nvfp4_tiles
+    from monolith.compiler.prefill import decoder_layout, decoder_projection
+    from monolith.formats import PackLayout
+    from monolith.formats.blm import pack_blm
+    from monolith.kernels import unit_geometry
+    for module in (fp8_tiles, nvfp4_tiles):
+        monkeypatch.setattr(module.tempfile, 'gettempdir', lambda: str(tmp_path))
+    rng = np.random.default_rng(3)
+    rows, width, nvfp4 = 64, 1024, fmt == 'nvfp4'
+    codes = rng.integers(0, 256, (rows, 32, width // (64 if nvfp4 else 32)), dtype=np.uint8)
+    scales = rng.integers(0, 127, (rows, 32, width // 512), dtype=np.uint8) if nvfp4 else None
+    raw, info = pack_blm(codes, scales, PackLayout(lane_order='interleaved16'), format=fmt, k=width,
+                         **({'scale_group': 16} if nvfp4 else {}))
+    (tmp_path / 'pack').write_bytes(raw)
+    weights = BufferSpec(len(raw), role='weights', file=str(tmp_path / 'pack'))
+    macros = dict(K=str(width), R=str(info.rows), UNIT_WORDS=str(info.words_per_unit), LANE_ORDER='1', TK='128u',
+                  TN='16u', KSPLIT='1u', **(unit_geometry(info) if nvfp4 else {}))
+    source = ('head\n#pragma clang loop unroll(full)\n      for (uint s = 0; s < NS_B; s++) original fill\n'
+              '#if EXP_MODE == 2\n      }\ntail')
+    op = OpSpec('gemm', [(0, 'w', 0), (2, 'xp', 0)], (1, 1, 1), (32, 1, 1), meta={'format': fmt})
+    prompt = Program({'gemm': KernelSpec(source, 'gemm_tile', macros)}, {'w': weights}, [op])
+    decoder = Program({}, {'w': weights}, [])
+    # layouts the prompt kernel cannot read in its own order are not offered
+    if nvfp4:
+        nvfp4_tiles.repack(decoder, ('w', 0), macros, rows, 32, 128, 32)
+    else:
+        fp8_tiles.repack(decoder, ('w', 0), dict(macros, Q_OUTER='1'), rows, 32, 32, 8)
+    assert decoder_layout(prompt, op, 16, rows) is None
+    packed = (nvfp4_tiles.repack(decoder, ('w', 0), dict(macros, Q_OUTER='1'), rows, 32, 64, 32) if nvfp4
+              else fp8_tiles.repack(decoder, ('w', 0), macros, rows, 32, 32, 8))
+    record = decoder_layout(prompt, op, 16, rows)
+    assert decoder_layout(prompt, op, 64, rows) is None      # file tiles must hold whole kernel tiles
+    assert (record['tn'], record['tk'], record['tile_block'], record['outer']) == (32, 64 if nvfp4 else 32, 32 if nvfp4 else 8, int(nvfp4))
+    decoder_projection(prompt, op, record)
+    kernel = prompt.kernels['gemm']
+    assert op.bindings == [(0, packed[0], 0), (2, 'xp', 0)] and prompt.buffers[packed[0]].file == packed[1].file
+    assert 'original fill' not in kernel.source and kernel.source.startswith('head') and kernel.source.endswith('tail')
+    assert (kernel.macros['FILE_TN'], kernel.macros['FILE_BLOCK'], kernel.macros['TK']) == ('32u', '32u' if nvfp4 else '8u', '128u')
+    assert op.meta == {'format': fmt, 'prefill_packed_nvfp4' if nvfp4 else 'prefill_packed_fp8': True}
+    kernel.macros['KSPLIT'] = '2u'
+    with pytest.raises(ValueError, match='unsplit 128-column'):
+        decoder_projection(prompt, op, record)

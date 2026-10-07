@@ -9,9 +9,9 @@ class Backend(MetalBackend):
     finalize = staticmethod(finalize)
     direct_attention_shape = staticmethod(direct_attention_shape)
 
-    def optimize_prefill(self, program):
+    def optimize_prefill(self, program, exact=False):
         from .prefill import optimize
-        return optimize(program)
+        return optimize(program, exact)
 
     def validate_config(self, config):
         from .validation import validate_gdn_config
@@ -20,3 +20,7 @@ class Backend(MetalBackend):
     def serving_recipes(self, model, drafter, quantization):
         from .serving import recipes
         return recipes(model, drafter, quantization)
+
+    def serving_prefill_chunk(self, recipes):
+        # prefill.py tunes 512-row tiles for the model the serving recipes match
+        return 512 if any(recipe.get('target') for recipe in recipes.values()) else None

@@ -21,7 +21,8 @@ from monolith.spec.lm import LMDrafter
 @pytest.mark.parametrize('accelerator', ['off', 'on'])
 @pytest.mark.parametrize('prefix_cache', [False, True])
 @pytest.mark.parametrize('resident', [False, True])
-def test_large_prefill_shares_state_with_small_decode(tmp_path, draft_kind, accelerator, prefix_cache, resident):
+@pytest.mark.parametrize('exact', [False, True])
+def test_large_prefill_shares_state_with_small_decode(tmp_path, draft_kind, accelerator, prefix_cache, resident, exact):
     if resident and draft_kind != 'dspark':
         pytest.skip('Resident verification prefill requires a speculative decoder recipe')
     target, draft = tmp_path / 'target', tmp_path / 'draft'
@@ -44,9 +45,11 @@ def test_large_prefill_shares_state_with_small_decode(tmp_path, draft_kind, acce
         pack_model(d, str(draft), str(draft / 'pack'), PackLayout(rows=16))
         options = dict(drafter=d, drafter_pack=str(draft / 'pack'), verify='fixed', verify_length=3)
     session = Session(m, str(target / 'pack'), eos=-1, autotune=False, attention='v1', accelerator=accelerator,
-                      prefix_cache=prefix_cache, decoder_kernel_config={} if resident else None, **options)
+                      prefix_cache=prefix_cache, decoder_kernel_config={} if resident else None, **options,
+                      **(dict(prefill_chunk_size=512, prefill_exact=True) if exact else {}))
     # Small-to-large allocation growth, exact boundary, partial chunk, several chunks, then reuse the small graph.
-    for count in (5, 128, 129, 259, 5):
+    # 137 and 265 leave one token in a 128-row chunk before the eight rows the resident decoder ingests.
+    for count in (5, 128, 129, 259, 137, 265, 5):
         ids = np.random.default_rng(count).integers(0, 50, count).tolist()
         expected = reference.generate(ids, 12).tokens
         result = session.generate(ids, 12)
@@ -64,7 +67,7 @@ def test_large_prefill_shares_state_with_small_decode(tmp_path, draft_kind, acce
         vocab = m.config.vocab_size
         assert dec.program.buffers['logits'].nbytes == (8 if draft_kind else 1) * vocab * 2
         assert session.decode_t_max == 8
-        assert session.prefill_chunk_size == 128
+        assert session.prefill_chunk_size == (512 if exact else 128)
         if prefix_cache:
             # Reuse a checkpoint while replaying only the final input token.
             repeated = session.generate(ids, 12)

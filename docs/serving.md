@@ -177,7 +177,15 @@ that is a [client limitation](https://github.com/anomalyco/opencode/blob/v1.18.3
 not buffering by this endpoint. Ordinary assistant text continues to stream separately.
 
 Defaults are 256 output tokens, greedy decoding, `top_p=1`, seed 0, and thinking disabled.
+All three request formats also accept `top_k` (default 0: off); with `--draft-sampling sample`, `top_p`
+is then taken over the renormalized top-k.
 Sampling changes rebuild the session while preserving the selected draft and kernel recipes.
+At `temperature > 0` a draft is by default the drafter's argmax (`--draft-sampling argmax`) and
+survives only when the target's sample equals it. `--draft-sampling sample` samples each draft
+from the drafter's distribution `q`, accepts it with probability `min(1, p/q)` against the
+target's sampling distribution `p`, and replaces the first rejected draft by a sample from the
+normalized `max(p - q, 0)`. Outputs follow `p` exactly either way; sampled drafts are accepted
+more often, most on high-entropy text. Greedy requests are unaffected.
 Usage counts all generated tokens, including EOS and text truncated by stop strings.
 
 Each request supplies the full conversation. Responses is stateless: `previous_response_id`
@@ -190,9 +198,19 @@ The default context capacity is 32768; use `--max-context` to fit the model and 
 DSpark reserves another `block_size - 1` positions internally for its attention block (six for
 this drafter). Thus `--max-context 33018` uses the same 33024-position capacity as the earlier
 27B benchmarks. Changing capacity creates another cache entry rather than modifying an old pack.
-Large prompts use 128-token prefill chunks by default (`--prefill-chunk-size`). With an explicit
-fixed-verification decoder recipe, short prompts and cached tails of up to that length reuse
-the resident eight-row graph. This avoids remapping the prefill and decode weight layouts.
+`--prefill-chunk-size` takes `N`, `N-exact` or `auto-exact` (the default). `N-exact` processes
+N prompt tokens per pass and reproduces the results of 128-token passes bit for bit: the
+backend keeps the 128-row graph's reduction orders. On the 40-core M5 Max that means 32-key
+attention blocks and projections that read the decoder's packed weights in their own order,
+so the prompt and verification graphs map one copy of those weights and stay allocated
+together when they fit Metal's working set. Only a chunk of one token depends on the chunking
+(the 128-row graph computes it with one-row projection kernels), so a request whose 128-token
+chunking contains one runs as 128-token passes on that graph. `auto-exact` uses the size the
+backend is tuned for (512 for the Qwen3.8-27B recipe on the 40-core M5 Max) and 128 elsewhere;
+a plain `N` keeps that size's own reduction orders.
+With an explicit fixed-verification decoder recipe, short prompts and cached tails of up to one
+chunk (128 tokens with `-exact`) reuse the resident eight-row graph. This avoids remapping the
+prefill and decode weight layouts.
 Large prompts switch to the decoder for their final input rows before publishing any text,
 so that layout transition does not interrupt the output stream.
 The server keeps at most two exact-token CPU checkpoints within a budget of one eighth of
@@ -241,8 +259,8 @@ accepted prompt rows, and the forward GDN pass retains state in registers throug
 the chunk. Temporary allocations are reused after their last consumer. Decode
 still uses the existing seven-proposal DSpark recipe.
 
-The measured throughput choice for this model/device is `--prefill-chunk-size 512`.
-The portable default remains 128. In isolated whole-program GPU measurements
+The measured throughput choice for this model/device is 512 rows per pass, which
+`auto-exact` selects; elsewhere the default remains 128. In isolated whole-program GPU measurements
 (three samples after warmup, synthetic cached KV), 128-row chunks improved as
 follows; these numbers exclude HTTP, tokenizer, checkpoint and layout-transition
 costs and are not time to first token:

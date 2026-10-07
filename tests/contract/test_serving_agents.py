@@ -107,6 +107,16 @@ def test_anthropic_effort_rejection_allows_client_retry():
     assert len(seen) == 1
 
 
+def test_top_k_in_every_request_format():
+    client, seen = make_client('hello')
+    user = [{'role': 'user', 'content': 'hi'}]
+    for path, body in (('/v1/chat/completions', {'messages': user}), ('/v1/messages', {'messages': user, 'max_tokens': 8}), ('/v1/responses', {'input': 'hi'})):
+        for top_k in (0, 20):
+            response = client.post(path, json={'model': 'local', **body, **({'top_k': top_k} if top_k else {})},
+                                   headers={'Authorization': 'Bearer test', 'x-api-key': 'test'})
+            assert response.status_code == 200 and seen[-1].top_k == top_k
+
+
 def test_custom_tool_preserves_multiline_input():
     patch = '*** Begin Patch\n  indented\n*** End Patch'
     client, _ = make_client('<tool_call><function=apply_patch><parameter=input>\n' + patch + '\n</parameter></function></tool_call>')

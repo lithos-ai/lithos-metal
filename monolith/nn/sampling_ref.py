@@ -17,8 +17,10 @@ import numpy as np
 M64 = np.uint64(0xFFFFFFFFFFFFFFFF)
 
 
-def thresholds(logits: np.ndarray, *, temperature: float = 1.0, top_k: int = 0, top_p: float = 0.0, min_p: float = 0.0) -> float:
-    """The logit threshold τ (−inf if nothing is enabled) for one position's BF16-valued ``logits``."""
+def thresholds(logits: np.ndarray, *, temperature: float = 1.0, top_k: int = 0, top_p: float = 0.0, min_p: float = 0.0,
+               topp_in_topk: bool = False) -> float:
+    """The logit threshold τ (−inf if nothing is enabled) for one position's BF16-valued ``logits``; ``topp_in_topk``:
+    top-p over the top-k set's renormalized softmax (the Hugging Face warpers' order)."""
     v = np.asarray(logits, dtype=np.float32)
     taus = []
     if top_k > 0:
@@ -28,7 +30,8 @@ def thresholds(logits: np.ndarray, *, temperature: float = 1.0, top_k: int = 0, 
         counts = np.array([(v == x).sum() for x in vals], dtype=np.float64)
         w = counts * np.exp((vals.astype(np.float64) - vals[0]) / temperature)
         cum = np.cumsum(w)
-        idx = int(np.argmax(cum >= top_p * cum[-1]))
+        total = cum[vals >= taus[0]][-1] if topp_in_topk and top_k > 0 else cum[-1]
+        idx = int(np.argmax(cum >= top_p * total))
         taus.append(float(vals[idx]))
     if min_p > 0.0:
         taus.append(float(v.max() + temperature * np.log(min_p)))
@@ -50,10 +53,10 @@ def gumbel_noise(seed: int, step: int, t: int, idx: np.ndarray) -> np.ndarray:
 
 
 def sample(logits: np.ndarray, *, seed: int, step: int, t: int = 0, temperature: float = 1.0, top_k: int = 0, top_p: float = 0.0,
-           min_p: float = 0.0) -> int:
+           min_p: float = 0.0, topp_in_topk: bool = False) -> int:
     """The token the kernel draws for one position (exact up to float32 summation of logit/T + noise)."""
     v = np.asarray(logits, dtype=np.float32)
-    tau = thresholds(v, temperature=temperature, top_k=top_k, top_p=top_p, min_p=min_p)
+    tau = thresholds(v, temperature=temperature, top_k=top_k, top_p=top_p, min_p=min_p, topp_in_topk=topp_in_topk)
     keys = v * np.float32(1.0 / temperature) + gumbel_noise(seed, step, t, np.arange(v.size))
     keys = np.where(v >= tau, keys, -np.inf).astype(np.float32)
     return int(np.argmax(keys))

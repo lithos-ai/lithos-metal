@@ -50,8 +50,9 @@ def _logits(rng, t, vocab, scale=4.0):
 
 @pytest.mark.parametrize("vocab", [248320, 1000])
 @pytest.mark.parametrize("opts", [dict(temperature=1.0), dict(temperature=0.7, top_k=40), dict(temperature=1.0, top_p=0.9),
-                                  dict(temperature=1.3, min_p=0.05), dict(temperature=0.8, top_k=50, top_p=0.95, min_p=0.02)],
-                         ids=["plain", "topk", "topp", "minp", "all"])
+                                  dict(temperature=1.3, min_p=0.05), dict(temperature=0.8, top_k=50, top_p=0.95, min_p=0.02),
+                                  dict(temperature=0.8, top_k=50, top_p=0.9, topp_in_topk=True)],
+                         ids=["plain", "topk", "topp", "minp", "all", "topp-in-topk"])
 def test_draws_equal_the_reference(dev, vocab, opts):
     rng = np.random.default_rng(vocab + len(opts))
     t = 3
@@ -76,7 +77,9 @@ def test_thresholds_match_the_hf_warpers(dev):
     lf = bf16_to_f32(lb)
     s = Sampler(dev, vocab, t)
     for opts, warper in [(dict(temperature=1.0, top_k=25), TopKLogitsWarper(25)), (dict(temperature=1.0, top_p=0.8), TopPLogitsWarper(0.8)),
-                         (dict(temperature=1.0, min_p=0.1), MinPLogitsWarper(0.1))]:
+                         (dict(temperature=1.0, min_p=0.1), MinPLogitsWarper(0.1)),
+                         (dict(temperature=1.0, top_k=25, top_p=0.8, topp_in_topk=True),             # the warpers chained: top-k, then top-p
+                          lambda ids, scores: TopPLogitsWarper(0.8)(ids, TopKLogitsWarper(25)(ids, scores)))]:
         _, tau = s.run(lb, seed=1, step=0, **opts)
         for i in range(t):
             hf = warper(None, torch.from_numpy(lf[i:i + 1]).clone())[0].numpy()

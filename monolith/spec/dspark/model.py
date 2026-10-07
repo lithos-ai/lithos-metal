@@ -156,6 +156,7 @@ class DSparkDrafter(Drafter):
         self.sts = None if sts is None else [float(x) for x in sts]
         if self.sts is not None and (len(self.sts) != self.gamma or any(x <= 0 for x in self.sts)):
             raise ValueError(f"DSparkDrafter: sts needs {self.gamma} positive temperatures")
+        self.sampling: Optional[float] = None    # a temperature: the Markov chain samples its drafts and keeps q for the verify
         h, eps = cfg.hidden_size, cfg.rms_norm_eps
         self.embed_tokens = None if shared_embedding else Embedding(cfg.vocab_size, h, "embed_tokens.weight", prefix="draft.embed_tokens.")
         self._target_embedding = None
@@ -263,6 +264,12 @@ class DSparkDrafter(Drafter):
         for blk in self.blocks:
             out += blk.mixer.state_entries()
         return out
+
+    def q_state(self, g: Graph) -> List[Value]:
+        """The sampled drafts' logits rows and their log-sum-exp of logits / temperature: written by the draft pass, read
+        by the next step's accept test. Not sequence state, so prefix checkpoints leave them out."""
+        shapes = {"draft.q_logits": ((self.gamma, self.cfg.vocab_size), DType.BF16), "draft.q_lse": ((self.gamma,), DType.F32)}
+        return [g.values[n] if n in g.values else g.state(n, s, d) for n, (s, d) in shapes.items()]
 
     def tables(self) -> Dict[str, Tuple[str, Any]]:
         from ...formats.fp import f32_to_bf16
@@ -395,7 +402,9 @@ class DSparkDrafter(Drafter):
             g.op("embed", [prev, w1], [e_k], domain=BlockDomain("rows", 1), klass=OpClass.MAP, packed=True)
             lg = self.markov_w2.lower(g, e_k, residual=g.view(f"draft.base_logits.{k}", base, k, 1), name=f"draft.markov.{k}.logits").value
             d_k = g.view(f"draft.tokens.{k}", drafts, k, 1)
-            g.op("argmax", [lg], [d_k], domain=BlockDomain("span", cfg.vocab_size), klass=OpClass.REDUCE)
+            q = self.q_state(g) if self.sampling else []
+            g.op("argmax", [lg] + q, [d_k], domain=BlockDomain("span", cfg.vocab_size), klass=OpClass.REDUCE,
+                 **({"draft_q": (k, self.sampling), "updates": [v.name for v in q]} if q else {}))
             prev = d_k
         # 4. the confidence head over [h_k ; W₁[prev_k]]
         conf = None

@@ -101,6 +101,31 @@ def test_round_program(pair):
     assert plain.context_capacity == 16 and struct.unpack_from("<IIiI", plain.buffers[[b for b in adv.bindings if b[0] == 3][0][1]].init)[3] == 16
 
 
+def test_sampled_drafts_in_the_round_program(pair):
+    """A sampling drafter (``Session(draft_sampling="sample")`` at temperature > 0): the Markov chain draws its drafts and
+    keeps q in state; the target's sampler reports the kept distribution and runs the accept test and the residual
+    draw ahead of the accept scan. Without it the round program has none of these."""
+    from monolith.nn import StochasticSampler
+    model, drafter, tp, dp = pair
+    drafter.sampling = 0.8
+    with pytest.raises(ValueError, match="stochastic sampler"):
+        compile_program(model, tp, PROF, dynamic_t=True, drafter=drafter, drafter_pack=dp)
+    model.sampler = StochasticSampler(temperature=0.8, top_k=40, top_p=0.95, seed=7, prefix="sampler.")
+    prog = compile_program(model, tp, PROF, dynamic_t=True, drafter=drafter, drafter_pack=dp)
+    names = [o.name.split(":")[0] for o in prog.ops]
+    i = names.index("spec_q_accept")
+    assert names[i - 1] == "argmax_final" and names[i + 1:i + 3] == ["spec_residual_partial", "spec_residual_final"] and i + 2 < names.index("accept_scan")
+    assert names.count("draft_q_partial") == names.count("draft_q_final") == 3 and names.count("argmax_partial") == 0
+    kern = {o.name: prog.kernels[o.kernel] for o in prog.ops}
+    assert kern["sample_select"].macros["KEPT_STATS"] == "1" and kern["draft_q_final"].macros["DRAFT_K"] == "2u"
+    assert prog.buffers["draft.q_logits"].role == prog.buffers["draft.q_lse"].role == "state"
+    assert not any(e.name.startswith("draft.q_") for e in drafter.state_entries())     # not in prefix checkpoints
+    drafter.sampling = None
+    plain = compile_program(model, tp, PROF, dynamic_t=True, drafter=drafter, drafter_pack=dp)
+    assert not any(o.name.startswith(("draft_q", "spec_")) for o in plain.ops) and "draft.q_logits" not in plain.buffers
+    assert all("KEPT_STATS" not in plain.kernels[o.kernel].macros for o in plain.ops)
+
+
 def test_context_capacity_and_input_width(pair, tmp_path):
     """A drafter with the smaller context sets the capacity (its caches less the block); a drafter whose hidden width
     is not the target's cannot go through the target's head (the kernels index the input by the slab's K)."""

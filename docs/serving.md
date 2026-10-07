@@ -178,6 +178,12 @@ not buffering by this endpoint. Ordinary assistant text continues to stream sepa
 
 Defaults are 256 output tokens, greedy decoding, `top_p=1`, seed 0, and thinking disabled.
 Sampling changes rebuild the session while preserving the selected draft and kernel recipes.
+At `temperature > 0` a draft is by default the drafter's argmax (`--draft-sampling argmax`) and
+survives only when the target's sample equals it. `--draft-sampling sample` samples each draft
+from the drafter's distribution `q`, accepts it with probability `min(1, p/q)` against the
+target's sampling distribution `p`, and replaces the first rejected draft by a sample from the
+normalized `max(p - q, 0)`. Outputs follow `p` exactly either way; sampled drafts are accepted
+more often, most on high-entropy text. Greedy requests are unaffected.
 Usage counts all generated tokens, including EOS and text truncated by stop strings.
 
 Each request supplies the full conversation. Responses is stateless: `previous_response_id`

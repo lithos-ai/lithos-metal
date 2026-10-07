@@ -80,7 +80,7 @@ class Session:
     def __init__(self, model: Model, pack_dir: str, profile: Optional[Profile] = None, *, layout: Optional[StepStateLayout] = None,
                  eos: Union[int, Sequence[int]] = -1, ring_capacity: int = 4096, temperature: float = 0.0, top_k: int = 0, top_p: float = 0.0,
                  min_p: float = 0.0, seed: int = 0, autotune: bool = True, drafter: Any = None, drafter_pack: Optional[str] = None,
-                 verify: str = "cost", verify_threshold: Optional[float] = None, verify_length: Optional[int] = None,
+                 verify: str = "cost", verify_threshold: Optional[float] = None, verify_length: Optional[int] = None, draft_sampling: str = "argmax",
                  barriers: str = "minimal", attention: Optional[str] = None, fast_math: bool = False, accelerator: Optional[str] = None,
                  prefill_chunk_size: int = 128, commute_norm: bool = True, gdn_mixer_fusion: bool = True,
                  prefill_attention: Optional[str] = None, decoder_kernel_config: Optional[Dict[str, Any]] = None,
@@ -88,7 +88,12 @@ class Session:
                  prefill_optimizations: bool = True, prefix_cache_max_bytes: Optional[int] = None,
                  prefill_exact: bool = False) -> None:
         """``drafter`` (a ``Drafter`` built with the model's head) and its pack turn the session speculative: one
-        small dynamic-T decode program holds the round; ``verify`` / ``verify_threshold`` as in ``compile_program``."""
+        small dynamic-T decode program holds the round; ``verify`` / ``verify_threshold`` as in ``compile_program``.
+        ``draft_sampling`` (temperature > 0): ``argmax`` drafts the drafter's argmax and keeps it iff the target's
+        sample equals it; ``sample`` draws the drafts from the drafter's distribution q and accepts them with
+        min(1, p / q), drawing the correction of a rejected one from norm(max(p - q, 0)). Both leave the target's
+        sampling distribution p unchanged; under ``sample`` p takes top-p over the renormalized top-k (the Hugging
+        Face warpers' order)."""
         from .runtime import _native as nt
 
         from .nn.pack_plan import bind_pack_formats
@@ -133,8 +138,16 @@ class Session:
             self.accelerator = os.environ["MONOLITH_ACCELERATOR"]                    # an A/B knob for the test tiers
         self.eos, self.ring_capacity = eos, ring_capacity
         self.seed = seed
+        if draft_sampling not in ("argmax", "sample"):
+            raise ValueError("draft_sampling must be 'argmax' or 'sample'")
+        q = draft_sampling == "sample" and temperature > 0
+        if drafter is not None and hasattr(drafter, "sampling"):
+            drafter.sampling = float(temperature) if q else None
+        elif q and drafter is not None:
+            raise ValueError("draft_sampling='sample' needs a drafter that can sample its drafts")
         # temperature 0 = greedy (the argmax path); otherwise the Gumbel-max sampler with the thresholds
-        model.sampler = GreedySampler(prefix="sampler.") if temperature <= 0 else StochasticSampler(temperature, top_k, top_p, min_p, seed, prefix="sampler.")
+        model.sampler = GreedySampler(prefix="sampler.") if temperature <= 0 else StochasticSampler(temperature, top_k, top_p, min_p, seed, prefix="sampler.",
+                                                                                                     topp_in_topk=q)
         self.engines: Dict[Any, Any] = {}
         self._programs: Dict[Any, Any] = {}
         # Pipelines do not retain weight buffers. Keep them even when memory

@@ -307,7 +307,7 @@ def test_stochastic_sampler_lowers_and_compiles(tmp_path):
     g = Graph("step")
     tok = m.lower(g)
     op = tok.producer
-    assert op.kind == "sample" and op.attrs["top_k"] == 40 and op.attrs["seed"] == 7
+    assert op.kind == "sample" and op.attrs["top_k"] == 40 and op.attrs["seed"] == 7 and op.attrs["topp_in_topk"] is False
     pack_model(m, str(tmp_path), str(tmp_path / "pack"), PackLayout(rows=16))
     prof = Profile.from_dict("p", {"gpu_cores": 20, "nominal_gbps": 307.0, "engine": {"family": "Apple10", "lane_order": "interleaved16"}})
     prog = compile_program(m, PackFile(tmp_path / "pack"), prof, t=1)
@@ -317,6 +317,10 @@ def test_stochastic_sampler_lowers_and_compiles(tmp_path):
     assert prog.buffers[next(b for b in prog.buffers if ".sample.hist." in b)].nbytes == 65536 * 4
     with pytest.raises(ValueError):
         StochasticSampler(temperature=0.0)
+    # top-p over the whole softmax (0.85: three tokens) or over the top-k set's mass (0.85 * 0.9: two)
+    from monolith.nn import sampling_ref
+    lg = np.log(np.array([0.5, 0.3, 0.1, 0.06, 0.04], dtype=np.float32))
+    assert sampling_ref.thresholds(lg, top_k=3, top_p=0.85) == lg[2] and sampling_ref.thresholds(lg, top_k=3, top_p=0.85, topp_in_topk=True) == lg[1]
 
 
 def test_emitter_honors_the_tuner(tmp_path):

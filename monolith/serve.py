@@ -390,6 +390,9 @@ def parse_args(argv=None):
     draft.add_argument("--no-draft", action='store_true', help="Disable automatic DSpark speculative decoding")
     parser.add_argument("--draft-kind", choices=['dspark'], default='dspark')
     parser.add_argument("--draft-block-size", type=int, help="Draft proposals per round (default: up to seven, plus one target anchor)")
+    parser.add_argument("--draft-sampling", choices=['argmax', 'sample'], default='argmax',
+                        help="Drafts at temperature > 0: argmax = the drafter's argmax, kept while the target samples it; "
+                             "sample = drawn from the drafter's distribution, accepted with min(1, p/q). Both preserve the target's distribution")
     parser.add_argument("--pack", help="Local pack-cache directory (default: $XDG_CACHE_HOME/lithos-metal/packs; reuses legacy cache); existing packs also accepted")
     parser.add_argument("--draft-pack", help="Optional separate draft cache or existing draft pack")
     parser.add_argument("--draft-quantization", choices=['auto', 'none', 'nvfp4'], default='auto',
@@ -417,7 +420,7 @@ def parse_args(argv=None):
     if args.draft_block_size is not None and args.draft_block_size < 1:
         parser.error('--draft-block-size must be positive')
     if not args.draft and (args.draft_pack or args.draft_revision or args.draft_block_size is not None or args.kernel_config or args.kernel_config_key
-                          or args.draft_quantization != 'auto'):
+                          or args.draft_quantization != 'auto' or args.draft_sampling != 'argmax'):
         parser.error('draft options require --draft or a target with an automatic DSpark head')
     return args
 

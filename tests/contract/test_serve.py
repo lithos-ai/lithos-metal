@@ -158,3 +158,14 @@ def test_draft_options_survive_sampling_changes_and_metrics_are_per_request(monk
     assert len(calls) == 2
     assert all(c['drafter_dir'] == 'draft' and c['drafter_pack'] == 'draft-pack'
                and c['verify_length'] == 7 for c in calls)
+
+
+def test_cli_prefill_chunk_is_a_size_an_exact_size_or_the_chips_exact_size():
+    from monolith.serve import parse_args
+    parse = lambda *flags: parse_args(['--model', 'org/target', *flags]).prefill_chunk_size
+    assert parse() == (None, True) == parse('--prefill-chunk-size', 'auto-exact')
+    assert parse('--prefill-chunk-size', '128') == (128, False)
+    assert parse('--prefill-chunk-size', '512-exact') == (512, True)
+    for value in ('auto', '0', '0-exact', 'exact', '-exact'):
+        with pytest.raises(SystemExit):
+            parse('--prefill-chunk-size', value)

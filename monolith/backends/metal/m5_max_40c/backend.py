@@ -20,3 +20,7 @@ class Backend(MetalBackend):
     def serving_recipes(self, model, drafter, quantization):
         from .serving import recipes
         return recipes(model, drafter, quantization)
+
+    def serving_prefill_chunk(self, recipes):
+        # prefill.py tunes 512-row tiles for the model the serving recipes match
+        return 512 if any(recipe.get('target') for recipe in recipes.values()) else None

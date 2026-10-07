@@ -28,14 +28,16 @@ from .serving.tool_stream import tool_prefixes
 class Backend:
     """One cached session; sampling changes rebuild its compiled programs, never duplicate model residency."""
 
-    def __init__(self, model_dir, pack_dir, max_context=4096, prefill_chunk_size=128, *, assets=None):
+    prefill_exact = False
+
+    def __init__(self, model_dir, pack_dir, max_context=4096, prefill_chunk_size=128, *, assets=None, prefill_exact=False):
         from transformers import AutoTokenizer
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True, trust_remote_code=False)
         if not self.tokenizer.chat_template:
             raise ValueError("The checkpoint must provide a chat template")
         self.model_dir, self.pack_dir, self.max_context = model_dir, pack_dir, max_context
-        self.prefill_chunk_size = prefill_chunk_size
+        self.prefill_chunk_size, self.prefill_exact = prefill_chunk_size, prefill_exact
         self.session, self.sampling = None, None
         self._sessions = {}
         self.assets = assets
@@ -85,7 +87,9 @@ class Backend:
             self.session = load_session(self.model_dir, self.pack_dir, **options,
                 temperature=request.temperature, top_p=request.top_p, seed=request.seed,
                 autotune=False, prefill_chunk_size=self.prefill_chunk_size, prefix_cache=True,
-                prefix_cache_min_tokens=self.prefill_chunk_size)
+                # exact chunks follow the 128-row chunking, its reusable prefixes included
+                prefix_cache_min_tokens=min(self.prefill_chunk_size, 128) if self.prefill_exact else self.prefill_chunk_size,
+                prefill_exact=self.prefill_exact)
         if prefix_cache is not None:
             self.session.prefix_cache = prefix_cache
         while len(sessions) > 8:
@@ -369,6 +373,15 @@ def create_app(backend, model_name, api_key=None):
     return app
 
 
+def _prefill_chunk(value):
+    """``N``, ``N-exact`` or ``auto-exact`` -> (rows, or None for the chip's measured size; exact)."""
+    rows, exact = (value[:-len('-exact')], True) if value.endswith('-exact') else (value, False)
+    rows = None if (rows, exact) == ('auto', True) else int(rows)
+    if rows is not None and rows < 1:
+        raise argparse.ArgumentTypeError('must be positive')
+    return rows, exact
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(prog="lithos-metal serve", description=__doc__)
     parser.add_argument("--model", required=True, help="Hugging Face repo ID or local checkpoint path")
@@ -389,7 +402,9 @@ def parse_args(argv=None):
     parser.add_argument("--kernel-config-key", help="Pin a context key in the selected recipe map")
     parser.add_argument("--served-model-name", default=None)
     parser.add_argument("--max-context", type=int, default=32768)
-    parser.add_argument("--prefill-chunk-size", type=int, default=128, help="Prompt tokens per prefill pass (default: 128)")
+    parser.add_argument("--prefill-chunk-size", type=_prefill_chunk, default='auto-exact', metavar='N|N-exact|auto-exact',
+                        help="Prompt tokens per prefill pass. N-exact reproduces the results of 128-token passes bit for bit; "
+                             "auto-exact (default) uses the chip's measured size for the model that way, else 128")
     parser.add_argument("--no-warmup", action='store_true', help="Skip startup compilation/warmup; the first request pays this cost")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
@@ -399,8 +414,6 @@ def parse_args(argv=None):
         args.draft = default_draft(args.model)
     if args.max_context < 1:
         parser.error("--max-context must be positive")
-    if args.prefill_chunk_size < 1:
-        parser.error("--prefill-chunk-size must be positive")
     if args.draft_block_size is not None and args.draft_block_size < 1:
         parser.error('--draft-block-size must be positive')
     if not args.draft and (args.draft_pack or args.draft_revision or args.draft_block_size is not None or args.kernel_config or args.kernel_config_key
@@ -417,7 +430,9 @@ def main(argv=None):
     logging.basicConfig(level=logging.INFO)
     assets = prepare(args)
     api_key = os.environ.get("LITHOS_METAL_API_KEY") or os.environ.get("LMK_API_KEY") or os.environ.get("MONOLITH_API_KEY")
-    backend = Backend(str(assets.model_dir), str(assets.pack_dir), args.max_context, args.prefill_chunk_size, assets=assets)
+    rows, exact = args.prefill_chunk_size
+    backend = Backend(str(assets.model_dir), str(assets.pack_dir), args.max_context, rows or assets.prefill_chunk_size or 128,
+                      assets=assets, prefill_exact=exact)
     model_name = args.served_model_name or (assets.model_dir.name if Path(args.model).expanduser().exists() else args.model)
     if not args.no_warmup:
         backend.warmup(model_name)

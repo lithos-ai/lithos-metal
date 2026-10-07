@@ -71,3 +71,7 @@ class MetalBackend:
     def serving_recipes(self, model, drafter, quantization):
         """Only opt matching workloads into recipes validated on this chip."""
         return {}
+
+    def serving_prefill_chunk(self, recipes):
+        """Prompt rows per pass that ``optimize_prefill`` is tuned for on a served workload, if any."""
+        return None

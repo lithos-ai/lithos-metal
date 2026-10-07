@@ -210,6 +210,19 @@
         "staged_tk": 64,
         "tn": 32,
         "workers": 160
+      },
+      "lm_head": {
+        "workers": 80,
+        "sgs": 8,
+        "tn": 16,
+        "compact": true,
+        "ksplit": 1,
+        "mode": "native",
+        "staged_tk": 128,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16,
+        "q_outer": 1
       }
     }
   },
@@ -419,6 +432,19 @@
         "staged_tk": 64,
         "tn": 32,
         "workers": 160
+      },
+      "lm_head": {
+        "workers": 80,
+        "sgs": 8,
+        "tn": 16,
+        "compact": true,
+        "ksplit": 1,
+        "mode": "native",
+        "staged_tk": 128,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16,
+        "q_outer": 1
       }
     }
   },
@@ -628,6 +654,19 @@
         "staged_tk": 64,
         "tn": 32,
         "workers": 160
+      },
+      "lm_head": {
+        "workers": 80,
+        "sgs": 8,
+        "tn": 16,
+        "compact": true,
+        "ksplit": 1,
+        "mode": "native",
+        "staged_tk": 128,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16,
+        "q_outer": 1
       }
     }
   },
@@ -837,6 +876,19 @@
         "staged_tk": 64,
         "tn": 32,
         "workers": 160
+      },
+      "lm_head": {
+        "workers": 80,
+        "sgs": 8,
+        "tn": 16,
+        "compact": true,
+        "ksplit": 1,
+        "mode": "native",
+        "staged_tk": 128,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16,
+        "q_outer": 1
       }
     }
   },
@@ -1055,6 +1107,19 @@
         "staged_tk": 64,
         "tn": 32,
         "workers": 160
+      },
+      "lm_head": {
+        "workers": 80,
+        "sgs": 8,
+        "tn": 16,
+        "compact": true,
+        "ksplit": 1,
+        "mode": "native",
+        "staged_tk": 128,
+        "ragged_teams": true,
+        "nvfp4_layout": "tile",
+        "nvfp4_tile_block": 16,
+        "q_outer": 1
       }
     }
   }

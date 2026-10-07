@@ -220,6 +220,10 @@ class Session:
                                attention=self.prefill_attention if prefill and self.prefill_attention is not None else self.attention,
                                accelerator=self.accelerator, commute_norm=self.commute_norm,
                                prefill=prefill, gdn_mixer_fusion=self.gdn_mixer_fusion)
+        if not prefill:
+            # one attention partial workspace for all layers (the prefill program gets it from scratch reuse below)
+            from .compiler.shared_partials import share_attention_partials
+            share_attention_partials(prog, barriers=self.barriers)
         if prefill and bound >= 32 and self.prefill_optimizations:
             from .compiler.arena import reuse_arenas
             from .compiler.prefill import specialize_prompt

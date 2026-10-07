@@ -18,6 +18,16 @@ from monolith.formats.blm import PackInfo, unpack_blm
 from monolith.runtime.program import BufferSpec
 
 
+# Layouts derived in this process: (pack file, byte offset of the source slab) -> {identity: repack arguments}.
+# Another program over the same weights can map the same content-addressed file instead of a second layout.
+LAYOUTS = {}
+
+
+def source_key(program, binding):
+    spec = program.buffers[binding[0]]
+    return None if spec.file is None else (os.path.realpath(spec.file), spec.file_offset + binding[1])
+
+
 def projection_rows(program):
     rows = {}
     for op in program.ops:
@@ -107,6 +117,8 @@ def repack(program, binding, macros, rows, tn, tk=32, tile_block=1, scale_mode='
                 codes.tofile(f);scale_values.tofile(f);f.write(bytes(aligned-nbytes));f.flush()
                 os.replace(temporary,path)
             finally:temporary.unlink(missing_ok=True)
+    LAYOUTS.setdefault(source_key(program,binding),{})[identity]=dict(
+        rows=rows,tn=tn,tk=tk,tile_block=tile_block,scale_mode=scale_mode,outer=outer,lane_order=lane_order)
     return name+'.nvfp4tile.'+identity,BufferSpec(aligned,role='weights',file=str(path)),code_bytes
 
 

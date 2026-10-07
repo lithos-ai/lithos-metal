@@ -9,9 +9,9 @@ class Backend(MetalBackend):
     finalize = staticmethod(finalize)
     direct_attention_shape = staticmethod(direct_attention_shape)
 
-    def optimize_prefill(self, program):
+    def optimize_prefill(self, program, exact=False):
         from .prefill import optimize
-        return optimize(program)
+        return optimize(program, exact)
 
     def validate_config(self, config):
         from .validation import validate_gdn_config

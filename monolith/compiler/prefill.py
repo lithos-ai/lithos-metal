@@ -95,6 +95,111 @@ def packed_fp8_projection(program, op, rows, *, tile_block=1):
     op.meta['prefill_packed_fp8'] = True
 
 
+def decoder_layout(program, op, tn, rows=None):
+    """The packed layout a verification graph derived from this projection's slab, if decoder_projection can read
+    it through ``tn``-row tiles.
+
+    Mapping that content-addressed file instead of a private layout lets both graphs keep one copy of the weights."""
+    from . import fp8_tiles, nvfp4_tiles
+
+    nvfp4 = op.meta.get('format') == 'nvfp4'
+    binding = next((name, offset) for slot, name, offset in op.bindings if slot == 0)
+    key = nvfp4_tiles.source_key(program, binding)
+    lane_order = int(program.kernels[op.kernel].macros.get('LANE_ORDER', '0'))
+    rows = rows or nvfp4_tiles.projection_rows(program)[binding]
+    for record in (nvfp4_tiles if nvfp4 else fp8_tiles).LAYOUTS.get(key, {}).values() if key else ():
+        if (record['rows'], record['lane_order'], record['tn'] % tn) == (rows, lane_order, 0) and (
+                (record['tk'], record['scale_mode']) == (64, 'shared') if nvfp4
+                else (record['tk'], record['storage'], record['outer']) == (32, 'fp8', 0)):
+            return record
+    return None
+
+
+# A thread of quad member mq multiplies pack columns [32*mq, 32*mq + 32) of the kernel's 128-column tile kpx. In the
+# decoder's files those are: FP8 (32-column tiles) the four member chunks of file tile 4*kpx + mq; NVFP4 (64-column
+# tiles, lane groups outer or not) two 16-code chunks of sub-tile mq / 2, one E4M3 scale per 16 columns.
+DECODER_FP8_FILL = """
+      {
+        const ulong packed_tile = min(tile, p.tile0 + p.n_tiles - 1u);
+        const ulong ftile = packed_tile * TN / FILE_TN;
+        const uint slot0 = uint(packed_tile * TN % FILE_TN) / 8u;
+        const uint kpx = j * (32u / LPT) + q;
+        const ulong pg = (ftile / FILE_BLOCK * (K / 32u) + kpx * 4u + mq) * FILE_BLOCK + ftile % FILE_BLOCK;
+#pragma clang loop unroll(full)
+        for (uint s = 0; s < NS_B; s++) {
+#pragma clang loop unroll(full)
+          for (uint m = 0; m < 4u; m++) {
+            const uint lane_m = (lane & ~9u) | (m & 1u) | ((m >> 1) << 3);
+            const uint2 c2 = reinterpret_cast<device const uint2*>(w)[(pg * (FILE_TN / 8u) + slot0 + s) * 32u + lane_m];
+            const uint cw[2] = {c2.x, c2.y};
+#pragma clang loop unroll(full)
+            for (uint e = 0; e < 8u; e++) {
+              const uint code = (cw[e / 4u] >> ((e % 4u) * 8u)) & 255u;
+              bT[uint16_t((((2u * m + e / 4u) * NS_B + s) << 2) | (e % 4u))] = bfloat(fp8_e4m3(code));
+            }
+          }
+        }
+      }
+"""
+DECODER_NVFP4_FILL = """
+      {
+        const ulong packed_tile = min(tile, p.tile0 + p.n_tiles - 1u);
+        const ulong ftile = packed_tile * TN / FILE_TN;
+        const uint slot0 = uint(packed_tile * TN % FILE_TN) / 8u;
+        const uint kpx = j * (32u / LPT) + q;
+        const uint fq = 2u * (kpx % 8u) + mq / 2u, fj = kpx / 8u;
+        const uint fkt = FILE_OUTER ? fq * (K / 1024u) + fj : fj * 16u + fq;
+        const ulong pg = (ftile / FILE_BLOCK * (K / 64u) + fkt) * FILE_BLOCK + ftile % FILE_BLOCK;
+#pragma clang loop unroll(full)
+        for (uint s = 0; s < NS_B; s++) {
+#pragma clang loop unroll(full)
+          for (uint h = 0; h < 2u; h++) {
+            const uint m = 2u * (mq % 2u) + h;
+            const uint lane_m = (lane & ~9u) | (m & 1u) | ((m >> 1) << 3);
+            const uint2 c2 = reinterpret_cast<device const uint2*>(w)[(pg * (FILE_TN / 8u) + slot0 + s) * 32u + lane_m];
+            float wv[32];
+            decode_word(uint4(c2.x, c2.y, 0u, 0u), wv);
+            uint sc = reinterpret_cast<device const uchar*>(w)[NVFP4_SCALE_BASE + (pg * FILE_TN + (slot0 + s) * 8u + c1b) * 4u + m];
+            const float scale = decode_scale(&sc, 0u);
+#pragma clang loop unroll(full)
+            for (uint e = 0; e < 16u; e++)
+              bT[uint16_t((((4u * h + e / 4u) * NS_B + s) << 2) | (e % 4u))] = bfloat(wv[e] * scale);
+          }
+        }
+      }
+"""
+
+
+def decoder_projection(program, op, record):
+    """Read a verification graph's packed operands (decoder_layout) in this kernel's own reduction order.
+
+    The kernel keeps its 128-column tiles, x' and K loop; only the loads change, so every product is summed in
+    the order of the original layout and the outputs are bit-identical to it."""
+    from . import fp8_tiles, nvfp4_tiles
+
+    kernel = program.kernels[op.kernel]
+    nvfp4 = op.meta.get('format') == 'nvfp4'
+    tn, tk, ksplit = (int(kernel.macros.get(field, '1').rstrip('u')) for field in ('TN', 'TK', 'KSPLIT'))
+    if (tk, ksplit) != (128, 1) or record['tn'] % tn:
+        raise ValueError('decoder operands need unsplit 128-column matrix tiles that divide the file tiles')
+    binding = next((name, offset) for slot, name, offset in op.bindings if slot == 0)
+    macros = dict(kernel.macros, Q_OUTER=str(record['outer']))      # the file's packing order, not the kernel's loop order
+    if nvfp4:
+        name, spec, scale_base = nvfp4_tiles.repack(program, binding, macros, record['rows'], record['tn'], 64,
+                                                    record['tile_block'], 'shared')
+        kernel.macros.update(FILE_OUTER=str(record['outer']), NVFP4_SCALE_BASE=f'{scale_base}ul')
+    else:
+        name, spec = fp8_tiles.repack(program, binding, macros, record['rows'], record['tn'], 32, record['tile_block'])
+        kernel.macros['FP8_DECODE'] = '1'
+    program.buffers[name] = spec
+    op.bindings = [(slot, name, 0) if slot == 0 else (slot, n, offset) for slot, n, offset in op.bindings]
+    begin = kernel.source.index('#pragma clang loop unroll(full)\n      for (uint s = 0; s < NS_B; s++)')
+    end = kernel.source.index('#if EXP_MODE == 2\n      }', begin)
+    kernel.source = kernel.source[:begin] + (DECODER_NVFP4_FILL if nvfp4 else DECODER_FP8_FILL) + kernel.source[end:]
+    kernel.macros.update(FILE_TN=f"{record['tn']}u", FILE_BLOCK=f"{record['tile_block']}u")
+    op.meta['prefill_packed_nvfp4' if nvfp4 else 'prefill_packed_fp8'] = True
+
+
 def direct_bf16_projection(program, op, rows=None):
     """Reorder native BF16 operands for direct matrix reads without expansion."""
     import hashlib

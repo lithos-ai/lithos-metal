@@ -3,7 +3,7 @@
 right operand filled cooperatively from the pack words — on the target's shapes for TM = 8 / 16 / 32 token rows,
 every point checked against the CPU reference (the format oracle's dequantization, float64), timed like the GEMV
 harness (>= 2 GB streamed per measurement, min-of-N). The numbers to beat are p14's staged-tile results
-(docs/research/apple-gpu-probes.md §6 P14).
+(docs/design/apple-gpu.md#inline-matrix-computation).
 
   python tools/bench/gemm_bench.py --format nvfp4 --shape 17408x5120 --tm 8
   python tools/bench/gemm_bench.py --sweep m9 --out tools/bench/results/<chip>_gemm.jsonl

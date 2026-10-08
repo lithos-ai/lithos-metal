@@ -3,9 +3,9 @@
 Status: drafted 2026-09-19; M0 updated 2026-09-22 with the M5 Pro measurements; **revised 2026-09-23 to start
 building in this repo** — a standalone codebase (MPK/mirage code is copied in with its headers, never depended on;
 design D15, §5.13), model-agnostic by construction (D16, §5.14), with **DSpark** instead of the checkpoint's MTP head
-for speculative decoding (D10, §5.8, [research note](../docs/research/dspark.md)). Design: [`docs/design/design.md`](../docs/design/design.md). Measured hardware facts:
-[`docs/research/apple-gpu-probes.md`](../docs/research/apple-gpu-probes.md). Landscape and reuse notes:
-[`docs/research/apple-inference-systems.md`](../docs/research/apple-inference-systems.md).
+for speculative decoding (D10, §5.8, [research note](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md)). Design: [`docs/design/design.md`](../docs/design/design.md). Measured hardware facts:
+[[`docs/research/apple-gpu-probes.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md)](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md). Landscape and reuse notes:
+[[`docs/research/apple-inference-systems.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-inference-systems.md)](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-inference-systems.md).
 
 First target: `nvidia/Qwen3.8-27B-NVFP4`, **batch-1 decode latency**, M3/M4/M5 families, macOS 26+.
 Bring-up machine: an M5 Pro, 20-core GPU, **24 GB** (GPU characterization, kernels, and models up to ~18 GB resident:
@@ -68,7 +68,7 @@ Critical path: M0 → M1 → M3 → M4 → M5 → M6.
       + GGUF Q8/BF16, trained against the Q4_K_M target) and `gittensor-model-hub/Qwen3.8-27B-DSpark-NVFP4` (1.3 GB,
       MLP/o_proj in NVFP4, trained on-policy against an NVFP4 target) — and `Dogacel/Qwen3-8B-DSpark` for model 2.
       Record configs (layers, block size, tapped target layers, Markov rank, dtypes) and licenses in
-      `docs/research/dspark.md`; note that `RadixArk/Qwen3.8-27B-DSpark` carries an "other" license and is not used.
+      [`docs/research/dspark.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md); note that `RadixArk/Qwen3.8-27B-DSpark` carries an "other" license and is not used.
 * [ ] Reference tooling: exact NVFP4/FP8 → BF16 dequantizer; HF golden scripts (adapt
       `mirage/tests/runtime_python/models/qwen38/hf_golden.py`): full goldens for the small model; per-layer goldens
       for the 27B produced layer-streamed (54 GB of BF16 does not fit in 36 GB) or on a larger machine.
@@ -94,7 +94,7 @@ either way. So the geometry claim is settled at "no worse" and M1's real problem
   12288×5120, 248320×5120 (lm_head); T ∈ {1, 2, 4}.
 * [x] Bench harness on the native runtime (#9, `tools/bench/gemv_bench.py`) and the NVFP4 decode study (#10):
   the integer-table decode (V2) takes NVFP4 T = 1 from 51–60 % to 82 % (gate/up), 74 % (down) and 89 % (lm_head) of
-  nominal on the M5 Pro; FP8 T = 1 is at 85–95 %. Full tables: `docs/research/gemv-kernel-study.md`.
+  nominal on the M5 Pro; FP8 T = 1 is at 85–95 %. Full tables: [`docs/research/gemv-kernel-study.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gemv-kernel-study.md).
 * Kernel study, in this order: **NVFP4 decode** (done: V2; remaining: scale bytes folded into the payload words for
   K = 17408, a `half`-domain group dot under the numerics gate); intra-block lane
   order per chip (lane-interleaved 16 B on the M5 Pro, either on the M3 Pro); threadgroups per core ∈ {1, 2, 4, 9} as
@@ -108,7 +108,7 @@ Exit gate: NVFP4 T = 1 ≥ **1.10×** MLX's kernel throughput on the same machin
 dense 4-bit `qmv` is reported at 266 GB/s), NVFP4 ≥ 80 % of nominal on the M5 Pro, FP8 shapes ≥ **100 GB/s** on the
 M3 Pro; outputs within 2 ULP (BF16) of the oracle. (The M3 Pro rows were dropped with the machine on 2026-09-25.)
 
-**Go/no-go #1, read on the M5 Pro 2026-09-24** (`docs/research/gemv-kernel-study.md` §3c, issues #9–#12):
+**Go/no-go #1, read on the M5 Pro 2026-09-24** ([`docs/research/gemv-kernel-study.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gemv-kernel-study.md) §3c, issues #9–#12):
 FP8 231–291 GB/s (75–95 %) — met. NVFP4 T = 1 with the integer-table decode: 231–274 GB/s (75–89 %) — the 80 %
 line is met on 5 of 7 shapes. **Against MLX's own NVFP4 `qmv` (262–286 GB/s, 85–93 %) we are at 0.85–0.96×, not
 1.10×: the geometry claim does not hold on this chip; a 4-bit GEMV is a solved problem at ~92 % and the remaining
@@ -504,7 +504,7 @@ Exit: a short written result per chip; stealing enabled only for ops where it ga
   40-core machine (19.21 GB pack), and its repeated 48-token continuation matches
   HF. The long-context synthetic-KV layer gate remains open because expert
   routing magnifies numerical differences. See the
-  [Qwen/Llama audit](../docs/research/m5max-qwen-llama-audit.md) for the separate
+  [Qwen/Llama audit](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-qwen-llama-audit.md) for the separate
   correctness and performance evidence; the old M5 Pro capacity limit no longer
   blocks this checkpoint on the Max.
 * Format 2 — **built (#47): affine INT4 groups** (`formats/int4_affine`, the MLX / AWQ / GPTQ family; mlx 0.32's
@@ -516,7 +516,7 @@ Exit: a short written result per chip; stealing enabled only for ops where it ga
   `1 +` of the zero-centered norms into the stored tensor). The MLX 4-bit 0.8B decodes token-identical to its oracle
   (`tests/models/qwen3_5/test_mlx_int4.py`); M1-harness numbers in gemv-kernel-study.md §2; the port's account in
   porting-log.md.
-* Porting guide — **written (#48): `docs/porting.md`**, from the three logs (model 2: ~1 h, zero engine edits;
+* Porting guide — **written (#48): [`docs/porting.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/porting.md)**, from the three logs (model 2: ~1 h, zero engine edits;
   drafter 1: ~1.5 h for the module; format 2: ~6 h, four engine-side extensions and a converter-convention hunt),
   with the contracts as they are in the tree, the CI checks, the golden workflow and the checklists.
 
@@ -648,7 +648,7 @@ Each PR is small, standalone-buildable, and lands with its tests. Definition of 
    tests/contract` passes on a hosted runner; `import monolith` works; no mirage import anywhere.]
 2. **Formats + dequantizer + goldens.** `formats/{nvfp4,fp8_e4m3,bf16,int8}` with exact torch oracles; HF golden
    scripts (adapted from MPK) for a small same-architecture model and per-layer goldens for the 27B (layer-streamed);
-   `docs/research/dspark.md` filled with the drafter configs. [Pack ↔ checkpoint round trip bit-exact after
+   [`docs/research/dspark.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md) filled with the drafter configs. [Pack ↔ checkpoint round trip bit-exact after
    dequantization; goldens checked in for the small model.]
 3. **`pack_weights` + BLM packs** in both lane orders, model transforms, drafter tensors. [Round-trip tests; the 27B and
    a drafter pack on the M3 Pro.]

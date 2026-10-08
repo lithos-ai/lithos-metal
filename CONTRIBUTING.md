@@ -16,6 +16,22 @@ python tools/bench/gemv_bench.py --format fp8_e4m3 --shape 17408x5120     # a ke
 ./probes/run_all.sh                   # hardware characterization (Apple GPU, ~5 min)
 ```
 
+## Release bundles
+
+On an Apple silicon Mac with Python 3.12 and Xcode Command Line Tools, run:
+
+```bash
+python3.12 tools/release/build_macos.py
+```
+
+This creates an archive in `dist/` containing the compiled wheel and serving dependency wheels,
+plus a Homebrew formula with the archive's SHA-256. The
+[macOS release workflow](.github/workflows/release.yml) builds and smoke-tests the bundle.
+Manual runs produce reviewable artifacts; a `vVERSION` tag matching `pyproject.toml` publishes release assets.
+After publishing the release, copy the generated formula into `Formula/lithos-metal.rb` in the
+[Lithos tap](https://github.com/lithos-ai/homebrew-tap) and validate it with `brew install` and `brew test`.
+Regenerate the archive and formula together for each version.
+
 ## Test tiers
 
 | Tier | Needs | What it checks |
@@ -31,10 +47,10 @@ transformers/torch versions and the parameter dtypes the reference held.
 
 ## Rules that CI enforces
 
-* **Standalone (design D15).** Copying from MPK/mirage, MLX, llama.cpp, tinygrad, DeepSpec, DFlash or gpt-oss is
+* **Standalone ([design](docs/design/design.md#portability-and-reuse)).** Copying from MPK/mirage, MLX, llama.cpp, tinygrad, DeepSpec, DFlash or gpt-oss is
   encouraged. Keep the license header, add a provenance line (`# adapted from <repo> <path> @ <commit>`), and add an
   entry to `third_party/NOTICE`. Never `import mirage`; never name anything MPK/Mirage. `tools/ci/hygiene.py` checks.
-* **Model-agnostic (design D16, §5.14).** Model names appear only under `monolith/models/<name>/`. A PR labelled
+* **Model-agnostic ([extension contracts](docs/design/extensions.md#models)).** Model names appear only under `monolith/models/<name>/`. A PR labelled
   `model-pr` may change only `monolith/models/`, `tests/`, `docs/` (`tools/ci/extension_check.py`). New ops, formats
   and drafters land as their own packages under their registry, with oracle tests.
 * **Measure before claiming.** Every performance number in a PR carries its A/B table (paired alternating runs,

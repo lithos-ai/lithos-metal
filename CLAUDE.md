@@ -8,7 +8,7 @@ Context for anyone (human or agent) picking this repo up on another machine. Pro
 An LLM inference engine for Apple silicon (M3 / M4 / M5, macOS 26+, Metal 4). First target:
 `nvidia/Qwen3.8-27B-NVFP4` (Qwen3.5-hybrid: 48 Gated-DeltaNet + 16 full-attention layers; NVFP4 MLP + `lm_head`, FP8
 attention/GDN projections; ~17.6 GB of weights read per decoded token) with a public DSpark drafter for speculative
-decoding (`docs/research/dspark.md`). **v1 is judged on batch-1 decode
+decoding ([design](docs/design/speculative-decoding.md)). **v1 is judged on batch-1 decode
 latency only** — prefill/TTFT, multi-request serving and energy are explicit non-goals for v1. The engine must stay
 general: new models, quantization formats and ops come in through plugins, not engine edits. Stack: C++/Objective-C++
 runtime, Python front-end and compiler, generated MSL kernels.
@@ -34,7 +34,7 @@ is not the long-context win at one threadgroup per core — at two it is the T �
 breaks bit-identity, so safe stays. Format 2 (#47) is built: affine INT4 groups (`formats/int4_affine`, MLX / AWQ / GPTQ) as a plugin —
 the MLX 4-bit 0.8B decodes token-identical to its oracle; the port needed a per-group bias hook, the quantized-embedding
 gather, ragged lane stripes and a package-declared value adapter (mlx_lm folds `1 +` into the zero-centered norms;
-porting-log.md); the porting guide (#48, `docs/porting.md`) closes M8. M9's accelerator GEMM is built (#50,
+porting-log.md); the porting guide (#48, [`docs/porting.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/porting.md)) closes M8. M9's accelerator GEMM is built (#50,
 `kernels/common/gemm_tile.metal`): the cooperative right-input fill from the pack words streams NVFP4 at 177 GB/s and FP8
 at 253 for 8 or 16 tokens — 0.9–1.1× a T = 1 shader pass, 34–49 % above `p14`'s staged tile; at 32 tokens it is
 below `p14` (decode-kernels.md §6). #51 wires it into the step program: with the profile's `accelerator: on`
@@ -72,7 +72,7 @@ package, proven on a synthetic checkpoint; the real Qwen3-MoE checkpoints did no
 **2026-10-04 M5 Max update:** the real NVFP4 30B-A3B fits the 48 GB / 40-core machine and matches
 the repeated 48-token HF continuation. Its long synthetic-KV layer gate remains open on routing
 precision; bit-identical expert row/crew tuning is separate from that gate. See
-`docs/research/m5max-qwen-llama-audit.md` for the Qwen/Llama audit and bounded searches.
+[`docs/research/m5max-qwen-llama-audit.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-qwen-llama-audit.md) for the Qwen/Llama audit and bounded searches.
 An intermittent model-tier failure (wrong tokens / a hang / an empty generation, never reproducible alone) was three
 out-of-bounds stores found with shader validation (#92): the GDN commit pass wrote its read-out through a 16-byte
 placeholder, the tile's permute wrote a slab's K into a scratch sized by a narrower input, a drafter appended past
@@ -122,20 +122,18 @@ T = 4 (~5 µs of fixed cost per dispatch on 1–3.5 MB slabs); a slab prefetch b
 cache exists) and rows-per-block attention were measured and rejected; over 1024 tokens MLX's per-layer slope is not
 linear in the layer count, so the step ratio is the comparison there (§11.1).
 
-## Read these, in this order
+## Current design references
 
-1. `docs/design/design.md` — the design. §0 is the decision table (D1–D14); §7 answers "warp specialization?" (no) and
-   "static megakernel?" (static yes, one kernel no).
-2. `docs/research/apple-gpu-probes.md` — what was measured on real hardware and what each number implies. §1 is the
-   cross-chip table (M3 Pro and M5 Pro filled); §3 is what the M5 Pro confirmed and changed; §4 is the checklist for
-   a chip not yet measured (hypotheses H1–H10 and the outcomes that would change the design; written for an M4, whose
-   measurement was dropped from the roadmap on 2026-09-25).
-3. `plans/implementation-plan.md` — milestones M0–M9 with exit gates and go/no-go points.
-4. `docs/research/apple-inference-systems.md` — how MLX, llama.cpp and others work; what to reuse; headroom estimates.
-5. `docs/research/dspark.md` — the speculative-decoding method we target, the public drafters for our models, their
-   cost on our hardware.
-6. `docs/porting.md` — adding a model, a format, an op, a drafter or a chip: the contracts as they are in the tree,
-   the CI checks, the golden workflow; `docs/research/porting-log.md` is the evidence it was derived from.
+1. `docs/README.md` — the current design-document index.
+2. `docs/design/design.md` — compiler, program ABI, runtime state, and module boundaries.
+3. `docs/design/apple-gpu.md` — execution and memory constraints.
+4. `docs/design/mixers.md` — GDN, attention, draft mixers, and normalization fusion.
+5. `docs/design/speculative-decoding.md` — DSpark and accepted-prefix state.
+6. `docs/design/extensions.md` — model, format, operation, drafter, and backend contracts.
+7. `docs/design/serving.md` — session setup, protocols, prefix caching, and streaming.
+
+Historical roadmap and measurement notes in this file refer to the prior implementation snapshot; current behavior
+is described by the design documents and source code.
 
 ## The design in six lines
 
@@ -175,7 +173,7 @@ linear in the layer count, so the step ratio is the comparison there (§11.1).
   Metal allocations, so a store past one lands in a neighbour — StepState, a params record, an activation — and
   shows up later as a wrong token, a hang or an empty generation that never reproduces alone. After a kernel or
   emitter change run the GPU tiers under `MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1`
-  (porting.md §0); a `Program` carries its `context_capacity` and the serial ops stop at it (`error = 2`). A
+  (CONTRIBUTING.md test tiers); a `Program` carries its `context_capacity` and the serial ops stop at it (`error = 2`). A
   session's programs share buffers by name (weights, states, StepState, ring, activations); a params record is a
   program's own and is never shared (`Engine`), and its name carries the program kind.
 * Correctness may depend only on documented Metal semantics (dispatch ordering, ICB barriers, the MSL memory model).
@@ -203,7 +201,7 @@ check` (same for `p14`) compiles every kernel variant without dispatching.
 The numbered list below records the September M5 Pro roadmap. Its memory limits
 do not apply to the current 48 GB M5 Max: 27B work has proceeded, and the real
 30B-A3B MoE is now measured. The current Qwen/Llama correctness limitations and
-retained 40-core tuning are in `docs/research/m5max-qwen-llama-audit.md`.
+retained 40-core tuning are in [`docs/research/m5max-qwen-llama-audit.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-qwen-llama-audit.md).
 
 0. **Keep building.** The M5 contingency tasks (#100–#103) are done and closed (2026-09-27): the gate is met at 8.97
    (LM drafter) / 9.14 (DSpark) ms per token against mlx-lm's 9.24. Open on this machine: #113's remaining items —

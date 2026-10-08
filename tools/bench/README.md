@@ -5,9 +5,9 @@ against native MLX-LM, including its original-code NVFP4 and FP8 matrix paths.
 `--fusion --config <geometry.json>` evaluates two static megakernels per layer;
 `modelopt_mega_tune.py` searches each half's geometry with a matched multi-dispatch
 control. Both tools exclude generation and speculative-decoding performance.
-See the [M5 Max 27B study](../../docs/research/m5max-27b-megakernel.md) for measured
+See the [M5 Max 27B study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-megakernel.md) for measured
 results, correctness checks, the faster-of-two MLX baseline and reproduction commands.
-The [further tuning study](../../docs/research/m5max-27b-megakernel-tuning.md)
+The [further tuning study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-megakernel-tuning.md)
 adds explicit `--configs` lists, independent K splits and per-projection settings,
 compact reductions, barrier/scheduling variants and recurrence geometry.
 `--reference-config` pairs the previous geometry with a new candidate;
@@ -20,7 +20,7 @@ matching static eight-row layers. `--default-fusion` compares this automatic
 compiler selection against original Monolith and MLX-LM. The `production`
 benchmark column explicitly disables fusion to preserve the original baseline.
 Attention retains native kernels under automatic selection. The
-[GDN optimization follow-up](../../docs/research/m5max-gdn-mixer-optimization.md)
+[GDN optimization follow-up](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-gdn-mixer-optimization.md)
 records the packed FP8 recipe and its comparison with the earlier default.
 `--comparison-control-config` adds an independently tuned packed multi-dispatch
 baseline, separate from the candidate's matched control. Both tools retain
@@ -28,7 +28,7 @@ per-round samples and generated shader hashes; output and model state must stay
 bit-identical after fixed-input timing replays. Keep shader validation disabled
 for performance measurements and enabled for separate correctness audits.
 
-The [attention tuning study](../../docs/research/m5max-27b-attention-tuning.md)
+The [attention tuning study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-attention-tuning.md)
 adds independent attention task counts (`attention_groups`), query tile rows
 (`attention_qm`), active merge SIMD groups (`merge_sgs`) and merge load-ahead
 (`merge_unroll`). Set `--kind attention-prefix --ctx 128,8192` in the tuner to
@@ -36,7 +36,7 @@ screen the complete attention/native-MLP layer. Use
 `--reference-fusion-scope mixer-prefix` with `--reference-config` to pair two
 mixer-only fusion geometries while retaining the original Monolith baseline.
 
-The [task-based attention follow-up](../../docs/research/m5max-27b-attention-tasks.md)
+The [task-based attention follow-up](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-attention-tasks.md)
 extends the search to 4K/8K/16K/32K using one shared `attention-config.json`. The
 experimental compiler accepts `schedule: queue`, `task_grain: tile`,
 `task_batch`, `attention_task_tiles` and `task_seed`; `task_stats` adds optional
@@ -45,7 +45,7 @@ for timing. `modelopt_extend_tables.py` clones a pack and appends larger,
 prefix-identical position tables. The layer benchmark's `--capacity` keeps
 Monolith KV/RoPE capacity fixed across context tiers.
 
-The [full-attention optimization follow-up](../../docs/research/m5max-27b-attention-optimization.md)
+The [full-attention optimization follow-up](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-attention-optimization.md)
 adds bounded local key partitions (`attention_chunk_tiles`), optional Q/K
 preparation, scratch reuse and compact partial buffers. It retunes projection
 geometry and task scheduling for the 40-core M5 Max. Its context map references
@@ -57,7 +57,7 @@ The per-pair gate uses the fastest MLX variant in that round. Use `--kind
 attention` to isolate the mixer and `--kind attention-prefix` to retain the two
 native MLP dispatches in complete-layer tuning.
 
-The [MLP optimization study](../../docs/research/m5max-27b-mlp-optimization.md)
+The [MLP optimization study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-mlp-optimization.md)
 compares lossless NVFP4 operand packing, native device-tensor projections and
 one-dispatch MLP fusion. `--mlp-config` adds a selected MLP recipe and its matched
 control; `--mlp-control-config` adds an independently tuned native reference.
@@ -78,7 +78,7 @@ comparisons against original Monolith and the fastest tested MLX-LM path.
 
 For full-model single-request decode against vLLM-Metal, llama.cpp Metal and
 Ollama, use `single_request_latency.py`. It records native decode counters,
-warmups and generated text. See the [Qwen3 8B comparison](../../docs/research/qwen8b-serving-decode.md)
+warmups and generated text. See the [Qwen3 8B comparison](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/qwen8b-serving-decode.md)
 for measured results, exact prompts and pinned server settings.
 `mlx_spec_step_latency.py` adds direct MLX-LM plain decode (`--mode plain`) and
 full N=7 round timing with the same prompts, excluding prefill and shortened tail
@@ -86,7 +86,7 @@ rounds. It retains per-token timestamps; `--prefill-step-size` supports a matche
 prefill check against Monolith as well as the native generator defaults.
 `target_verify_latency.py` isolates the N=7 target forward (eight positions),
 using identical prefixes and input IDs for Monolith and MLX, excluding drafting
-and sampling. See the [long-context target measurements](../../docs/research/qwen8b-long-context-tuning.md#isolated-n7-target-verification).
+and sampling. See the [long-context target measurements](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/qwen8b-long-context-tuning.md#isolated-n7-target-verification).
 `profile_spec_round.py` splits the existing N=7 dispatch stream into timed stages
 and compares against unsplit controls. Optional `--cache` reuses saved tuning
 choices and leaves cache misses at default, without searching. The serving
@@ -94,7 +94,7 @@ adapter originally disabled autotuning; its archived results are labeled accordi
 
 `long_context_tune.py` screens Qwen3 8B plain/N=7 decode at 4K and 8K using
 identical prefills, then `--generate --autotune` validates fresh full generations.
-See the [long-context tuning report](../../docs/research/qwen8b-long-context-tuning.md)
+See the [long-context tuning report](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/qwen8b-long-context-tuning.md)
 for the selected configuration and saved M5 Pro choices. The serving adapter now
 accepts `--autotune`, `--attention` and `--max-context`; omitting `--autotune`
 retains its historical untuned behavior.
@@ -162,7 +162,7 @@ Run without Metal shader validation for timing, and use validation for correctne
 Use `--individual` to measure every selected layer separately, or `--layers 0,13,27`
 to narrow the checkpoint indices. These isolated replays have different weight
 cache residency and host-overhead amortization; keep streaming stack runs as a
-companion check. See [the M5 performance report](../../docs/research/m5-native-code.md)
+companion check. See [the M5 performance report](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5-native-code.md)
 for the final result summary and archived native-code investigation tools.
 
 `layer_grid_search.py` screens launch geometries for the 20-core M5 Pro's short
@@ -183,14 +183,14 @@ python tools/bench/layer_grid_search.py --model CHECKPOINT --pack PACK \
 `gdn_static_bench.py` compares the production N=7 GDN core with whole-head and
 fixed-worker single-kernel schedules, including a fenced stage-barrier variant.
 Use `--confirm --layers 48 --repeat 2` to stream distinct layer states rather
-than repeatedly reusing one small state. See the [experiment and results](../../docs/research/gdn-static-megakernel.md)
+than repeatedly reusing one small state. See the [experiment and results](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gdn-static-megakernel.md)
 for scope, correctness checks, and the measured regressions. Write raw samples to
 `/tmp` or another local results path; these schedules are not enabled by default.
 
 `gdn_block_bench.py` extends that experiment to the **entire GDN block**, including
 all input/output projections and residual addition, with seeded FP8/BF16 weights
 at the 27B shapes. It compares production with a matching geometry/operand control
-and a single static megakernel. The [full-block follow-up](../../docs/research/gdn-static-megakernel.md#full-gdn-block-including-matrix-projections)
+and a single static megakernel. The [full-block follow-up](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gdn-static-megakernel.md#full-gdn-block-including-matrix-projections)
 records near parity on M5 Pro and the remaining M5 Max handoff requirements.
 
 `vllm_target_verify.py` and the `ollama_target_verify_test.go` overlay measure
@@ -198,7 +198,7 @@ full eight-row target forwards on the M5 Max at 128/4K/8K/16K/32K context.
 They include all eight vocabulary-logit rows and exclude drafting/acceptance.
 Both require documented checkpoint compatibility adapters; vLLM-Metal's hybrid
 speculative scheduler is unsupported, so its result uses the paged prefill path.
-See the [backend verification study](../../docs/research/m5max-27b-backend-verification.md)
+See the [backend verification study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-backend-verification.md)
 for timings, numerical checks, rejected runs, and exact reproduction metadata.
 
 `dspark_round_latency.py` measures complete non-terminal DSpark rounds after real
@@ -221,7 +221,7 @@ length of the four actual generation checks (64 by default).
 The selected M5 Max decoder and draft configurations live in
 [`monolith/backends/metal/m5_max_40c/recipes`](../../monolith/backends/metal/m5_max_40c/recipes/).
 Measurements and generated figures are kept in the
-[M5 Max evidence archive](../../docs/research/m5max-artifacts.md); restore those
+[M5 Max evidence archive](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-artifacts.md); restore those
 ignored result directories before running plots or commands that read saved inputs.
 
 `dspark_kernel_tune.py` screens explicit projection, mixer, MLP, scalar fallback
@@ -247,12 +247,12 @@ changes in the generated trajectory; free-running acceptance and GPU decode
 time are also reported. `--matched-only` skips candidate free-running generation
 when screening precision choices. This comparison qualifies the conversion
 against the existing engine, not the target model's independent accuracy.
-See the [35B NVFP4 conversion](../../docs/qwen-hybrid-moe.md#nvfp4-draft-conversion)
+See the [35B NVFP4 conversion](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/qwen-hybrid-moe.md#nvfp4-draft-conversion)
 for the measured quality and latency tradeoff.
 
-See the [M5 Max DSpark study](../../docs/research/m5max-27b-dspark.md)
+See the [M5 Max DSpark study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-dspark.md)
 for checkpoint revisions, context recipes, memory handling and measurements.
-The [draft refinement study](../../docs/research/m5max-27b-dspark-refinement.md)
+The [draft refinement study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-27b-dspark-refinement.md)
 records the later projection, task scheduling, scalar fallback and precision
 searches, with paired full-round checks against the preceding selected recipe.
 
@@ -296,7 +296,7 @@ overrides, not automatic context routing in the serving runtime.
 The `mma-direct` attention choice enables the additional measured static-T=8
 direct-cache shapes on the 40-core M5 Max; it uses 256-key tiles and four SIMD
 groups with a cache capacity divisible by 256. Other modes/shapes use `auto`.
-The [Qwen/Llama audit](../../docs/research/m5max-qwen-llama-audit.md) lists the
+The [Qwen/Llama audit](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/m5max-qwen-llama-audit.md) lists the
 shape guards, context-specific workers, numerical exclusions and full-forward
 comparisons. To reproduce a long-context point, put `"attention": "mma-direct"`
 in its `config`, with `"attention_geometry": {"workers": 320, "sgs": 4}` (or
@@ -366,7 +366,7 @@ benchmark default; `--draft-block-size` explicitly overrides the proposal count.
 Use `--contexts 128,4096,8192,16384,32768` for the context sweep. GPU timing
 excludes packing, compilation, prefill, correctness readback and HTTP overhead.
 
-The [hybrid MoE model notes](../../docs/qwen-hybrid-moe.md) record the measured
+The [hybrid MoE model notes](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/qwen-hybrid-moe.md) record the measured
 40-core policy, experiment envelope and remaining independent-model accuracy
 gates. Isolated routing and latency can differ from the complete serving graph;
 confirm finalists in complete rounds before changing a backend default.

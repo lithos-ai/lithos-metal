@@ -26,7 +26,7 @@ PURPLE = '#ede7f6'
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', type=Path, default=ROOT/'tools/bench/results/m5max-27b-dspark/refinement-20261003/full-bf16-128.json')
-    parser.add_argument('--out', type=Path, default=ROOT/'docs/research/figures/dspark-current-kernel-graph')
+    parser.add_argument('--out', type=Path, default=ROOT/'tools/bench/results/figures/dspark-current-kernel-graph')
     args = parser.parse_args()
     profile = json.loads(args.profile.read_text())['contexts'][0]['draft_profile']
     kernels = profile['kernels']

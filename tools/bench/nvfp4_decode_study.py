@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The NVFP4 decode study (#10): the three decode variants of monolith.formats.nvfp4 across the geometry knobs and T,
-on the target's NVFP4 shapes. Writes JSON lines; docs/research/gemv-kernel-study.md reads them.
+on the target's NVFP4 shapes. Writes JSON lines for benchmark analysis.
 
     python tools/bench/nvfp4_decode_study.py --out tools/bench/results/<chip>_nvfp4_decode.jsonl
 """

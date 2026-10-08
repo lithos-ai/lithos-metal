@@ -19,7 +19,7 @@ from matplotlib.ticker import MultipleLocator
 
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "tools/bench/results/m5max-27b-n7"
-OUTPUT = ROOT / "docs/research/figures"
+OUTPUT = ROOT / "tools/bench/results/figures"
 CONTEXTS = (128, 4096, 8192, 16384, 32768)
 ACCEPTED_TOKENS = 6
 

@@ -6,7 +6,7 @@ independent QKV/A-B and core/Z work can be interleaved within readiness phases.
 Tile labels and box sizes are schematic, not a measured assignment or timeline.
 No kernel, compiler, or profile configuration is modified by this script.
 
-Outputs PNG plus editable SVG in docs/research/figures by default.
+Outputs PNG plus editable SVG in tools/bench/results/figures by default.
 """
 
 from pathlib import Path
@@ -31,7 +31,7 @@ NEUTRAL = "#edf0f3"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=ROOT / "docs/research/figures/gdn-lithos-metal-balanced-schedule")
+    parser.add_argument("--out", type=Path, default=ROOT / "tools/bench/results/figures/gdn-lithos-metal-balanced-schedule")
     args = parser.parse_args()
     plt.rcParams.update({
         "font.family": "DejaVu Sans", "font.size": 11,

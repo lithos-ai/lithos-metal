@@ -61,7 +61,7 @@ def prepare(args, *, device_info=None):
     if device_info is None:
         from ..runtime import _native
         if _native is None:
-            raise RuntimeError('The Metal runtime is unavailable. Install lithos-metal on Apple silicon with macOS 26+; see docs/installation.md')
+            raise RuntimeError('The Metal runtime is unavailable. Install lithos-metal on Apple silicon with macOS 26+; see README.md#quick-start')
         device_info = _native.Device().info()
     profile = config_for_device(device_info.gpu_cores, device_info.apple_family, device_info.name)
     if profile is None:

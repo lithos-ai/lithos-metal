@@ -8,8 +8,8 @@ no CPU work on the critical path. First target: `nvidia/Qwen3.8-27B-NVFP4`, batc
 The engine is model-agnostic by construction and this repository is standalone (code from MPK and other projects is copied in with
 its license headers, never depended on).
 
-Documents: [design](https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md) · [implementation plan](https://github.com/jiazhihao/mpk-apple/blob/main/plans/implementation-plan.md) · [hardware report](https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-gpu-probes.md) · [DSpark note](https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/dspark.md) ·
-[survey](https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-inference-systems.md) · [CLAUDE.md](https://github.com/jiazhihao/mpk-apple/blob/main/CLAUDE.md).
+Documents: [design](https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md) · [implementation plan](https://github.com/jiazhihao/mpk-apple/blob/main/plans/implementation-plan.md) · [hardware report](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md) · [DSpark note](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md) ·
+[survey](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-inference-systems.md) · [CLAUDE.md](https://github.com/jiazhihao/mpk-apple/blob/main/CLAUDE.md).
 
 **Success metrics (v1)** — same machine, same prompt set, paired A/B, min-of-N: greedy tokens equal to the HF reference on dequantized
 weights; plain decode ≥ 1.10× the better of MLX / llama.cpp (stretch ≥ 80 % of the chip's bandwidth bound); speculative decode ≥ 1.5× our
@@ -128,14 +128,14 @@ v1 speculates with a public DSpark drafter (design D10). Three Apache-2.0 drafte
 
 **Work**
 - Download `DimInfer/Qwen3.8-27B-Dspark-v1` (safetensors + GGUF Q8_0/BF16), `gittensor-model-hub/Qwen3.8-27B-DSpark-NVFP4`, `Dogacel/Qwen3-8B-DSpark` (model 2)
-- Record layers, hidden/intermediate sizes, heads, block size, tapped target layers, Markov rank/type, confidence head, dtypes, tensor names and licenses in `docs/research/dspark.md` §2; note that `RadixArk/Qwen3.8-27B-DSpark` is excluded (license 'other')
+- Record layers, hidden/intermediate sizes, heads, block size, tapped target layers, Markov rank/type, confidence head, dtypes, tensor names and licenses in [`docs/research/dspark.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md) §2; note that `RadixArk/Qwen3.8-27B-DSpark` is excluded (license 'other')
 - Check the safetensors tensor names against the llama.cpp GGUF naming (`markov_w1/w2`, `conf_proj`, `dflash.block_size`) for the weight map in M6
 
 **Done when**
 - Drafters on disk on the M3 Pro; `dspark.md` §2 verified against the files; a `tests/spec/` fixture listing the tensors
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/dspark.md §2
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md §2
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §5.8
 
 ### M0: exact NVFP4/FP8 → BF16 dequantizer and HF goldens
@@ -169,7 +169,7 @@ Other GPU clients wait for a whole command buffer in the usual case on the M5 Pr
 - Numbers in the hardware report; `profiles/*.json` carry `max_cb_ms`
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-gpu-probes.md §3 H5, §6 P6/P6b
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md §3 H5, §6 P6/P6b
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md D6
 
 ---
@@ -209,7 +209,7 @@ On the M5 Pro the first-cut NVFP4 GEMV is ALU-bound at 137–182 GB/s of useful 
 - NVFP4 T = 1 ≥ 80 % of nominal on the M5 Pro (≥ 245 GB/s useful) or a written explanation of the ceiling
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-gpu-probes.md §3 N2, §6 P13
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md §3 N2, §6 P13
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §8 risk 1–2
 
 ### M1: kernel study — lane order, threadgroups per core, R, T variants, scale placement, accumulation, math modes
@@ -453,7 +453,7 @@ The DSpark round as block bodies (design §5.8). The draft layers reuse the targ
 
 **References**
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §5.6, §5.8
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/dspark.md
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md
 
 ### M3: composite layer tests on real weights vs HF modules
 labels: area:kernels, area:models, gate
@@ -635,7 +635,7 @@ Design §5.12: each mixer's gate projection is emitted as an un-barriered siblin
 
 **References**
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md D14, §5.12
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-gpu-probes.md §3 N5
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md §3 N5
 
 ### M5: go/no-go #2 — the plain-decode success metric
 labels: area:perf, gate, hardware:m3-pro
@@ -666,8 +666,8 @@ Go/no-go #2 was a no-go on the 8B (#36, decode-kernels.md §8): on equal bytes o
 - NVFP4 T = 1 GEMV within 5 % of mlx-lm's `qmv` rate on the same shapes (≥ 255 GB/s at 17408×5120) or a written account of why the shader path cannot; the variant the default where it wins; tokens unchanged
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/decode-kernels.md §8
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/gemv-kernel-study.md §3
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md §8
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gemv-kernel-study.md §3
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §5.6
 
 ### M5 (contingency): the pack's byte overhead — a lane-row unit without the 16-byte padding
@@ -686,7 +686,7 @@ Our NVFP4 pack streams 4.65 GB per token for the 8B where mlx-lm streams 4.26 fo
 **References**
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md D8, §5.6
 - https://github.com/jiazhihao/mpk-apple/blob/main/monolith/formats/blm.py
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/decode-kernels.md §8
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md §8
 
 ### M5 (contingency): the step's non-GEMV time on the 8B — attention scoring, the norm dispatches, the dispatch count
 labels: area:kernels, area:compiler, area:perf
@@ -702,7 +702,7 @@ In the traced 8B step (decode-kernels.md §8) the 72 attention dispatches take 1
 - Non-GEMV time ≤ 5 % of the 8B's step at 1 K context; tokens unchanged
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/decode-kernels.md §1, §8
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md §1, §8
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §5.6
 
 ### M5 gate (contingency): per-token latency under speculative decoding — ours vs mlx-lm's, same target bytes, same draft length
@@ -720,8 +720,8 @@ The v1 metric on the machine we have: the speculative round on Qwen3-8B NVFP4 mu
 - On the prompt set, our ms per token under our best speculative setting ≤ mlx-lm's under its best (`--num-draft-tokens` swept) and ≤ mlx-lm plain, on the same target bytes; plain decode at parity; both recorded with the A/B protocol
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/dspark.md §3
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/decode-kernels.md §5, §8
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md §3
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md §5, §8
 - https://github.com/jiazhihao/mpk-apple/blob/main/plans/implementation-plan.md §0 success metrics
 
 ---
@@ -743,7 +743,7 @@ The DSpark drafter is a `Drafter` plugin (design §5.14): 5 attention layers on 
 
 **References**
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §5.8, §5.14
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/dspark.md
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md
 
 ### M6: wire the DSpark round into the dynamic-T step program
 labels: area:spec, area:compiler, area:runtime
@@ -791,7 +791,7 @@ M6's exit gate: ≥ 1.5× our plain decode and ≥ llama.cpp's `draft-dspark` de
 
 **References**
 - https://github.com/jiazhihao/mpk-apple/blob/main/plans/implementation-plan.md M6 exit
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/dspark.md §3–4
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md §3–4
 
 ### M6 (optional, gated on the numbers): Markov top-M bias pruning, INT8 W₂, accelerator verify path
 labels: area:spec, area:kernels
@@ -820,7 +820,7 @@ Public drafters were trained against Q4_K_M or NVFP4-W4A4 targets, not our W4A16
 - A drafter whose accepted length on our engine matches the llama.cpp baseline within 10 %
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/dspark.md §1, §4
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/dspark.md §1, §4
 - https://docs.nvidia.com/nemo/automodel/recipes-e2e-examples/dspark-speculative-decoding
 
 ---
@@ -916,7 +916,7 @@ labels: area:infra
 The written guide for adding a model, a format, an op and a drafter, derived from the M8 logs and their recorded time-to-port.
 
 **Work**
-- `docs/porting.md`: checklists, the contracts, the registries, the CI checks, the golden workflow
+- [`docs/porting.md`](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/porting.md): checklists, the contracts, the registries, the CI checks, the golden workflow
 
 **Done when**
 - A newcomer can add a model from the guide alone
@@ -956,7 +956,7 @@ Validated by `probes/p14`: dequantize a [64 × 64] tile into threadgroup memory 
 - GB/s at TM = 8 / 16 / 32 above the `p14` numbers, with the CPU-reference check
 
 **References**
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-gpu-probes.md §3 N4, §6 P14
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md §3 N4, §6 P14
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §5.6, §5.12
 
 ### M9: accelerator verify path for T ≥ 5 in the dynamic-T program
@@ -972,7 +972,7 @@ On Apple10 the shader path collapses at T = 8 (FP8 ×3.6, NVFP4 ×5.3) while the
 
 **References**
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §5.7, §5.8
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-gpu-probes.md §3 N3–N4
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-gpu-probes.md §3 N3–N4
 
 ### M9: MSL 4.1 on macOS 27
 labels: area:kernels, area:runtime
@@ -987,4 +987,4 @@ MSL 4.1 adds acquire/release memory orders and native quantized tensor types (FP
 
 **References**
 - https://github.com/jiazhihao/mpk-apple/blob/main/docs/design/design.md §3
-- https://github.com/jiazhihao/mpk-apple/blob/main/docs/research/apple-inference-systems.md §4, §6
+- https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/apple-inference-systems.md §4, §6

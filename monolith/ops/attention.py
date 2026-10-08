@@ -11,7 +11,7 @@ chunks, times ``σ(gate)`` when the gate projection is given; attrs ``heads``, `
 ``chunk``. The gate GEMV sits between the two as an un-barriered sibling of the core (design §5.12).
 
 Kernels: ``gqa_decode`` / ``gqa_merge``; macros ``D``, ``CH`` (64), ``RBMAX`` (4) — measured defaults in
-docs/research/decode-kernels.md §1.
+docs/design/mixers.md#full-attention.
 """
 
 from ..core.ir import OpClass

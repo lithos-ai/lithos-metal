@@ -69,8 +69,8 @@ matching shapes/formats and a complete
 normalization boundary. Dynamic/speculative mixer fusion requires a decoder
 recipe. Attention, MLP and DSpark context
 maps live in [the 40-core recipes directory](m5_max_40c/recipes/); they do not
-enable automatic context routing. See the
-[optimization study](../../../docs/research/m5max-gdn-mixer-optimization.md).
+enable context routing by themselves. The serving setup selects request recipes. See the
+[mixer design](../../../docs/design/mixers.md).
 The additional direct-cache attention shapes live in `m5_max_40c/attention.py`.
 The 40-core `prefill.py` owns large-prompt D=256 attention preparation and
 locally reduced 2048-key partitions, plus measured NVFP4/FP8 projection tiles.
@@ -83,12 +83,8 @@ intermediate sampling and removes redundant GDN commit replays; persistent
 state, input buffers, logits and acceptance logs never alias scratch storage.
 `Session(prefill_optimizations=False)` retains the original compiler path for
 comparisons. Other chips retain their attention/projection geometry.
-The [hybrid MoE study](../../../docs/qwen-hybrid-moe.md#eight-row-moe-task-tuning)
-records eight-row expert task tuning, experimental megakernel boundaries and
-the seven-proposal DSpark serving default.
-The [Qwen/Llama audit](../../../docs/research/m5max-qwen-llama-audit.md) records
-their context choices and the remaining numerical gates, including the excluded
-INT4 hybrid direct-cache choice at 32K.
+The [model adapter design](../../../docs/design/models.md) describes the hybrid MoE and
+Llama contracts. Shape-specific task boundaries and configuration choices remain owned by the backend.
 
 Autotuning cache names include backend, core count and a digest of configuration,
 resolved Metal sources and backend Python code. Existing caches are left intact;
@@ -114,5 +110,5 @@ The writer preserves existing probe records, backend metadata and layer-fusion
 recipes. It saves the prior engine block and measurements under `writer`.
 Unregistered devices require `--out` (or `--dry-run`); measurements do not silently
 create a chip backend. Leaf calibration does not mark an untested layer recipe
-as validated. Measurements and figures remain in the
-[evidence archive](../../../docs/research/m5max-artifacts.md).
+as validated. Store measurements and generated figures with the
+[benchmark outputs](../../../tools/bench/README.md), outside the design documentation.

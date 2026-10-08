@@ -8,13 +8,13 @@
 
 Authentication (never printed): GITHUB_TOKEN or GH_TOKEN in the environment, else `gh auth token` if the GitHub CLI is
 logged in. The token needs `repo` scope (classic) or Issues: read/write (fine-grained) on the repository.
-Source of truth for the content: plans/implementation-plan.md and docs/design/design.md; keep the three in step.
+Historical roadmap publisher. Source links are pinned to the documentation snapshot used by the roadmap.
 """
 import argparse, json, os, subprocess, sys, time, urllib.error, urllib.request
 
 REPO = os.environ.get("MONOLITH_GITHUB_REPO", "jiazhihao/mpk-apple")
 API = "https://api.github.com"
-BLOB = f"https://github.com/{REPO}/blob/main"
+BLOB = "https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9"
 DESIGN, PLAN, PROBES, SPARK = (f"{BLOB}/docs/design/design.md", f"{BLOB}/plans/implementation-plan.md",
                                f"{BLOB}/docs/research/apple-gpu-probes.md", f"{BLOB}/docs/research/dspark.md")
 

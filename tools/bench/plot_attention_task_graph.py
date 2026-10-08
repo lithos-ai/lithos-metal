@@ -8,7 +8,7 @@ Orange counter-managed events depict the existing all-worker phase barriers.
 Unnumbered task boxes illustrate queue use, not measured assignments or latency.
 
 Sources:
-  docs/research/m5max-27b-attention-optimization.md
+  docs/design/mixers.md#full-attention
   monolith/backends/metal/m5_max_40c/recipes/attention-optimization/selected-contexts.json
   monolith/compiler/static_fusion.py
   monolith/compiler/attention_fusion.py
@@ -37,7 +37,7 @@ EVIDENCE = ROOT / "monolith/backends/metal/m5_max_40c/recipes/attention-optimiza
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path,
-                        default=ROOT / "docs/research/figures/attention-lithos-metal-task-graph")
+                        default=ROOT / "tools/bench/results/figures/attention-lithos-metal-task-graph")
     args = parser.parse_args()
     recipes = json.loads((EVIDENCE / "selected-contexts.json").read_text())
     config = json.loads((EVIDENCE / recipes["8192"]).read_text())["attention"]

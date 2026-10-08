@@ -2,7 +2,7 @@
 
 This directory keeps `summary.json`, `round-profile-summary.json`, and
 `methodology.json`: compact results, measurement settings, versions, and launches.
-The [report](../../../../docs/research/qwen8b-serving-decode.md) explains the timing
+The [report](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/qwen8b-serving-decode.md) explains the timing
 boundaries, configuration correction, and limitations.
 
 Raw responses, generated text, per-round timestamps, logs, prompts, and cached

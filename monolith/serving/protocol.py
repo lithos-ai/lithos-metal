@@ -102,8 +102,11 @@ class ChatRequest(BaseModel):
             raise ValueError('Constrained JSON output is not supported')
         if self.reasoning_effort not in (None, 'none'):
             raise ValueError('Use reasoning_effort=none; this serving path disables thinking')
-        if self.stream_options and set(self.stream_options) - {'include_usage'}:
+        # continuous_usage_stats is vLLM's extension, not OpenAI's; both are nullable booleans.
+        if self.stream_options and set(self.stream_options) - {'include_usage', 'continuous_usage_stats'}:
             raise ValueError('Unsupported stream_options')
+        if any(v is not None and not isinstance(v, bool) for v in (self.stream_options or {}).values()):
+            raise ValueError('stream_options values must be booleans')
         names = {t.function.name for t in self.tools or []}
         if len(names) != len(self.tools or []):
             raise ValueError('Tool names must be unique')
@@ -117,6 +120,14 @@ class ChatRequest(BaseModel):
         if any(t.function.strict for t in self.tools or []):
             raise ValueError('Strict JSON-schema tool decoding is not supported; use strict=false')
         return self
+
+    @property
+    def stream_usage(self):
+        """None, 'final' (include_usage) or 'continuous' (also continuous_usage_stats, gated as in vLLM)."""
+        options = self.stream_options or {}
+        if not options.get('include_usage'):
+            return None
+        return 'continuous' if options.get('continuous_usage_stats') else 'final'
 
     @property
     def token_limit(self):

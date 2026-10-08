@@ -96,7 +96,8 @@ class Backend:
             sessions.pop(next(iter(sessions)))
         self.sampling = sampling
 
-    def complete(self, request, *, on_text=None, on_content=None, on_start=None, cancelled=None):
+    def complete(self, request, *, on_text=None, on_content=None, on_start=None, cancelled=None, on_progress=None):
+        """on_progress(content, completion_tokens) pairs each content snapshot with the committed output count."""
         from jinja2 import TemplateError
 
         request_started = time.perf_counter()
@@ -121,7 +122,7 @@ class Backend:
             stopped = False
             def publish(tokens):
                 nonlocal first_text_ms, stopped
-                if on_text or on_content:
+                if on_text or on_content or on_progress:
                     content, _ = self.visible_text(tokens, request)
                     text = streaming_text(content, request)
                     if text and first_text_ms is None:
@@ -130,11 +131,13 @@ class Backend:
                         on_text(text)
                     if on_content:
                         on_content(content)
+                    if on_progress:
+                        on_progress(content, min(len(tokens), limit))
                     stops = [request.stop] if isinstance(request.stop, str) else request.stop or []
                     if stops:
                         raw = self.tokenizer.decode(tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)
                         stopped = any(stop in raw for stop in stops)
-            options = dict(on_tokens=publish, cancelled=lambda: stopped or bool(cancelled and cancelled())) if on_text or on_content else {}
+            options = dict(on_tokens=publish, cancelled=lambda: stopped or bool(cancelled and cancelled())) if on_text or on_content or on_progress else {}
             if getattr(self.session, 'prefix_cache', None) is not None:
                 stable = set()
                 if messages:
@@ -184,6 +187,8 @@ class Backend:
         content, finish = self.visible_text(tokens, request)
         if on_content:
             on_content(content)
+        if on_progress:
+            on_progress(content, len(tokens))
         return content, finish, len(ids), len(tokens)
 
     def visible_text(self, tokens, request):
@@ -248,7 +253,7 @@ def create_app(backend, model_name, api_key=None):
         validate_model(request)
         if not lock.acquire(blocking=False):
             raise APIError("The model is busy; retry after the current request finishes", 429, "model_busy")
-        wire = WireResponse(protocol, model_name, custom)
+        wire = WireResponse(protocol, model_name, custom, request.stream_usage if request.stream else None)
         if request.stream:
             return stream(request, wire)
         try:
@@ -276,7 +281,11 @@ def create_app(backend, model_name, api_key=None):
                                cancelled=cancelled.is_set) if isinstance(backend, Backend) else {}
                 if options and wire.protocol == 'chat':
                     options.pop('on_text')
-                    options['on_content'] = lambda content: events.put(('content', content))
+                    if wire.usage == 'continuous':
+                        # One queue item: the count must arrive with the content it produced.
+                        options['on_progress'] = lambda content, count: events.put(('progress', (content, count)))
+                    else:
+                        options['on_content'] = lambda content: events.put(('content', content))
                 result = execute(request, wire, **options)
                 if not options:
                     usage = result['usage']
@@ -310,29 +319,34 @@ def create_app(backend, model_name, api_key=None):
                         wire.input_tokens = value
                         for event in wire.start():
                             yield event
-                    elif kind in ('text', 'content'):
-                        text = streaming_text(value, request) if kind == 'content' else value
+                    elif kind in ('text', 'content', 'progress'):
+                        if kind == 'progress':
+                            value, wire.output_tokens = value
+                        text = streaming_text(value, request) if kind != 'text' else value
                         if not text.startswith(wire.text):
                             raise RuntimeError('Decoded text changed after streaming')
                         for event in wire.delta(text[len(wire.text):]):
                             yield event
-                        if kind == 'content':
+                        if kind != 'text':
                             for snapshot in tool_prefixes(value, request):
                                 for event in wire.tool_delta(*snapshot):
                                     yield event
+                        for event in wire.progress():
+                            yield event
                     elif kind == 'error':
                         yield wire.error(*value)
                         break
                     else:
                         if wire.protocol == 'chat':
                             text = value['choices'][0]['message'].get('content') or ''
+                            wire.output_tokens = value['usage']['completion_tokens']
                         elif wire.protocol == 'messages':
                             text = ''.join(b['text'] for b in value['content'] if b['type'] == 'text')
                         else:
                             text = ''.join(p['text'] for b in value['output'] if b['type'] == 'message' for p in b['content'])
                         for event in wire.delta(text[len(wire.text):]):
                             yield event
-                        for event in wire.finish(value, bool((request.stream_options or {}).get('include_usage'))):
+                        for event in wire.finish(value, wire.usage is not None):
                             yield event
                         break
             except APIError as exc:

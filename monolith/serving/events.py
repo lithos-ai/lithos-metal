@@ -12,8 +12,13 @@ def sse(data, event=None):
 
 
 class WireResponse:
-    def __init__(self, protocol, model, custom=()):
+    def __init__(self, protocol, model, custom=(), usage=None):
         self.protocol, self.model, self.custom = protocol, model, custom
+        # Chat only: None omits usage from chunks, 'final' sends usage: null,
+        # 'continuous' a cumulative snapshot of output_tokens (vLLM's extension).
+        self.usage = usage if protocol == 'chat' else None
+        self.output_tokens = 0
+        self.reported_tokens = None
         self.id = {'chat': 'chatcmpl-', 'messages': 'msg_', 'responses': 'resp_'}[protocol] + uuid.uuid4().hex
         self.item_id = 'msg_' + uuid.uuid4().hex
         self.created = int(time.time())
@@ -30,8 +35,19 @@ class WireResponse:
         return sse({'type': kind, **data}, kind)
 
     def chat_chunk(self, delta, finish=None, **extra):
+        if self.usage == 'final':
+            extra['usage'] = None
+        elif self.usage == 'continuous':
+            extra['usage'] = {'prompt_tokens': self.input_tokens, 'completion_tokens': self.output_tokens,
+                              'total_tokens': self.input_tokens + self.output_tokens}
+            self.reported_tokens = self.output_tokens
         return sse({'id': self.id, 'object': 'chat.completion.chunk', 'created': self.created,
                     'model': self.model, 'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}], **extra})
+
+    def progress(self):
+        """A content-free frame for committed tokens that produced no other continuous-usage frame."""
+        if self.usage == 'continuous' and self.reported_tokens != self.output_tokens:
+            yield self.chat_chunk({})
 
     def response(self, output, status='completed', usage=None):
         return {'id': self.id, 'object': 'response', 'created_at': self.created, 'model': self.model,

@@ -2,7 +2,8 @@
 
 These are executable configuration inputs for the eight-row 27B decoder and
 DSpark draft benchmarks. Measurements, sweep candidates, logs and figures are
-kept in the [evidence archive](../../../../../docs/research/m5max-artifacts.md).
+kept with benchmark outputs outside the design documentation. See
+[speculative decoding](../../../../../docs/design/speculative-decoding.md).
 
 - `attention-optimization/selected-contexts.json` maps 128, 4K, 8K, 16K and 32K
   to the five selected attention mixer recipes.
@@ -15,6 +16,6 @@ kept in the [evidence archive](../../../../../docs/research/m5max-artifacts.md).
   recipes validated at 128 and 32K only.
 
 Pass the DSpark maps to `tools/bench/dspark_round_latency.py --config` with a
-matching `--config-key` and `--contexts` value. These maps do not add automatic
-context routing to generation. The GDN default remains in
+matching `--config-key` and `--contexts` value. These files describe recipes; the serving setup
+selects a context key for each request. The GDN default remains in
 [`config.json`](../config.json).

@@ -12,7 +12,7 @@ probes/build/
 monolith/runtime/_native*.so
 
 # Generated M5 Max evidence; retained locally and in the archived study commit.
-docs/research/figures/
+tools/bench/results/figures/
 tools/bench/results/m5max-27b-n7/
 tools/bench/results/m5max-27b-dspark/
 tools/bench/results/m5max-qwen-llama/

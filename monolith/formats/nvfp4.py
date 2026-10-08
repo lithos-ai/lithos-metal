@@ -13,7 +13,7 @@ Decode variants (``NVFP4_DECODE``): 0 = per-nibble float bit construction (the r
 1 = nibble pairs to ``half2`` with packed 16-bit integer arithmetic, 2 = the eight magnitudes as small integers in one
 32-bit constant with an int→float conversion, the ×0.5 folded into the block scale, 3 = MLX's ``fp4.h`` decode (the
 default): the three magnitude bits placed into a half's exponent field, the 2¹⁴ folded into the block scale —
-bit-identical to 2 and 2–25 % faster per shape on the M5 Pro (docs/research/gemv-kernel-study.md §3, §3e).
+bit-identical to 2 and 2–25 % faster per shape on the M5 Pro (https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gemv-kernel-study.md §3, §3e).
 
 Convention checked on the real checkpoint (layer 0 ``down_proj``, 2026-09-24): the stored block-scale codes are all
 non-negative and top out at exactly 0x7E (448), i.e. ``weight_scale_2 = amax / (6 · 448)``; the dequantized matrix has

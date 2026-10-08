@@ -1,8 +1,9 @@
 # Benchmark results
 
 Keep compact summaries, methodology, launch settings, input hashes, calibrated
-STS temperatures, and reusable tuning choices here. Reports under
-[`docs/research`](../../../docs/research/) explain measurement boundaries and limitations.
+STS temperatures, and reusable tuning choices here. The
+[archived research reports](https://github.com/lithos-ai/lithos-metal/tree/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research)
+explain measurement boundaries and limitations. Generated plots default to `figures/`, which is ignored by Git.
 The small target-verification `results.jsonl` retains its paired timing samples.
 
 Historical sweep logs, request outputs, generated tokens, traces, and large prompt
@@ -12,11 +13,11 @@ The earlier serving study has its [own archive and restore instructions](qwen8b-
 
 | Study | Raw evidence | Report |
 |---|---|---|
-| Kernel sweeps and early decode baselines | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [GEMV study](../../../docs/research/gemv-kernel-study.md), [decode kernels](../../../docs/research/decode-kernels.md) |
-| Llama and SmolLM2 generation | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [Model comparison](../../../docs/research/llama-mlx-comparison.md) |
-| Normalization fusion and grid searches | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [Fusion study](../../../docs/research/norm-projection-fusion.md) |
-| Long-context decode | [Request records and prompts](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/qwen8b-long-context-20260929/) | [Long-context study](../../../docs/research/qwen8b-long-context-tuning.md) |
-| Target-only verification | [Exact inputs and samples](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/qwen8b-target-verify-20260930/) | [Target batch comparison](../../../docs/research/qwen8b-target-batch-gap.md) |
+| Kernel sweeps and early decode baselines | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [GEMV study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gemv-kernel-study.md), [decode kernels](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md) |
+| Llama and SmolLM2 generation | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [Model comparison](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/llama-mlx-comparison.md) |
+| Normalization fusion and grid searches | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [Fusion study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/norm-projection-fusion.md) |
+| Long-context decode | [Request records and prompts](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/qwen8b-long-context-20260929/) | [Long-context study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/qwen8b-long-context-tuning.md) |
+| Target-only verification | [Exact inputs and samples](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/qwen8b-target-verify-20260930/) | [Target batch comparison](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/qwen8b-target-batch-gap.md) |
 
 Restore the evidence into a temporary directory without adding it back to the checkout:
 

@@ -1,7 +1,7 @@
 # GPU feasibility probes
 
 Small, bounded Metal programs that measure the Apple-GPU behaviours the design depends on and Apple does not
-document. Results and their design consequences: [`docs/research/apple-gpu-probes.md`](../docs/research/apple-gpu-probes.md).
+document. Design constraints: [Apple GPU execution model](../docs/design/apple-gpu.md).
 
 ```bash
 ./run_all.sh                 # build + run everything here (~5 min); output is saved under results/
@@ -36,7 +36,7 @@ virtualized macOS (hosted CI runners): its paravirtual GPU does not schedule lik
 Safety: an Apple9 GPU does not preempt a running dispatch and an Apple10 GPU does so only sometimes (`p6`), so every
 loop here is bounded and the longest single dispatch is ~1.5 s. Expect brief display stalls during `p3`/`p6`/`p6b`. Never add an unbounded spin to a probe.
 
-To characterize a new chip: run everything, commit the results file, add its numbers to the report, and derive a
+To characterize a new chip: run everything, commit the results file, retain its measurements with the backend configuration, and derive a
 profile (`cores`, full-speed SIMD-groups per core, in-flight limit, best block size, GB/s, cores needed to saturate the
 bus; a hand-derived first cut per chip is in `../monolith/backends/metal/`). `results/` holds the complete M3 Pro reference run and
 the M5 Pro runs (11 files: the full suite, repeats of `p6`/`p6b`/`p12`, and `p13`/`p14`).

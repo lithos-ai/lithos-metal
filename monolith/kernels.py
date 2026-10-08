@@ -520,7 +520,7 @@ def gqa_v3_macros(head_dim: int, *, nsg: Optional[int] = None, lm_mode: int = 0,
 
 def gqa_macros(head_dim: int, *, chunk: int = 64, rb_max: int = 4, steal: bool = False, steal_hits: bool = False,
                lm_mode: int = 0, chain_i: int = 0) -> Dict[str, str]:
-    """Measured on the M5 Pro (docs/research/decode-kernels.md §1): RBMAX = 4 query rows per pass is 13× faster than
+    """Measured on the M5 Pro (https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md §1): RBMAX = 4 query rows per pass is 13× faster than
     8 (register spills above 4 rows) and CH = 64 keys per chunk is the best chunk from 1 K to 32 K of context.
     ``lm_mode`` (an LM drafter's attention, design §5.8): 1 = the ingest pass (``n_inject`` rows ending at
     ``position``), 2 = chain step ``chain_i`` (``n_chain`` rows at ``position + chain_i``)."""
@@ -639,7 +639,7 @@ def gdn_source() -> str:
 
 def gdn_macros(dk: int, dv: int, *, conv_width: int, t: int, slice_cols: int = 8, slices_per_block: int = 4,
                tokens_per_pass: Optional[int] = None, slots: int = 1, commit: bool = False) -> Dict[str, str]:
-    """Measured defaults (docs/research/decode-kernels.md §2): 8-column state slices (the register budget: 16 spills)
+    """Measured defaults (https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md §2): 8-column state slices (the register budget: 16 spills)
     and 4 slices per block (fewer, longer blocks amortize the per-block conv/norm prologue; the Hv·DV/32 blocks
     still fill the crew for Hv ≥ 16). ``slots=2``: the states double-buffered by step parity (needs STEP_STATE);
     ``commit``: the commit pass of a speculative program (T = n_inject, rewrites the slot the step's pass wrote)."""

@@ -1,4 +1,9 @@
-# lithos-metal
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/lithos-metal-logo-dark.png">
+    <img src="assets/branding/lithos-metal-logo.png" alt="lithos-metal" width="720">
+  </picture>
+</h1>
 
 **lithos-metal is a fully open-source inference engine that generates Metal megakernels for Apple silicon.**
 It brings low-latency LLM inference to your Mac, with local serving for coding agents and other applications.

@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATHS = {
+    "apple-m2-max-30c": ROOT / "m2_max_30c/config.json",
     "apple-m3-pro-18c": ROOT / "m3_pro/config.json",
     "apple-m4-pro-16c": ROOT / "m4_pro/config-16c.json",
     "apple-m4-pro-20c": ROOT / "m4_pro/config-20c.json",
@@ -11,8 +12,9 @@ CONFIG_PATHS = {
     "apple-m5-max-32c": ROOT / "m5_max_32c/config.json",
     "apple-m5-max-40c": ROOT / "m5_max_40c/config.json",
 }
-BACKENDS = frozenset(("common", "m3_pro", "m4_pro", "m5_pro", "m5_max_32c", "m5_max_40c"))
+BACKENDS = frozenset(("common", "m2_max_30c", "m3_pro", "m4_pro", "m5_pro", "m5_max_32c", "m5_max_40c"))
 DEVICES = {
+    "m2_max_30c": ("Apple M2 Max", "Apple8", (30,)),
     "m3_pro": ("Apple M3 Pro", "Apple9", (18,)),
     "m4_pro": ("Apple M4 Pro", "Apple9", (16, 20)),
     "m5_pro": ("Apple M5 Pro", "Apple10", (20,)),

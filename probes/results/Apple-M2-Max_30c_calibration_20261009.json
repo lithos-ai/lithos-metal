@@ -1,0 +1,152 @@
+{
+  "name": "apple-m2-max-30c",
+  "backend": "m2_max_30c",
+  "chip": "Apple M2 Max",
+  "gpu_family": "Apple8",
+  "gpu_cores": 30,
+  "nominal_gbps": 100.0,
+  "validation": "unmeasured",
+  "note": "Conservative native-shader configuration for the exact 30-core device. No latency, bandwidth, fusion or acceptance claims; tuning remains unmeasured.",
+  "engine": {
+    "family": "Apple8",
+    "lane_order": "contiguous",
+    "scale_placement": "block",
+    "threadgroups_per_core": 1,
+    "sibling_order": "either",
+    "max_cb_ms": 16,
+    "attention": "auto",
+    "attention_rows": 4,
+    "attention_v2_threadgroups": 2,
+    "accelerator": "off",
+    "accelerator_min_t": {},
+    "cost_T": {
+      "fp8": {
+        "1": 1.0,
+        "2": 0.97,
+        "4": 2.741,
+        "8": 2.982
+      },
+      "nvfp4": {
+        "1": 1.0,
+        "2": 3.781,
+        "4": 3.725,
+        "8": 6.287
+      }
+    },
+    "note": "written by tools/profile_writer.py from the kernel harnesses (min-of-N over >= 2 GB streamed per point): cost_T = the pass cost relative to a T = 1 shader pass at the best geometry per T; accelerator_<fmt> = gemm_tile at TM rows in the same unit; sibling_order and max_cb_ms are the probes' (p11, p6/p6b) and attention_rows the file's: they carry over"
+  },
+  "memory_gb": 64,
+  "os": "macOS 26.7",
+  "gpu_working_set_gb": 51.84,
+  "max_buffer_gb": 38.88,
+  "measured": "2026-10-09",
+  "nominal_note": "[M] stand-in: the best measured streaming rate (100 GB/s) rounded up; replace with the spec figure",
+  "hosts_target_model": true,
+  "hosts_target_model_note": "21 GB of weights against recommendedMaxWorkingSetSize 51.84 GB, maxBufferLength 38.88 GB",
+  "writer": {
+    "tool": "tools/profile_writer.py",
+    "written": "2026-10-09",
+    "command": "python tools/profile_writer.py --quick --no-accelerator --formats fp8_e4m3,nvfp4 --out probes/results/Apple-M2-Max_30c_calibration_20261009.json",
+    "decisions": {
+      "lane_order": "contiguous at 100 GB/s against 62",
+      "scale_placement": "block streams 1.914x inline (the unit's padding gone)",
+      "threadgroups_per_core": "a tie (x1 0.838 ms, x2 1.464 ms): keeps 1",
+      "accelerator": "no tile measurement (the tensor ops did not compile or were skipped)",
+      "attention": "v3 faster than v1 and v2 at every point: (1024, 1): 0.068 vs v1 0.207 / v2 0.119 ms, (1024, 4): 0.162 vs v1 0.375 / v2 0.368 ms"
+    },
+    "measurements": {
+      "family": "Apple8",
+      "chip": "Apple M2 Max",
+      "shape": "17408x5120",
+      "copies": 4,
+      "reps": 2,
+      "lane_order_gbps": {
+        "interleaved16": 62.2,
+        "contiguous": 100.0
+      },
+      "lane_order_measured_with": "contiguous",
+      "scale_placement_gbps": {
+        "inline": 53.8,
+        "block": 103.0
+      },
+      "scale_placement_measured_with": "nvfp4",
+      "threadgroups_ms": {
+        "1": 0.8381,
+        "2": 1.4644
+      },
+      "shader_ms": {
+        "fp8_e4m3": {
+          "1": 0.6819,
+          "2": 0.6617,
+          "4": 1.869,
+          "8": 2.0333
+        },
+        "nvfp4": {
+          "1": 0.3253,
+          "2": 1.2299,
+          "4": 1.2117,
+          "8": 2.045
+        }
+      },
+      "shader_geometry": {
+        "fp8_e4m3": {
+          "1": "crew x1",
+          "2": "1blk/SG tg64",
+          "4": "crew x1",
+          "8": "1blk/SG tg64"
+        },
+        "nvfp4": {
+          "1": "crew x1",
+          "2": "crew x1",
+          "4": "1blk/SG tg64",
+          "8": "crew x1"
+        }
+      },
+      "shader_gbps": {
+        "fp8_e4m3": {
+          "1": 130.7,
+          "2": 134.7,
+          "4": 47.7,
+          "8": 43.8
+        },
+        "nvfp4": {
+          "1": 154.1,
+          "2": 40.8,
+          "4": 41.4,
+          "8": 24.5
+        }
+      },
+      "tile_ms": {},
+      "tile_gbps": {},
+      "attention_ms": {
+        "v1": {
+          "(1024, 1)": 0.2067,
+          "(1024, 4)": 0.375
+        },
+        "v2": {
+          "(1024, 1)": 0.119,
+          "(1024, 4)": 0.3681
+        },
+        "v3": {
+          "(1024, 1)": 0.068,
+          "(1024, 4)": 0.1616
+        }
+      },
+      "attention_rep": 8
+    },
+    "previous_engine": {
+      "family": "Apple8",
+      "lane_order": "interleaved16",
+      "scale_placement": "block",
+      "threadgroups_per_core": 1,
+      "sibling_order": "either",
+      "max_cb_ms": 16,
+      "attention": "v1",
+      "attention_rows": 4,
+      "accelerator": "off",
+      "accelerator_min_t": {},
+      "cost_T": {},
+      "gdn_mixer_fusion": {}
+    }
+  }
+}

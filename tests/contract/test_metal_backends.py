@@ -17,6 +17,7 @@ from monolith.runtime.program import KernelSpec, OpSpec, Program
 
 
 @pytest.mark.parametrize('name,cores,family,backend', [
+    ('Apple M2 Max', 30, 8, 'm2_max_30c'),
     ('Apple M3 Pro', 18, 9, 'm3_pro'), ('Apple M4 Pro', 16, 9, 'm4_pro'),
     ('Apple M4 Pro', 20, 9, 'm4_pro'), ('Apple M5 Pro', 20, 10, 'm5_pro'),
     ('Apple M5 Max', 32, 10, 'm5_max_32c'), ('Apple M5 Max', 40, 10, 'm5_max_40c'),
@@ -44,7 +45,7 @@ def test_max_variants_reject_each_others_config():
 
 def test_unmeasured_backends_have_no_borrowed_tuning():
     configs = load_configs()
-    for name in ('apple-m4-pro-16c', 'apple-m4-pro-20c', 'apple-m5-max-32c'):
+    for name in ('apple-m2-max-30c', 'apple-m4-pro-16c', 'apple-m4-pro-20c', 'apple-m5-max-32c'):
         config = configs[name]
         assert config.validation == 'unmeasured'
         assert config.accelerator == 'off'
@@ -52,6 +53,48 @@ def test_unmeasured_backends_have_no_borrowed_tuning():
         assert config.threadgroups_per_core == 1
     assert configs['apple-m5-max-40c'].validation == 'measured'
     assert configs['apple-m5-max-40c'].gdn_mixer_fusion['workers'] == 80
+
+
+@pytest.mark.parametrize('chip,cores,family', [
+    ('Apple M2 Max', 38, 8), ('Apple M2 Max', 30, 9), ('Apple M2 Ultra', 30, 8),
+])
+def test_m2_max_registration_rejects_other_devices(chip, cores, family):
+    assert config_for_device(cores, family, chip) is None
+    config = load_configs()['apple-m2-max-30c']
+    with pytest.raises(ValueError, match='30 GPU cores'):
+        get_backend(config.backend).validate_device(config,
+            SimpleNamespace(name=chip, gpu_cores=cores, apple_family=family))
+    doc = copy.deepcopy(config.raw)
+    doc.update(chip=chip, gpu_cores=cores)
+    doc['engine']['family'] = f'Apple{family}'
+    with pytest.raises(ValueError, match='does not match backend'):
+        ChipConfig.from_dict('invalid', doc)
+
+
+@pytest.mark.parametrize('tokens', [1, 8, 128])
+def test_m2_max_compiles_native_hybrid_program(tmp_path, tokens):
+    from tests.contract.test_nn_lowering import _checkpoint
+    from monolith.core import StepStateLayout
+    from monolith.formats import PackLayout
+    from monolith.models.qwen3_5 import Qwen3_5Model
+    from monolith.nn.pack_plan import pack_model
+    from monolith.packs import PackFile
+
+    _checkpoint(tmp_path)
+    model = Qwen3_5Model.from_checkpoint(str(tmp_path), max_context=256)
+    config = load_configs()['apple-m2-max-30c']
+    pack_model(model, str(tmp_path), str(tmp_path / 'pack'),
+               PackLayout(lane_order=config.lane_order, scale_placement=config.scale_placement))
+    program = compile_program(model, PackFile(tmp_path / 'pack'), config,
+                              t=tokens, dynamic_t=tokens > 1,
+                              layout=StepStateLayout(t_max=max(8, tokens)))
+    assert program.backend_id == 'm2_max_30c'
+    assert program.config_digest == config.fingerprint
+    functions = {kernel.function for kernel in program.kernels.values()}
+    assert {'gemv_T', 'gdn_mixer', 'gdn_norm', 'gqa_decode', 'gqa_merge'} <= functions
+    assert 'gemm_tile' not in functions and 'gdn_mixer_megakernel' not in functions
+    assert all(kernel.macros.get('FUSED_NORM') != '1' for kernel in program.kernels.values())
+    assert get_backend(config.backend).cache_identity(config).startswith('m2_max_30c-30c-')
 
 
 def test_registry_loads_only_chip_configs_and_recipe_references_resolve():

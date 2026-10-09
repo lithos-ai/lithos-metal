@@ -81,6 +81,7 @@ see the [model adapter design](docs/design/models.md) for supported structures a
 | M5 Max, 40 GPU cores | Measured target/draft recipes for the large Qwen models, including mixer megakernels |
 | M5 Pro, 20 GPU cores | Measured kernels and configurations for smaller models |
 | M3 Pro, 18 GPU cores | Probe-derived configuration |
+| M2 Max, 30 GPU cores | Native shader backend; qualification and limits in the [backend notes](monolith/backends/metal/m2_max_30c/README.md) |
 | M4 Pro, 16 or 20 GPU cores | Unmeasured native fallback |
 | M5 Max, 32 GPU cores | Independent, unmeasured native fallback |
 

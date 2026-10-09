@@ -7,6 +7,7 @@ configuration or autotuning cache.
 
 | Backend | Configuration | Status |
 | --- | --- | --- |
+| `m2_max_30c` | [30 cores](m2_max_30c/config.json) | Native shader path; [validation and limitations](m2_max_30c/README.md), performance tuning unmeasured |
 | `m3_pro` | [18 cores](m3_pro/config.json) | Existing probe-derived settings preserved |
 | `m4_pro` | [16 cores](m4_pro/config-16c.json), [20 cores](m4_pro/config-20c.json) | Unmeasured native fallback |
 | `m5_pro` | [20 cores](m5_pro/config.json) | Existing measured settings preserved |

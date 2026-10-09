@@ -68,6 +68,10 @@ class MetalBackend:
         """Chip-owned tuning for large prompt chunks, before scratch reuse; ``exact`` must keep 128-row results."""
         return program
 
+    def serving_context_limit(self, *, drafter) -> int | None:
+        """Largest prompt-plus-generation context that fits this chip, or None to keep the request."""
+        return None
+
     def serving_recipes(self, model, drafter, quantization):
         """Only opt matching workloads into recipes validated on this chip."""
         return {}

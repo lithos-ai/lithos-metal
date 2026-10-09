@@ -73,6 +73,12 @@ def prepare(args, *, device_info=None):
         args.draft = default_draft(args.model, model_dir)
         if args.draft:
             LOG.info('Automatically selected DSpark head: %s (seven proposals plus anchor)', args.draft)
+    limit = backend.serving_context_limit(drafter=bool(args.draft))
+    if limit is not None and args.max_context > limit:
+        LOG.warning('Clamping --max-context from %s to %s; a larger context does not fit %s '
+                    'with %s resident', args.max_context, limit, profile.chip,
+                    'the drafter' if args.draft else 'this model')
+        args.max_context = limit
     draft_dir = resolve_checkpoint(args.draft, revision=args.draft_revision, **resolve) if args.draft else None
     architecture = json.loads((model_dir/'config.json').read_text())['architectures'][0]
     cls = resolve_model(architecture)

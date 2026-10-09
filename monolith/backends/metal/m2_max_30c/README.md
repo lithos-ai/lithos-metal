@@ -28,8 +28,8 @@ fingerprint recorded in the repository's golden metadata.
 | --- | --- |
 | CMake/Ninja native module build | Passed |
 | Wheel build and packaged-runtime smoke test | Passed; the wheel includes the current M2 encoding policy, configuration, native extension and shared shaders |
-| Contract tier | 1059 passed; optional MLX comparison skipped because MLX was absent from this venv |
-| Runtime tier plus backend contracts, with shader validation | 41 passed, including encoding policy and the shared-state regression |
+| Contract tier | 1062 passed after merging the upstream M3 backend; optional MLX comparison skipped because MLX was absent from this venv |
+| Runtime tier plus backend contracts, with shader validation | 44 passed after the upstream merge, including encoding policy and the shared-state regression |
 | Default encoding model and layer run, with shader validation | 13 passed: GPU goldens, real-model speculative rollback and all layer tests; CPU model goldens also passed in the same 15-test run |
 | CPU model golden | Both tests passed |
 | Native projection/embedding/GDN checks with shader validation | 382 passed before the first optional fused-norm case failed; full kernel tier is not qualified |
@@ -159,7 +159,7 @@ curl --fail http://127.0.0.1:18089/v1/chat/completions \
 
 One repeated shader-validation runtime run exceeded the existing profiling
 test's 5 ms timing assertion (11.54 ms). Its isolated recheck and the final
-41-test runtime/backend run passed. The assertion was retained unchanged;
+44-test runtime/backend run passed. The assertion was retained unchanged;
 these instrumented timings are not performance qualification.
 
 Two experimental paths failed the initial shader-validation sweep:

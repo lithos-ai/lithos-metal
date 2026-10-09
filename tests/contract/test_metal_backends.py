@@ -18,7 +18,8 @@ from monolith.runtime.program import KernelSpec, OpSpec, Program
 
 @pytest.mark.parametrize('name,cores,family,backend', [
     ('Apple M2 Max', 30, 8, 'm2_max_30c'),
-    ('Apple M3 Pro', 18, 9, 'm3_pro'), ('Apple M4 Pro', 16, 9, 'm4_pro'),
+    ('Apple M3 Pro', 18, 9, 'm3_pro'), ('Apple M3 Max', 30, 9, 'm3_max_30c'),
+    ('Apple M4 Pro', 16, 9, 'm4_pro'),
     ('Apple M4 Pro', 20, 9, 'm4_pro'), ('Apple M5 Pro', 20, 10, 'm5_pro'),
     ('Apple M5 Max', 32, 10, 'm5_max_32c'), ('Apple M5 Max', 40, 10, 'm5_max_40c'),
 ])
@@ -43,9 +44,29 @@ def test_max_variants_reject_each_others_config():
         ChipConfig.from_dict('invalid', doc)
 
 
+def test_m3_max_30c_rejects_other_devices():
+    assert config_for_device(30, 9, 'Apple M3 Max').backend == 'm3_max_30c'
+    for name, cores, family in (
+            ('Apple M3 Max', 40, 9), ('Apple M3 Max', 30, 8), ('Apple M2 Max', 30, 8),
+            ('Apple M3 Pro', 30, 9), ('Apple M3 Max', 18, 9)):
+        selected = config_for_device(cores, family, name)
+        assert selected is None or selected.backend != 'm3_max_30c'
+    config = load_configs()['apple-m3-max-30c']
+    with pytest.raises(ValueError, match='30 GPU cores'):
+        get_backend(config.backend).validate_device(config,
+            SimpleNamespace(name='Apple M3 Max', gpu_cores=40, apple_family=9))
+
+
+def test_m3_max_draft_context_is_capped_and_other_chips_are_not():
+    assert get_backend('m3_max_30c').serving_context_limit(drafter=True) == 20480
+    assert get_backend('m3_max_30c').serving_context_limit(drafter=False) is None
+    assert get_backend('m5_max_40c').serving_context_limit(drafter=True) is None
+    assert get_backend('common').serving_context_limit(drafter=True) is None
+
+
 def test_unmeasured_backends_have_no_borrowed_tuning():
     configs = load_configs()
-    for name in ('apple-m2-max-30c', 'apple-m4-pro-16c', 'apple-m4-pro-20c', 'apple-m5-max-32c'):
+    for name in ('apple-m2-max-30c', 'apple-m3-max-30c', 'apple-m4-pro-16c', 'apple-m4-pro-20c', 'apple-m5-max-32c'):
         config = configs[name]
         assert config.validation == 'unmeasured'
         assert config.accelerator == 'off'

@@ -1,0 +1,24 @@
+{
+  "name": "apple-m3-max-30c",
+  "backend": "m3_max_30c",
+  "chip": "Apple M3 Max",
+  "gpu_family": "Apple9",
+  "gpu_cores": 30,
+  "nominal_gbps": 0,
+  "validation": "unmeasured",
+  "note": "Conservative native-kernel fallback for the 30-core M3 Max (Apple9). No latency, bandwidth, fusion or acceptance claims; the 40-core M3 Max is a different device. Tune on this exact chip.",
+  "engine": {
+    "family": "Apple9",
+    "lane_order": "interleaved16",
+    "scale_placement": "block",
+    "threadgroups_per_core": 1,
+    "sibling_order": "either",
+    "max_cb_ms": 16,
+    "attention": "v1",
+    "attention_rows": 4,
+    "accelerator": "off",
+    "accelerator_min_t": {},
+    "cost_T": {},
+    "gdn_mixer_fusion": {}
+  }
+}

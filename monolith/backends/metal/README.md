@@ -9,6 +9,7 @@ configuration or autotuning cache.
 | --- | --- | --- |
 | `m2_max_30c` | [30 cores](m2_max_30c/config.json) | Native shaders with direct encoding; [validation and limitations](m2_max_30c/README.md), performance tuning unmeasured |
 | `m3_pro` | [18 cores](m3_pro/config.json) | Existing probe-derived settings preserved |
+| `m3_max_30c` | [30 cores](m3_max_30c/config.json) | Unmeasured native fallback. On the 36 GB machine, DSpark serving fits through 20480 context; 22528 does not |
 | `m4_pro` | [16 cores](m4_pro/config-16c.json), [20 cores](m4_pro/config-20c.json) | Unmeasured native fallback |
 | `m5_pro` | [20 cores](m5_pro/config.json) | Existing measured settings preserved |
 | `m5_max_32c` | [32 cores](m5_max_32c/config.json) | Unmeasured native fallback |
@@ -16,8 +17,8 @@ configuration or autotuning cache.
 
 Unmeasured configurations have no cost tables or automatic megakernel fusion,
 and keep the tensor accelerator off. They provide a starting point for validation
-on those devices, not a performance claim. The M4 Pro and 32-core M5 Max have not
-been GPU-tested by this reorganization.
+on those devices, not a performance claim. The 30-core M3 Max, M4 Pro and 32-core
+M5 Max have not been GPU-tested by this reorganization.
 
 ## Source and compilation ownership
 
@@ -25,6 +26,8 @@ been GPU-tested by this reorganization.
 monolith/backends/metal/
   config.py, registry.py, context.py, calibration.py
   base.py                 # shared extension interface
+  m3_pro/backend.py
+  m3_max_30c/backend.py
   m4_pro/backend.py        # chip-owned Python hooks
   m5_pro/backend.py
   m5_max_32c/backend.py
@@ -34,6 +37,8 @@ monolith/backends/metal/
     recipes/              # selected context and shape configurations
 kernels/
   common/                 # shared Metal implementations
+  m3_pro/
+  m3_max_30c/
   m4_pro/                 # same-name source overrides
   m5_pro/
   m5_max_32c/

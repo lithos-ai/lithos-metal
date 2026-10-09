@@ -1,13 +1,13 @@
 # Metal chip backends
 
-Each backend owns its configuration, lowering hooks, fusion policy and optional
+Each backend owns its configuration, lowering hooks, fusion policy, encoding default and optional
 Metal source overrides. Model graphs and the runtime Program ABI stay shared.
 M5 Max 32-core and 40-core are independent backends; neither inherits the other's
 configuration or autotuning cache.
 
 | Backend | Configuration | Status |
 | --- | --- | --- |
-| `m2_max_30c` | [30 cores](m2_max_30c/config.json) | Native shader path; [validation and limitations](m2_max_30c/README.md), performance tuning unmeasured |
+| `m2_max_30c` | [30 cores](m2_max_30c/config.json) | Native shaders with direct encoding; [validation and limitations](m2_max_30c/README.md), performance tuning unmeasured |
 | `m3_pro` | [18 cores](m3_pro/config.json) | Existing probe-derived settings preserved |
 | `m4_pro` | [16 cores](m4_pro/config-16c.json), [20 cores](m4_pro/config-20c.json) | Unmeasured native fallback |
 | `m5_pro` | [20 cores](m5_pro/config.json) | Existing measured settings preserved |
@@ -55,6 +55,12 @@ additional explicitly requested direct-cache shapes, `optimize_decoder` or
 lowering strategy. A `.metal` file with the same relative name overrides only
 that chip's source. Shared compiler fusion helpers remain reusable. Direct
 source-building experiments can use `with using_backend("m5_max_32c"):`.
+
+`Backend.reencode_default` selects the default command encoding for a Program.
+It is false for shared/other chip backends (ICB replay), and true for M2 Max
+30-core (direct serial encoding while its ICB workloads remain unqualified).
+`Engine.run(reencode=True/False)` explicitly overrides the default for diagnostics.
+The backend is taken from `Program.backend_id`, including after JSON round-trip.
 
 The 40-core backend's `scheduling.py` owns automatic GDN mixer fusion, the
 measured routed-expert crews in `routed.py`, and the two-kernel INT4 MLP

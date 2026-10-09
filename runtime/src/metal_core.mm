@@ -210,9 +210,11 @@ static void encode_icb_command(id<MTLIndirectComputeCommand> c, const Dispatch& 
     [c setKernelBuffer:b.buffer->impl->buf offset:b.offset atIndex:b.index];
   }
   for (auto& t : d.threadgroup_memory) [c setThreadgroupMemoryLength:t.second atIndex:t.first];
+  // MTLIndirectComputeCommand::setBarrier requires setting synchronization
+  // before encoding the indirect dispatch.
+  if (d.barrier_before) [c setBarrier];
   [c concurrentDispatchThreadgroups:MTLSizeMake(d.grid[0], d.grid[1], d.grid[2])
               threadsPerThreadgroup:MTLSizeMake(d.threadgroup[0], d.threadgroup[1], d.threadgroup[2])];
-  if (d.barrier_before) [c setBarrier];                                  // the command waits for all commands before it
 }
 
 Icb::Icb(const Device& d, const std::vector<Dispatch>& ops) : impl(std::make_shared<IcbImpl>()) {
@@ -271,11 +273,9 @@ static double cpu_ms_now() {
   return (info.user_time.seconds + info.system_time.seconds) * 1e3 + (info.user_time.microseconds + info.system_time.microseconds) / 1e3;
 }
 
-// The ring is drained while later command buffers may still be running, so the host must not trust a head counter
-// it reads from the state buffer: writes of an in-flight buffer become visible in no particular order. Every slot
-// therefore carries its own 1-based sequence number in the high 32 bits (one aligned 8-byte store on the GPU); the
-// host takes slots as long as the next expected sequence is present and publishes its tail for the GPU's overflow
-// check. `ring_head` in StepState is the GPU's own counter and is read by the host only after everything completed.
+// Drain only after all command buffers using the shared state and ring have completed. Every slot carries its
+// own 1-based sequence number in the high 32 bits (one aligned 8-byte store on the GPU); the host takes slots as
+// long as the next expected sequence is present and publishes its tail for the next batch's overflow check.
 static void drain_ring(RunnerImpl& r) {
   const volatile uint64_t* slots = (const volatile uint64_t*)r.ring.contents;
   std::lock_guard<std::mutex> lk(r.mu);
@@ -303,6 +303,12 @@ RunnerStats Runner::run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_f
     st.gpu_ms += (cb.GPUEndTime - cb.GPUStartTime) * 1e3;
     st.command_buffers++;
     if (cb.error && st.error.empty()) st.error = [cb.error.localizedDescription UTF8String];
+  };
+  auto observe_pending = [&]() {
+    // Shared StepState and ring storage must be idle before CPU access.
+    // Waiting for only the oldest buffer lets the host publish ring_tail while
+    // a later command buffer still reads/writes the same shared allocation.
+    while (!pending.empty()) { observe(pending.front()); pending.pop_front(); }
     drain_ring(r);
     st.done = *(volatile uint32_t*)((char*)r.state.contents + r.done_off) != 0;
     { std::lock_guard<std::mutex> lk(r.mu); tokens_seen = r.tokens.size(); }   // drained since the last drain(): this call's tokens
@@ -333,9 +339,9 @@ RunnerStats Runner::run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_f
       pending.push_back(cb);
       st.steps_submitted += n;
     }
-    while (pending.size() >= in_flight) { observe(pending.front()); pending.pop_front(); }
+    if (pending.size() >= in_flight) observe_pending();
   }
-  while (!pending.empty()) { observe(pending.front()); pending.pop_front(); }
+  if (!pending.empty()) observe_pending();
   st.wall_ms = now_ms() - t0;
   st.host_busy_ms = cpu_ms_now() - c0;
   return st;

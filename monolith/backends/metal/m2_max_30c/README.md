@@ -2,7 +2,11 @@
 
 This backend registers the exact `Apple M2 Max` / `Apple8` / 30-core device.
 It uses the shared native shader implementations, with tensor acceleration and
-automatic mixer megakernel fusion disabled. The 38-core M2 Max and other M2
+automatic mixer megakernel fusion disabled. It defaults to direct serial
+dispatch encoding: the GPU still advances sequence state and produces tokens,
+but the host re-encodes dispatches rather than replaying an ICB. ICB replay is
+available through an explicit `Engine.run(reencode=False)` diagnostic override,
+and is not qualified for this device. The 38-core M2 Max and other M2
 variants remain unregistered; they need their own qualification.
 
 ## Qualification
@@ -23,14 +27,16 @@ fingerprint recorded in the repository's golden metadata.
 | Check | Result |
 | --- | --- |
 | CMake/Ninja native module build | Passed |
-| Wheel build | Passed; the wheel includes the new backend/configuration and shared Metal sources |
+| Wheel build and packaged-runtime smoke test | Passed; the wheel includes the current M2 encoding policy, configuration, native extension and shared shaders |
 | Contract tier | 1059 passed; optional MLX comparison skipped because MLX was absent from this venv |
-| Runtime tier plus backend contracts, with shader validation | 37 passed |
-| Normal ICB model and layer run | 13 passed: GPU goldens, real-model speculative rollback and all layer tests |
+| Runtime tier plus backend contracts, with shader validation | 41 passed, including encoding policy and the shared-state regression |
+| Default encoding model and layer run, with shader validation | 13 passed: GPU goldens, real-model speculative rollback and all layer tests; CPU model goldens also passed in the same 15-test run |
 | CPU model golden | Both tests passed |
 | Native projection/embedding/GDN checks with shader validation | 382 passed before the first optional fused-norm case failed; full kernel tier is not qualified |
-| Additional normal-mode state/drafter/MoE/attention checks | 79 passed before the DSpark large-prefill case hung; that case passed in isolation |
-| Shader validation, direct re-encoding | Two 48-token continuations exactly matched the retained golden using default launch geometry and no autotuning |
+| Mixed state/drafter/MoE/attention/sampling/large-prefill checks, with shader validation | 105 passed, 8 inapplicable resident-prefill combinations skipped; 38,113 Engine calls used the M2 backend's default encoding |
+| Real serving entry point, BF16 reference model without a drafter, 1024-token capacity | Passed startup/warmup, health/model discovery, repeated greedy requests, prefix reuse, SSE text/usage, Chat Completions/Responses/Messages and recovery after a streaming disconnect |
+| Initial ICB model/layer run | 13 passed before the runtime follow-up; narrower evidence than mixed-workload qualification |
+| Initial direct-encoding shader-validation check | Two 48-token continuations exactly matched the retained golden using default launch geometry and no autotuning |
 
 The GPU model checks include all 24 prefill layer outputs, two identical
 48-token greedy continuations, the retained 19-token prompt / 32-token
@@ -43,6 +49,34 @@ The configuration keeps `validation: unmeasured`: performance tuning remains
 unmeasured. It has no borrowed cost table, nominal bandwidth claim or fusion
 recipe. Qualification of these workloads is separate from tuning or an
 end-to-end performance comparison.
+
+## Runtime follow-up
+
+The host pump originally waited for its oldest command buffer and accessed the
+shared ring and StepState while later buffers could still be running. It now
+waits for the entire pending batch before draining tokens, publishing
+`ring_tail`, or observing `done`. A bounded two-buffer regression fails against
+the original runtime (the GPU observes an early host-published tail) and passes
+with the fix under both ICB replay and direct encoding. This follows Apple's
+[shared-storage synchronization requirement](https://developer.apple.com/documentation/metal/mtlstoragemode/shared).
+The pump still submits up to `in_flight` buffers per batch.
+
+ICB command barriers are now set before encoding their indirect dispatch, as
+required by [the Metal API](https://developer.apple.com/documentation/metal/mtlindirectcomputecommand/setbarrier%28%29).
+These shared-runtime changes are independent of the M2 encoding policy.
+
+The pump fix allowed all 12 speculative sampling/rollback tests to pass in a
+normal ICB run. It did not qualify all ICB workloads: an LM-drafter mixed run
+hung in a one-buffer prefill, and a resident DSpark decoder with prefix reuse
+hung during decode. An LM case also hung with a barrier on every command after
+the pump fix. Direct encoding passed the same LM and large-prefill workload
+families under shader validation, so the exact M2 backend defaults to that
+existing serial path. Other backends retain ICB replay; explicit bool values
+on `Engine.run(reencode=...)` take precedence over the backend default.
+
+The cause of the remaining ICB hangs is unresolved. The direct-encoding
+fallback is a correctness qualification, not a repair or performance claim
+for ICB replay. Its CPU/latency cost has not been measured with paired A/B runs.
 
 The [raw probe run](../../../../probes/results/Apple-M2-Max_30c_macOS26.7_20261009-105128.txt)
 attempted all 17 probes. Sixteen completed; `p10_claim_protocol` was terminated
@@ -76,12 +110,23 @@ hf download Qwen/Qwen3.5-0.8B \
   --include '*.json' --include '*.safetensors' --include '*.txt' \
   --include '*.jinja' --include LICENSE \
   --local-dir "$MONOLITH_MODELS/Qwen3.5-0.8B"
-pytest tests/contract
+python -m pytest tests/contract
 MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 \
-  pytest tests/runtime tests/contract/test_metal_backends.py
-OMP_NUM_THREADS=8 pytest tests/models/qwen3_5/test_gpu_golden.py \
+  python -m pytest tests/runtime tests/contract/test_metal_backends.py
+OMP_NUM_THREADS=8 MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 \
+  python -m pytest tests/models/qwen3_5/test_gpu_golden.py \
   tests/models/qwen3_5/test_spec_rollback.py tests/layers
-OMP_NUM_THREADS=8 pytest tests/models/qwen3_5/test_golden.py
+OMP_NUM_THREADS=8 python -m pytest tests/models/qwen3_5/test_golden.py
+MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 \
+  python -m pytest tests/kernels/test_draft_ops.py tests/kernels/test_moe_ops.py \
+  tests/kernels/test_moe_program.py tests/kernels/test_program_sharing.py \
+  tests/kernels/test_eos_set.py tests/kernels/test_lm_drafter.py \
+  tests/kernels/test_gqa_decode.py::test_matches_kernel_contract \
+  tests/kernels/test_gqa_decode.py::test_repeat_runs_are_bit_identical_and_t_active \
+  tests/kernels/test_gqa_decode.py::test_matches_layer_oracle \
+  tests/kernels/test_spec_sampling.py tests/kernels/test_spec_rollback.py
+MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 \
+  python -m pytest tests/kernels/test_large_prefill.py -k off
 # p10 stalled on this device; omit it when reproducing the remaining probes.
 GPU_CORES=30 ./probes/run_all.sh \
   p1_limits p2_sync p3_residency p4_core_model p5_bandwidth p5b_access_pattern \
@@ -90,7 +135,32 @@ GPU_CORES=30 ./probes/run_all.sh \
   p14_tensor_ops p15_frame_pacing
 ```
 
+## Serving smoke
+
+The normal serving CLI was exercised on the reference checkpoint without
+encoding overrides or a custom recipe. Repeated greedy responses were equal,
+streamed text matched the non-streaming response, and a repeated long system
+prefix reused the cache. After disconnecting a streaming request, the server
+accepted another generation. This checks the target-only reference workload;
+it does not qualify a large catalogue target/DSpark pair.
+
+```bash
+python -m monolith.serve --model "$MONOLITH_MODELS/Qwen3.5-0.8B" \
+  --no-draft --local-files-only --pack /tmp/lithos-metal-m2-serve \
+  --max-context 1024 --port 18089
+# In another terminal after warmup, with the default unauthenticated local setup:
+curl --fail http://127.0.0.1:18089/health
+curl --fail http://127.0.0.1:18089/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Qwen3.5-0.8B","messages":[{"role":"user","content":"Say hello."}],"temperature":0,"max_completion_tokens":16}'
+```
+
 ## Validation limitations
+
+One repeated shader-validation runtime run exceeded the existing profiling
+test's 5 ms timing assertion (11.54 ms). Its isolated recheck and the final
+41-test runtime/backend run passed. The assertion was retained unchanged;
+these instrumented timings are not performance qualification.
 
 Two experimental paths failed the initial shader-validation sweep:
 `test_norm_and_silu_intermediate_rounding[gemm_tile-bf16-4]` and
@@ -98,22 +168,10 @@ Two experimental paths failed the initial shader-validation sweep:
 Neither path is enabled by this backend's default configuration. This is
 not a claim that the entire kernel tier passes on Apple8.
 
-Two normal-mode speculative checks also encountered
-`kIOGPUCommandBufferCallbackErrorHang`:
-
-- `tests/kernels/test_spec_sampling.py::test_sampled_drafts_preserve_the_target_distribution[top-k+top-p]`
-  failed both in a mixed run and in isolation. It explicitly selects attention
-  `v2` and sampled drafts; the registered default remains `v1`.
-- `tests/kernels/test_large_prefill.py::test_large_prefill_shares_state_with_small_decode[False-False-False-off-dspark]`
-  failed after 79 passing checks in a mixed run, but passed in isolation.
-  The equivalent plain and LM-drafter cases passed in the mixed run, covering
-  prompt lengths 5, 128, 129, 259, 137 and 265 with the default 128-row chunks.
-  The DSpark case uses `v1` with acceleration off, so disabling experimental
-  attention alone does not qualify all DSpark workloads.
-
-These failures leave sampled-draft distribution and mixed-workload DSpark
-stability unqualified. Passing real-model rollback and synthetic layer checks
-are narrower evidence, not a full speculative-serving qualification.
+Normal-mode ICB replay remains unqualified for mixed speculative workloads,
+as described above. The direct path's synthetic drafter checks and real-model
+rollback gate do not qualify a large public target/drafter pair. A single
+passing run is not an exhaustive stability guarantee.
 
 Instrumented ICB model replay produced
 `kIOGPUCommandBufferCallbackErrorHang`, including in an isolated greedy test.
@@ -121,8 +179,9 @@ The same checkpoint passed normal ICB replay and instrumented direct
 re-encoding. Apple's [shader validation documentation](https://developer.apple.com/documentation/xcode/validating-your-apps-metal-shader-usage)
 requires pipeline and buffer inheritance for ICB validation; the runtime's
 per-command ICB bindings do not enable inheritance. Direct re-encoding is
-therefore the validation route used here; instrumented ICB replay remains
-unqualified. No runtime or kernel implementation changes are included.
+therefore the validation route used here, and the backend's default execution
+route; instrumented ICB replay remains unqualified. No shader implementation
+changes are included.
 
 To reproduce the instrumented direct-encoding check with the default geometry:
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 class MetalBackend:
     id = "common"
+    reencode_default = False            # ICB replay unless the chip requires direct dispatch encoding
 
     @property
     def kernel_directories(self):

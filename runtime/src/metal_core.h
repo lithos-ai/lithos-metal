@@ -140,8 +140,9 @@ class Runner {
          const Buffer& ring, uint32_t ring_capacity, std::vector<const Buffer*> read_only_resources = {});
   ~Runner();
   // Replays the step program up to `max_steps` times: `steps_per_cb` steps per command buffer (the max_cb_ms
-  // control), `in_flight` command buffers queued ahead. `reencode` = the fallback path (fresh encoder per step,
-  // same ops) instead of ICB replay. Blocks until done / max_steps; tokens are collected as buffers complete.
+  // control), `in_flight` command buffers queued ahead. `reencode` encodes the same dispatches directly instead
+  // of replaying the ICB. Blocks until done / max_steps; tokens are collected after the queued batch
+  // completes, before the CPU publishes shared state used by the next batch.
   // `max_tokens` > 0 stops submitting once that many tokens have been drained during this call (a speculative
   // program commits several tokens per step, so a step count over-runs); the buffers already queued still complete.
   RunnerStats run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_flight, bool reencode, uint64_t max_tokens = 0);

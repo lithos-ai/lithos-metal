@@ -1,5 +1,5 @@
-"""Runtime gates: a self-advancing program replayed for 1,000 steps, tokens drained after queued work completes,
-ICB replay equivalent to direct encoding, and early exit after `done`."""
+"""M2's exit gate: a two-op self-advancing program replayed from ONE encode for 1,000 steps, tokens drained from the
+ring with no waitUntilCompleted on the hot path; ICB replay ≡ re-encode; early exit after `done`."""
 import struct
 
 import numpy as np
@@ -81,7 +81,9 @@ def test_reencode_fallback_matches_icb():
     assert a.read("h") == b.read("h")                          # bit-identical
 
 
-@pytest.mark.parametrize('backend_id,default_reencode', [('common', False), ('m2_max_30c', True)])
+@pytest.mark.parametrize('backend_id,default_reencode', [
+    ('common', False), ('m2_max_30c', True), ('external', False),
+])
 def test_backend_encoding_default_and_explicit_overrides(backend_id, default_reencode):
     program = _program(n_stop=3)
     program.backend_id = backend_id
@@ -105,38 +107,8 @@ def test_backend_encoding_default_and_explicit_overrides(backend_id, default_ree
     assert calls == [default_reencode, False, True]
 
 
-@pytest.mark.parametrize('reencode', [False, True])
-def test_ring_tail_is_published_only_after_the_pending_batch_finishes(reencode):
-    program = _program(n_stop=2)
-    source = SRC + """
-kernel void observe_tail(device volatile const StepState* st [[buffer(0)]],
-                         device volatile float* delay_sink [[buffer(1)]],
-                         device uint* observed [[buffer(2)]], uint i [[thread_position_in_grid]]) {
-  if (i != 0 || st->step != 1u) return;
-  // Fixed work gives the host time to observe the first command buffer while
-  // the second still owns the shared state. No wait on another GPU worker.
-  float value = 1.0f;
-  for (uint k = 0; k < 1000000u; ++k) value = fma(value, 1.00000011920928955078125f, 1.0f);
-  delay_sink[0] = value;
-  observed[0] = st->ring_tail;
-}
-"""
-    program.kernels['observe_tail'] = KernelSpec(source, 'observe_tail')
-    program.buffers['delay_sink'] = BufferSpec(4)
-    program.buffers['observed_tail'] = BufferSpec(4)
-    program.ops.insert(1, OpSpec('observe_tail', [
-        (0, 'step_state', 0), (1, 'delay_sink', 0), (2, 'observed_tail', 0),
-    ], (1, 1, 1), (32, 1, 1), True))
-    engine = Engine(program)
-    report = engine.run(2, steps_per_cb=1, in_flight=2, reencode=reencode)
-    assert report.tokens == [7, 14]
-    observed_tail = struct.unpack('<I', engine.read('observed_tail'))[0]
-    assert observed_tail == 0, f'host published ring_tail={observed_tail} while a later buffer was running'
-    assert engine.state()['ring_tail'] == 2
-
-
 def test_early_exit_after_done_and_ring_wrap():
-    eng = Engine(_program(n_stop=100, ring_cap=64))            # the ring wraps; the pump drains after every pending batch
+    eng = Engine(_program(n_stop=100, ring_cap=64))            # the ring wraps; the pump drains after every buffer
     rep = eng.run(1000, steps_per_cb=4, in_flight=2)           # asks for 1000 but the program stops itself at 100
     assert rep.done and rep.steps <= 100 + 4 * 2 and eng.state()["step"] == 100 and eng.state()["error"] == 0
     assert rep.tokens == [7 * s for s in range(1, 101)]

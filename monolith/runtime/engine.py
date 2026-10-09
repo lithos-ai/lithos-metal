@@ -52,8 +52,9 @@ class Engine:
                  fast_math: bool = False, pipeline_cache: Optional[dict] = None) -> None:
         """``fast_math``: compile the kernels with Metal's fast math mode (the default is the safe mode)."""
         self.program = program
-        from ..backends.metal import get_backend
-        self.reencode_default = get_backend(program.backend_id).reencode_default
+        from ..backends.metal.registry import BACKENDS, get_backend
+        self.reencode_default = (get_backend(program.backend_id).reencode_default
+                                 if program.backend_id in BACKENDS else False)
         self.fast_math = fast_math
         self.dev = device or nt.Device()
         self.buffers: Dict[str, nt.Buffer] = {}

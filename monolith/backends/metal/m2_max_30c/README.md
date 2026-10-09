@@ -5,7 +5,7 @@ with an independent configuration and tuning-cache identity. It uses the shared
 native GPU shaders, with tensor acceleration, automatic mixer fusion and
 unmeasured cost tables disabled. The 38-core variant is not qualified here.
 
-## Encoding policy and contribution scope
+## Command encoding
 
 Mixed ICB speculative workloads produced GPU hangs on this device. The backend
 therefore selects the runtime's existing direct serial encoding path by default.
@@ -19,12 +19,6 @@ round-trip. Other backends keep ICB as their default. Standalone Programs with u
 backend metadata retain the previous ICB default. Explicit
 `Engine.run(reencode=True/False)` overrides remain available for diagnostics.
 Device configuration alone cannot select this existing runtime argument.
-
-This contribution leaves `runtime/src/metal_core.mm` and `metal_core.h` unchanged
-from upstream. The qualification below was rerun with an isolated build of those
-unmodified sources from `92b6d46f23d382ed96d0667bf9c5c025caab269f`, using the M2
-Python policy without forced encoding overrides. Shared pump and ICB barrier
-investigations are separate from this device contribution.
 
 ## Qualification
 
@@ -42,16 +36,16 @@ golden metadata.
 
 | Check | Result |
 | --- | --- |
-| Unmodified native runtime CMake/Ninja build | Passed |
+| Native runtime CMake/Ninja build | Passed |
 | Contract tier | 1062 passed; optional MLX comparison skipped because MLX was absent from this venv |
-| Runtime tier plus backend contracts, with shader validation | 43 passed on the final worktree with the unchanged upstream core, including external Program compatibility |
+| Runtime tier plus backend contracts, with shader validation | 43 passed, including backend encoding defaults, explicit overrides and unregistered Program metadata |
 | Real-model gate, with shader validation and the M2 default policy | 6 passed: all 24 prefill layer outputs, two identical 48-token golden continuations, long-prompt handoff, reproducible sampling, fast math, and real-target rollback through synthetic drafts |
 | Focused mixed-workload gate, with shader validation | 18 passed: LM drafter, sampling distributions, speculative rollback, and large-prefill/prefix reuse with LM and resident DSpark; all 34,956 Engine calls used the M2 default policy |
-| Real serving entry point with the original core | Passed normal warmup, health/model discovery, repeated greedy requests, prefix reuse, matching SSE text/usage, Chat Completions/Responses/Messages and recovery after streaming disconnect; BF16 reference target without a drafter, at 1024-token capacity |
+| Normal serving CLI | Passed warmup, health/model discovery, repeated greedy requests, prefix reuse, matching SSE text/usage, Chat Completions/Responses/Messages and recovery after streaming disconnect; BF16 reference target without a drafter, at 1024-token capacity |
 
-The configuration remains `validation: unmeasured`: performance tuning is
-unmeasured. These runs qualify bounded correctness workloads, not a tuned recipe
-or a large public target/drafter pair.
+The configuration uses `validation: unmeasured` because performance has not
+been benchmarked. Correctness qualification covers the device and workloads
+listed above.
 
 ## Hardware probes and limits
 
@@ -62,11 +56,13 @@ Cross-threadgroup handoffs in `p2` timed out. Neither result is treated as a pas
 or used to enable cross-worker fusion on Apple8. The `p7` text hardcodes "M3 Pro";
 the run header and detected device identify the actual M2 Max.
 
-The earlier experimental shader sweep failed
-`test_norm_and_silu_intermediate_rounding[gemm_tile-bf16-4]` and
-`test_fused_norm_matches_separate_passes[False-8-False-None-1]`.
-Both paths are disabled by this backend's default. The entire experimental
-kernel tier and instrumented ICB replay are not claimed to pass.
+The following optional kernel checks failed:
+
+- `test_norm_and_silu_intermediate_rounding[gemm_tile-bf16-4]`
+- `test_fused_norm_matches_separate_passes[False-8-False-None-1]`
+
+Both paths are disabled by this backend's default. Experimental kernel
+validation is incomplete.
 
 Synthetic drafter checks and the real-target rollback gate do not qualify large
 catalogue target/DSpark pairs or a large public MoE checkpoint. No latency,

@@ -81,6 +81,29 @@ def test_reencode_fallback_matches_icb():
     assert a.read("h") == b.read("h")                          # bit-identical
 
 
+@pytest.mark.parametrize('backend_id,expected', [('m2_max_38c', True), ('common', False), ('external', False)])
+def test_backend_encoding_policy_survives_program_roundtrip(backend_id, expected):
+    program = _program(n_stop=3)
+    program.backend_id = backend_id
+    engine = Engine(Program.from_json(program.to_json()))
+    runner = engine.runner
+    observed = []
+
+    class Recorder:
+        def run(self, steps, steps_per_cb, in_flight, reencode, max_tokens):
+            observed.append(reencode)
+            return runner.run(steps, steps_per_cb, in_flight, reencode, max_tokens)
+
+        def drain(self):
+            return runner.drain()
+
+    engine.runner = Recorder()
+    assert engine.run(1).tokens == [7]
+    assert engine.run(1, reencode=False).tokens == [14]
+    assert engine.run(1, reencode=True).tokens == [21]
+    assert observed == [expected, False, True]
+
+
 def test_early_exit_after_done_and_ring_wrap():
     eng = Engine(_program(n_stop=100, ring_cap=64))            # the ring wraps; the pump drains after every buffer
     rep = eng.run(1000, steps_per_cb=4, in_flight=2)           # asks for 1000 but the program stops itself at 100

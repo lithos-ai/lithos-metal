@@ -80,6 +80,8 @@ same-name sources under `kernels/<backend>` override them for that chip.
 
 Backend hooks can specialize operation handlers, final fusion/scheduling, decoder and draft recipes,
 prefill policies, and full emission. The model graph and runtime Program ABI remain shared.
+`reencode_default` selects direct dispatch encoding instead of ICB replay when
+`Engine.run(reencode=...)` is left unspecified; explicit overrides remain available.
 
 Unmeasured devices begin with conservative native fallbacks and empty cost tables. Measurements qualify
 particular formats, shapes, and schedules; leaf-kernel calibration alone does not validate a fused layer.

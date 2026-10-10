@@ -52,6 +52,10 @@ class Engine:
                  fast_math: bool = False, pipeline_cache: Optional[dict] = None) -> None:
         """``fast_math``: compile the kernels with Metal's fast math mode (the default is the safe mode)."""
         self.program = program
+        # adapted from ItsOdeLeo/lithos-metal monolith/runtime/engine.py @ 3cad4478ebb655ffdbbcdf0c8efcc3490aa26049
+        from ..backends.metal.registry import BACKENDS, get_backend
+        self.reencode_default = (get_backend(program.backend_id).reencode_default
+                                 if program.backend_id in BACKENDS else False)
         self.fast_math = fast_math
         self.dev = device or nt.Device()
         self.buffers: Dict[str, nt.Buffer] = {}
@@ -95,9 +99,12 @@ class Engine:
                                 lay.offset("done"), lay.offset("ring_head"), lay.offset("ring_tail"), ring, program.ring_capacity,
                                 [buffer for name, buffer in resources.items() if program.buffers[name].role in ('weights', 'params')])
 
-    def run(self, max_steps: int, *, steps_per_cb: int = 8, in_flight: int = 3, reencode: bool = False, max_tokens: int = 0) -> StepReport:
+    def run(self, max_steps: int, *, steps_per_cb: int = 8, in_flight: int = 3, reencode: Optional[bool] = None, max_tokens: int = 0) -> StepReport:
         """Replay up to ``max_steps`` steps (``max_tokens`` > 0: stop submitting once that many tokens arrived; the
-        queued buffers still complete, so a few more steps may run)."""
+        queued buffers still complete, so a few more steps may run). ``None`` selects the backend encoding policy;
+        an explicit bool overrides it for diagnostics."""
+        if reencode is None:
+            reencode = self.reencode_default
         st = self.runner.run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)
         if st.error:
             raise RuntimeError(st.error)

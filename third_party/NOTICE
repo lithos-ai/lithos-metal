@@ -74,6 +74,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
 
 ## Original
 
+- `monolith/backends/metal/base.py`, `monolith/runtime/engine.py` — backend-owned
+  direct-encoding policy adapted from Leo's M2 contribution in
+  `ItsOdeLeo/lithos-metal` @ `3cad4478ebb655ffdbbcdf0c8efcc3490aa26049`
+  (lithos-ai/lithos-metal PR #9, Apache-2.0, repository LICENSE).
+  The 38-core backend and its qualification are separate from that PR's 30-core work.
+
 - `probes/` — original to this repository.
 
 - `monolith/compiler/moe_fusion.py`, `monolith/compiler/moe_ready.py`, `monolith/compiler/moe_down.py`,

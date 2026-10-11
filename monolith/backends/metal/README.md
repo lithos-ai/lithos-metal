@@ -7,6 +7,7 @@ configuration or autotuning cache.
 
 | Backend | Configuration | Status |
 | --- | --- | --- |
+| `m2_max_38c` | [38 cores](m2_max_38c/config.json) | Native shader fallback; direct encoding. [Qualification](m2_max_38c/README.md); performance unmeasured |
 | `m3_pro` | [18 cores](m3_pro/config.json) | Existing probe-derived settings preserved |
 | `m3_max_30c` | [30 cores](m3_max_30c/config.json) | Unmeasured native fallback. On the 36 GB machine, DSpark serving fits through 20480 context; 22528 does not |
 | `m4_pro` | [16 cores](m4_pro/config-16c.json), [20 cores](m4_pro/config-20c.json) | Unmeasured native fallback |
@@ -25,6 +26,7 @@ M5 Max have not been GPU-tested by this reorganization.
 monolith/backends/metal/
   config.py, registry.py, context.py, calibration.py
   base.py                 # shared extension interface
+  m2_max_38c/backend.py
   m3_pro/backend.py
   m3_max_30c/backend.py
   m4_pro/backend.py        # chip-owned Python hooks
@@ -36,6 +38,7 @@ monolith/backends/metal/
     recipes/              # selected context and shape configurations
 kernels/
   common/                 # shared Metal implementations
+  m2_max_38c/
   m3_pro/
   m3_max_30c/
   m4_pro/                 # same-name source overrides
@@ -59,6 +62,12 @@ additional explicitly requested direct-cache shapes, `optimize_decoder` or
 lowering strategy. A `.metal` file with the same relative name overrides only
 that chip's source. Shared compiler fusion helpers remain reusable. Direct
 source-building experiments can use `with using_backend("m5_max_32c"):`.
+
+`Backend.reencode_default` selects direct command encoding when `Engine.run`
+does not receive an explicit `reencode` argument. The 38-core M2 Max uses this
+fallback; other backends and unregistered standalone Programs retain ICB replay.
+The shared policy follows the 30-core M2 work in PR #9, which remains separately
+qualified. Explicit encoding overrides are available for diagnostics.
 
 The 40-core backend's `scheduling.py` owns automatic GDN mixer fusion, the
 measured routed-expert crews in `routed.py`, and the two-kernel INT4 MLP

@@ -82,6 +82,7 @@ see the [model adapter design](docs/design/models.md) for supported structures a
 | M5 Pro, 20 GPU cores | Measured kernels and configurations for smaller models |
 | M3 Pro, 18 GPU cores | Probe-derived configuration |
 | M3 Max, 30 GPU cores | Unmeasured native fallback; DSpark serving fits through 20480 context on 36 GB |
+| M2 Max, 38 GPU cores | Native shader fallback with direct encoding; [qualification and limits](monolith/backends/metal/m2_max_38c/README.md) |
 | M4 Pro, 16 or 20 GPU cores | Unmeasured native fallback |
 | M5 Max, 32 GPU cores | Independent, unmeasured native fallback |
 

@@ -5,6 +5,8 @@ from pathlib import Path
 
 class MetalBackend:
     id = "common"
+    # adapted from ItsOdeLeo/lithos-metal monolith/backends/metal/base.py @ 3cad4478ebb655ffdbbcdf0c8efcc3490aa26049
+    reencode_default = False
 
     @property
     def kernel_directories(self):

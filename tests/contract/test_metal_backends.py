@@ -17,6 +17,7 @@ from monolith.runtime.program import KernelSpec, OpSpec, Program
 
 
 @pytest.mark.parametrize('name,cores,family,backend', [
+    ('Apple M2 Max', 38, 8, 'm2_max_38c'),
     ('Apple M3 Pro', 18, 9, 'm3_pro'), ('Apple M3 Max', 30, 9, 'm3_max_30c'),
     ('Apple M4 Pro', 16, 9, 'm4_pro'),
     ('Apple M4 Pro', 20, 9, 'm4_pro'), ('Apple M5 Pro', 20, 10, 'm5_pro'),
@@ -53,6 +54,25 @@ def test_m3_max_30c_rejects_other_devices():
     with pytest.raises(ValueError, match='30 GPU cores'):
         get_backend(config.backend).validate_device(config,
             SimpleNamespace(name='Apple M3 Max', gpu_cores=40, apple_family=9))
+
+
+def test_m2_max_38c_rejects_other_variants_and_has_no_borrowed_tuning():
+    config = load_configs()['apple-m2-max-38c']
+    backend = get_backend(config.backend)
+    for name, cores, family in (
+            ('Apple M2 Max', 30, 8), ('Apple M2 Max', 38, 9),
+            ('Apple M3 Max', 38, 8), ('Apple M2 Pro', 38, 8)):
+        assert config_for_device(cores, family, name) is None
+        with pytest.raises(ValueError, match='requires Apple M2 Max'):
+            backend.validate_device(config, SimpleNamespace(name=name, gpu_cores=cores, apple_family=family))
+    doc = copy.deepcopy(config.raw)
+    doc['gpu_cores'] = 30
+    with pytest.raises(ValueError, match='does not match backend'):
+        ChipConfig.from_dict('invalid-m2', doc)
+    assert config.validation == 'unmeasured' and config.accelerator == 'off'
+    assert not config.cost_t and not config.gdn_mixer_fusion
+    assert backend.reencode_default and not get_backend('common').reencode_default
+    assert backend.cache_identity(config).startswith('m2_max_38c-38c-')
 
 
 def test_m3_max_draft_context_is_capped_and_other_chips_are_not():

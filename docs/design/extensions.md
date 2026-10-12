@@ -79,7 +79,9 @@ independent configurations and tuning caches. Shared Metal sources live in `kern
 same-name sources under `kernels/<backend>` override them for that chip.
 
 Backend hooks can specialize operation handlers, final fusion/scheduling, decoder and draft recipes,
-prefill policies, and full emission. The model graph and runtime Program ABI remain shared.
+prefill policies, command encoding defaults, and full emission. `reencode_default` opts a backend into direct
+serial dispatch encoding instead of ICB replay; callers may explicitly override it for validation. The model graph
+and runtime Program ABI remain shared.
 
 Unmeasured devices begin with conservative native fallbacks and empty cost tables. Measurements qualify
 particular formats, shapes, and schedules; leaf-kernel calibration alone does not validate a fused layer.

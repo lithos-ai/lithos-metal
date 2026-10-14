@@ -85,6 +85,7 @@ see the [model adapter design](docs/design/models.md) for supported structures a
 | M3 Pro, 18 GPU cores | Probe-derived configuration |
 | M3 Max, 30 GPU cores | Unmeasured native fallback; DSpark serving fits through 20480 context on 36 GB |
 | M3 Ultra, 60 GPU cores | Measured profile with the Apple9 matrix tile |
+| M3 Ultra, 80 GPU cores | Measured profile with the Apple9 matrix tile |
 | M4 Pro, 20 GPU cores | Measured profile with the Apple9 matrix tile |
 | M4 Pro, 16 GPU cores | Unmeasured native fallback |
 | M4 Max, 32 or 40 GPU cores | Unmeasured native fallback |

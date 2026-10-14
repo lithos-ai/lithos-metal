@@ -18,6 +18,7 @@ from monolith.runtime.program import KernelSpec, OpSpec, Program
 
 @pytest.mark.parametrize('name,cores,family,backend', [
     ('Apple M3 Pro', 18, 9, 'm3_pro'), ('Apple M3 Max', 30, 9, 'm3_max_30c'), ('Apple M3 Ultra', 60, 9, 'm3_ultra_60c'),
+    ('Apple M3 Ultra', 80, 9, 'm3_ultra_80c'),
     ('Apple M4 Pro', 16, 9, 'm4_pro'),
     ('Apple M4 Pro', 20, 9, 'm4_pro'), ('Apple M4 Max', 32, 9, 'm4_max'),
     ('Apple M4 Max', 40, 9, 'm4_max'), ('Apple M5 Pro', 20, 10, 'm5_pro'),
@@ -65,10 +66,13 @@ def test_m3_max_draft_context_is_capped_and_other_chips_are_not():
 
 def test_m3_ultra_60c_is_its_own_device():
     assert config_for_device(60, 9, 'Apple M3 Ultra').backend == 'm3_ultra_60c'
-    for name, cores, family in (('Apple M3 Ultra', 80, 9), ('Apple M3 Max', 60, 9), ('Apple M3 Ultra', 30, 9)):
+    for name, cores, family in (('Apple M3 Max', 60, 9), ('Apple M3 Ultra', 30, 9)):
         assert config_for_device(cores, family, name) is None
     assert get_backend('m3_ultra_60c').serving_context_limit(drafter=True) is None
     assert get_backend('m3_ultra_60c').serving_prefill_chunk({}) == 512
+    assert config_for_device(80, 9, 'Apple M3 Ultra').backend == 'm3_ultra_80c'
+    assert get_backend('m3_ultra_80c').serving_context_limit(drafter=True) is None
+    assert get_backend('m3_ultra_80c').serving_prefill_chunk({}, None) is None
     assert get_backend('m4_pro').serving_prefill_chunk({}) is None
 
 

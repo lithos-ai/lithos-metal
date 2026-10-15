@@ -53,7 +53,7 @@ def test_draft_program_matches_oracle(tmp_path, threshold, yarn, head_dim, fused
 
     dev = nt.Device()
     info = dev.info()
-    prof = profile_for_device(info.gpu_cores, info.apple_family)
+    prof = profile_for_device(info.gpu_cores, info.apple_family, info.name)
     if prof is None:
         pytest.skip("no chip profile for this device")
     if fused and kernels.coop_layout() != "apple10":

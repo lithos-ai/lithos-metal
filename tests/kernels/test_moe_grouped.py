@@ -27,7 +27,7 @@ def test_grouped_experts_preserve_complete_moe(tmp_path,fmt,group_t,fused):
     write_checkpoint(tmp_path)
     block=Block(CFG);ckpt=SafetensorsDir(tmp_path)
     bind_formats(block,ckpt,requantize=fmt if fmt!='bf16' else None);ckpt.close()
-    dev=nt.Device();info=dev.info();profile=profile_for_device(info.gpu_cores,info.apple_family)
+    dev=nt.Device();info=dev.info();profile=profile_for_device(info.gpu_cores,info.apple_family,info.name)
     if profile is None:pytest.skip('no device profile')
     pack_model(block,str(tmp_path),str(tmp_path/'pack'),PackLayout(rows=16,lane_order=profile.lane_order))
     g=Graph('grouped_moe');x=g.input('x',(T,256),DType.BF16)

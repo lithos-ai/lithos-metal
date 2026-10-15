@@ -53,7 +53,7 @@ def mlp(tmp_path_factory,request):
     y = m.mlp.lower(g, x, m.norm.lower(g,x), LowerContext(t=T))
     for ps in DEFAULT_PASSES: ps(g)
     dev = nt.Device(); info = dev.info()
-    p = emit_program(g, pack=pack, profile=profile_for_device(info.gpu_cores,info.apple_family),
+    p = emit_program(g, pack=pack, profile=profile_for_device(info.gpu_cores,info.apple_family,info.name),
                      t=8, tail=None, commute_norm=True)
     return dev,p,y.name
 

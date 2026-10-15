@@ -109,6 +109,7 @@ def test_full_block_fusion_preserves_control_and_state(block, sgs, workers, tn, 
     assert snapshot(engines[0],1024) == snapshot(engines[1],1024)
 
 
+@APPLE10
 def test_ragged_multi_team_projection_is_rejected(block):
     _,_,p=block
     with pytest.raises(ValueError,match='ragged multi-team'):

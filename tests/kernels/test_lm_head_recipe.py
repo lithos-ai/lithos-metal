@@ -45,8 +45,9 @@ def head(tmp_path_factory):
     y = m.lm_head.lower(g, x, m.norm.lower(g, x), LowerContext(t=T))
     for ps in DEFAULT_PASSES: ps(g)
     dev = nt.Device(); info = dev.info()
-    p = emit_program(g, pack=pack, profile=profile_for_device(info.gpu_cores, info.apple_family),
-                     t=8, tail=None, dynamic_t=True, t_min=2)
+    # The recipe fuses the tile vocabulary projection, which only the accelerator path emits.
+    p = emit_program(g, pack=pack, profile=profile_for_device(info.gpu_cores, info.apple_family, info.name),
+                     t=8, tail=None, dynamic_t=True, t_min=2, accelerator='on')
     return dev, p, y.name
 
 

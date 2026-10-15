@@ -25,7 +25,7 @@ def test_params_records_are_never_shared(tmp_path):
 
     dev = nt.Device()
     info = dev.info()
-    prof = profile_for_device(info.gpu_cores, info.apple_family)
+    prof = profile_for_device(info.gpu_cores, info.apple_family, info.name)
     if prof is None:
         pytest.skip("no chip profile for this device")
     _checkpoint(tmp_path)

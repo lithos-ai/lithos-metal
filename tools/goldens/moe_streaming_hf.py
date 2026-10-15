@@ -81,7 +81,7 @@ def load_streamed(checkpoint):
     model.tie_weights()
     if any(p.is_meta for p in model.parameters()):
         raise RuntimeError('reference model still has unmaterialized parameters')
-    model.model.rotary_emb = type(model.model.rotary_emb)(config=cfg, device='cpu')
+    model.model.rotary_emb = type(model.model.rotary_emb)(config=cfg)
     model.eval()
     return model, ck
 

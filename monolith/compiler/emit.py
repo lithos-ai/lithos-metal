@@ -767,7 +767,7 @@ def _gemm_tile(ctx: _Ctx, op: Op, info: PackInfo, t_range: Tuple[int, int], t_sr
 def _gqa_src(ctx: _Ctx, v2: bool = False, v3: bool = False, mma: bool = False) -> str:
     if mma:
         return kernels.gqa_source(mma=True).replace(kernels.PRELUDE, kernels.PRELUDE + ctx.layout.to_msl() + "\n", 1)
-    return kernels.PRELUDE + kernels.PERM_OUT_MSL + ctx.layout.to_msl() + "\n" + kernels.template("gqa_common.metal") + "\n" + kernels.template(
+    return kernels.PRELUDE + kernels.PERM_OUT_MSL + ctx.layout.to_msl() + "\n" + kernels.template("gqa_common.metal") + "\n" + kernels.template("kv_quant.metal") + "\n" + kernels.template(
         "gqa_decode_v3.metal" if v3 else ("gqa_decode_v2.metal" if v2 else "gqa_decode.metal"))
 
 
@@ -814,6 +814,12 @@ def _gqa_geometry(ctx: _Ctx, a: Dict[str, Any], ctx_max: int, v2: bool):
     d, heads, kv = a["head_dim"], a["heads"], a["kv_heads"]
     rep = heads // kv
     norm = {} if a.get("qk_norm", True) else {"QK_NORM": "0"}
+    norm["KV_CACHE_TYPE"] = str({"bf16": 0, "q8_0": 1, "turbo4": 2, "q4_0": 3}[a.get("kv_cache_dtype", "bf16")])
+    for side in ("k", "v"):
+        norm[f"{side.upper()}_CACHE_TYPE"] = str({"bf16":0,"q8_0":1,"turbo4":2,"q4_0":3}[
+            a.get(f"{side}_cache_dtype", a.get("kv_cache_dtype", "bf16"))])
+    if a.get("k_cache_dtype", a.get("kv_cache_dtype", "bf16")) == "turbo4":
+        norm["TURBO4_PREPARED_Q"] = "1"
     if v2:
         # v2's threadgroups: attention_v2_threadgroups per core — from the core count, not the crew (n_sg already carries the
         # profile's threadgroups_per_core: dividing it by 12 doubled v2's grid on a two-threadgroup profile)
@@ -855,7 +861,7 @@ def _gqa(ctx: _Ctx, op: Op) -> None:
     d, heads, kv = a["head_dim"], a["heads"], a["kv_heads"]
     segs = {name: (off, n) for name, off, n in a["segments"]}
     ctx_max = ctx.shape(kc)[0]
-    kind = _gqa_kernel(ctx, heads, kv, int(a.get("lm_mode", 0)), ctx.rows_of(op)[0], d, a.get("qk_norm", True))
+    kind = "v1" if any(a.get(f"{side}_cache_dtype", a.get("kv_cache_dtype", "bf16")) != "bf16" for side in ("k", "v")) else _gqa_kernel(ctx, heads, kv, int(a.get("lm_mode", 0)), ctx.rows_of(op)[0], d, a.get("qk_norm", True))
     if kind == "v3":
         return                                                    # core and merge are one dispatch: the merge's handler emits it (it holds the output and the gate)
     v2 = kind == "v2"
@@ -892,8 +898,18 @@ def _gqa(ctx: _Ctx, op: Op) -> None:
                      (3, *ctx.windows[cos.name]), (4, *ctx.windows[sin.name]),
                      (5, *ctx.windows[qn.name]), (6, *ctx.windows[kn.name]), (9, prm, 0), (15, st, 0)],
                 (-(-(t_c * heads) // 4), 1, 1), (128, 1, 1), "gqa_prepare", writes=[0, 1, 2])
+    prepared_q = []
+    if a.get("k_cache_dtype", a.get("kv_cache_dtype", "bf16")) == "turbo4":
+        # Shared by target layers, sized only for current queries, never history.
+        qp = ctx.scratch("turbo4.rotated_q", t_c * heads * d * 4, shared=True)
+        kp = ctx.kernel("gqa_prepare", _gqa_src(ctx), "gqa_prepare_turbo4", macros,
+                        static_params=[("gqa", "p", prm)])
+        prepared_q = [(13, qp, 0)]
+        ctx.add(kp, [(0, *ctx.buf(proj)), (3, *ctx.windows[cos.name]), (4, *ctx.windows[sin.name]),
+                     (5, *ctx.windows[qn.name]), (9, prm, 0), (15, st, 0), *prepared_q],
+                (-(-(t_c * heads) // 4), 1, 1), (128, 1, 1), "gqa_prepare", writes=[13])
     ctx.add(kd, [(0, *ctx.buf(proj)), (1, *ctx.buf(kc)), (2, *ctx.buf(vc)), (3, *ctx.windows[cos.name]), (4, *ctx.windows[sin.name]),
-                 (5, *ctx.windows[qn.name]), (6, *ctx.windows[kn.name]), (7, *ctx.buf(part_o)), (8, *ctx.buf(part_md)), (9, prm, 0), (15, st, 0)],
+                 (5, *ctx.windows[qn.name]), (6, *ctx.windows[kn.name]), (7, *ctx.buf(part_o)), (8, *ctx.buf(part_md)), (9, prm, 0), (15, st, 0), *prepared_q],
             grid, tg, op.kind, writes=[1, 2, 7, 8], attention=kind)
 
 
@@ -923,7 +939,7 @@ def _gqa_merge(ctx: _Ctx, op: Op) -> None:
     out = op.outputs[0]
     a = op.attrs
     d, heads, kv = a["head_dim"], a["heads"], a["kv_heads"]
-    kind = _gqa_kernel(ctx, heads, kv, int(a.get("lm_mode", 0)), ctx.rows_of(op)[0], d, a.get("qk_norm", True))
+    kind = "v1" if any(a.get(f"{side}_cache_dtype", a.get("kv_cache_dtype", "bf16")) != "bf16" for side in ("k", "v")) else _gqa_kernel(ctx, heads, kv, int(a.get("lm_mode", 0)), ctx.rows_of(op)[0], d, a.get("qk_norm", True))
     if kind == "v3":
         _gqa_v3(ctx, op)
         return
@@ -1372,7 +1388,7 @@ def emit_program(g: Graph, *, pack: Union[PackFile, Sequence[PackFile]], profile
                  layout: Optional[StepStateLayout] = None, eos: Union[int, Sequence[int]] = -1, ring_capacity: int = 4096, tg: int = 384, tuner: Any = None,
                  tail: Optional[str] = "advance", token: Optional[Value] = None, speculative: bool = False, barriers: str = "minimal",
                  attention: Optional[str] = None, accelerator: Optional[str] = None, t_min: int = 1, commute_norm: bool = True,
-                 gdn_mixer_fusion: bool = True) -> Program:
+                 gdn_mixer_fusion: bool = True, prefill: bool = False) -> Program:
     """Check coverage on ``profile`` and emit the step program for a lowered (and passed) graph: for a static
     ``T = t`` (kernels specialized, T from params), or with ``dynamic_t`` for any T ≤ ``t`` read from StepState
     at run time. The dynamic bound defaults to ``layout.t_max``; an explicit smaller ``t`` lets programs share
@@ -1395,7 +1411,7 @@ def emit_program(g: Graph, *, pack: Union[PackFile, Sequence[PackFile]], profile
     check_coverage(g, profile)
     program = Program(kernels={}, buffers={}, ops=[], ring_capacity=ring_capacity, layout=layout)
     ctx = _Ctx(program, packs, layout, t, 12 * profile.gpu_cores * profile.threadgroups_per_core, tg, cores=profile.gpu_cores, values=g.values, dynamic_t=dynamic_t,
-               speculative=speculative, attention=attention or profile.attention, attn_rows=int(profile.attention_rows), accelerator=accelerator or profile.accelerator,
+               speculative=speculative, attention=current_backend().resolve_attention(attention or profile.attention), attn_rows=int(profile.attention_rows), accelerator=accelerator or profile.accelerator,
                attn_v2_tg=int(profile.attention_v2_threadgroups),
                accel_min_t=dict(profile.accelerator_min_t), tuner=tuner, eos=eos, ring_capacity=ring_capacity, t_min=max(1, int(t_min)), commute_norm=commute_norm)
     _pack_windows(ctx)
@@ -1453,6 +1469,13 @@ def emit_program(g: Graph, *, pack: Union[PackFile, Sequence[PackFile]], profile
     for name in [n for n, spec in program.buffers.items() if spec.role == "arena" and n not in bound]:
         del program.buffers[name]
     place_barriers(program, barriers)
+    for op in program.ops:
+        if program.kernels[op.kernel].function == 'gemm_tile':
+            op.meta['prefill'] = prefill
+        if program.kernels[op.kernel].function.startswith('gqa_'):
+            op.meta['prefill'] = prefill
+            if attention is not None:
+                op.meta['attention_override'] = attention
     return current_backend().finalize(
         program, g, emitted, profile, t=t, dynamic_t=dynamic_t, speculative=speculative,
         commute_norm=commute_norm, accelerator=ctx.accelerator,
@@ -1567,7 +1590,7 @@ def compile_program(model: Model, pack: PackFile, profile: Profile, *, t: Option
             p(g)
         return emit_program(g, pack=pack, profile=profile, t=t, dynamic_t=dynamic_t, layout=layout, eos=eos, ring_capacity=ring_capacity, tg=tg,
                             tuner=tuner, tail="advance", token=token, barriers=barriers, attention=attention, accelerator=accelerator, commute_norm=commute_norm,
-                            gdn_mixer_fusion=gdn_mixer_fusion)
+                            gdn_mixer_fusion=gdn_mixer_fusion, prefill=prefill)
     if not dynamic_t:
         raise ValueError("compile_program: the speculative round needs the dynamic-T program (dynamic_t=True)")
     if drafter_pack is None:
@@ -1595,7 +1618,7 @@ def compile_program(model: Model, pack: PackFile, profile: Profile, *, t: Option
     t_min = 2 if not prefill and (cost is not None or (fixed is not None and fixed >= 1)) else 1
     program = emit_program(g, pack=[pack, drafter_pack], profile=profile, t=t, dynamic_t=True, layout=layout, eos=eos, ring_capacity=ring_capacity,
                         tg=tg, tuner=tuner, tail=None, speculative=True, barriers=barriers, attention=attention, accelerator=accelerator, t_min=t_min, commute_norm=commute_norm,
-                        gdn_mixer_fusion=gdn_mixer_fusion)
+                        gdn_mixer_fusion=gdn_mixer_fusion, prefill=prefill)
     program = current_backend().optimize_draft(program, drafter, prefill=prefill)
     place_barriers(program, barriers)
     return program

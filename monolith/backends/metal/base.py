@@ -22,6 +22,14 @@ class MetalBackend:
     def handler(self, kind, shared_handlers):
         return shared_handlers[kind]
 
+    def resolve_attention(self, attention):
+        """Resolve an attention request before shared lowering; preserve overrides."""
+        return attention
+
+    def exact_prefill_attention(self, attention):
+        """Keep exact prompt passes and their small reference graph consistent."""
+        return attention
+
     def direct_attention_shape(self, ctx, heads, kv, d, t, lm_mode, qk_norm):
         """Additional shapes eligible for the explicit direct-cache attention route."""
         return False
@@ -72,7 +80,7 @@ class MetalBackend:
         """Chip-owned tuning for large prompt chunks, before scratch reuse; ``exact`` must keep 128-row results."""
         return program
 
-    def serving_context_limit(self, *, drafter) -> int | None:
+    def serving_context_limit(self, *, drafter, kv_cache_dtype="bf16", k_cache_dtype=None, v_cache_dtype=None) -> int | None:
         """Largest prompt-plus-generation context that fits this chip, or None to keep the request."""
         return None
 
@@ -80,6 +88,10 @@ class MetalBackend:
         """Only opt matching workloads into recipes validated on this chip."""
         return {}
 
-    def serving_prefill_chunk(self, recipes, model=None):
+    def serving_prefill_chunk(self, recipes, model=None, *, max_context=32768, kv_cache_dtype="bf16", k_cache_dtype=None, v_cache_dtype=None):
         """Prompt rows per pass that ``optimize_prefill`` is tuned for on a served workload, if any."""
         return None
+
+    def serving_prefix_cache(self, *, max_context, kv_cache_dtype="bf16", k_cache_dtype=None, v_cache_dtype=None):
+        """Whether host/disk prefix checkpoints fit alongside the served workload."""
+        return True

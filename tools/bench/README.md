@@ -1,5 +1,14 @@
 # Kernel benches
 
+`turbo4_rotated.py` compares BF16, original-domain Turbo4 and rotated-domain
+Turbo4 attention on M6 at 8K, 16K and 32K, with eight-row decode and 128-row
+prefill batches. Timings include query preparation, and outputs must pass the
+existing attention tolerance against original-domain Turbo4. Use
+`--out build/turbo4-attention.json`; optionally supply `--legacy-dir` containing
+archived `kv_quant.metal` and `gqa_decode.metal` sources. See the
+[M6 qualification data](results/m6-turbo4-rotated-20261013.json) for kernel and
+full-model results, memory, numerical errors and validation details.
+
 `modelopt_layer_bench.py` compares fixed eight-row NVIDIA ModelOpt decoder layers
 against native MLX-LM, including its original-code NVFP4 and FP8 matrix paths.
 `--fusion --config <geometry.json>` evaluates two static megakernels per layer;
@@ -370,3 +379,96 @@ The [hybrid MoE model notes](https://github.com/lithos-ai/lithos-metal/blob/46b2
 40-core policy, experiment envelope and remaining independent-model accuracy
 gates. Isolated routing and latency can differ from the complete serving graph;
 confirm finalists in complete rounds before changing a backend default.
+
+
+### M6 matrix prefill qualification
+
+`m6_attention.py` compares the M6 v1 launch with the original MMA (`--variants
+v1 mma m6`, BF16 only) and the partition-preserving M6 variant. Defaults cover
+2K/8K/16K/32K contexts and 1/8/32/64/128 query tokens in two reversed sweeps.
+Use `--dtype q8_0` or `--dtype turbo4` for fused quantized tile reads. Reported
+isolated stage timings use separate command buffers and are diagnostic; use
+`samples_ms` for the complete core/merge latency. The standalone v1 comparator
+uses 24 workers of 8 SIMD groups for all row counts.
+
+`m6_prefill_model.py --attention-path v1|m6 --paths <paths.json> --context 16384
+--prefill 128 --kv-cache-dtype turbo4 --skip-prefix-checkpoint --repeats 2 --out
+<result.json>` runs sequential real-model requests with DSpark N=7. The paths
+JSON names local `model`, `pack`, `draft`, and `draft-pack`; no download or
+checkpoint modification is performed. Compile/warmup is excluded; timed
+requests have no prefix reuse. `--plan-only` checks the allocation budget before
+large-context runs. Run shader validation separately from performance tests.
+
+### M6 prefill bottleneck probes
+
+`m6_prefill_profile.py --paths <paths.json> --kv-cache-dtype turbo4 --context
+32768 --chunk 128 --positions 8064 16256 32384 --out <profile.json>` ingests a
+real prefix and profiles selected intermediate chunks. It restores recurrent
+and control state between repeated passes without copying historical KV.
+Whole-ICB samples are the latency control. Per-dispatch timestamps insert
+encoder boundaries, may overlap, and must not be used to infer production GPU
+idle time by subtracting their sum from the ICB duration. CPU state copies can
+also perturb wall time/residency. `--synthetic` uses zero historical KV instead.
+
+The one-off geometry, GDN and merge mutation probes have been retired; their
+measurements remain in [the bottleneck report](../../docs/research/m6-prefill-bottlenecks-20261014.md).
+Long-context qualification of the selected production layouts is in
+[the projection/partial report](../../docs/research/m6-projection-partials-20261014.md).
+
+Use explicit `--profile` files when comparing old and new M6 paths: set
+`engine.nvfp4_prefill_geometry` and `engine.attention_probability_partials` to
+false for the prior MMA baseline, enable only the former for projection-only,
+and enable both for the qualified combination. An attention `v1` override alone
+does not disable projection optimization. Compare complete attention chains,
+not separately warmed stage sums. `m6_prefill_model.py --validate-prefix` also tests checkpoint
+restore across a 1024-token prefix and compares the speculation trace. Keep GPU
+performance jobs sequential and run shader validation separately.
+
+### M6 decode and PV investigations
+
+`m6_decode_audit.py --old <program.json.gz> --new <program.json.gz> --out
+<audit.json>` compares captured program graphs and project-preprocessed shader
+branches. It elides SDK includes and does not claim Metal binary equivalence.
+`m6_decode_profile.py --old <old-request.json> --new <new-request.json> --profile
+<config.json> --out <profile.json>` consumes sibling `.program-0.json.gz`
+captures. It replays the production decode pump at one real prefix with shared
+weights, KV and scratch, restores mutable state and speculative KV tails, and
+checks tokens, acceptance, confidence and final target/draft logits. Five
+alternating repetitions follow complete warm replays. Separate per-dispatch
+counter passes distinguish target, draft and state work; their added encoder
+boundaries make them diagnostic rather than production latency measurements.
+
+`m6_pv_tiles.py --source <candidate.metal> --dtype turbo4 --out <screen.json>`
+screens explicit PV query tiles against original MMA and probability partials
+with reversed sweeps and exact output comparisons. `m6_pv_model.py` forwards
+other arguments to the full-model harness and records source/dispatch provenance.
+It uses the backend's optional policy directly, including Q8 probability partials,
+and keeps Turbo4's original PV layout
+below 64 active rows. The alternating control explicitly disables this policy;
+BF16 and 32-row Turbo4 graphs remain unchanged.
+Add `--pv-alternate --repeats 4` for two current/candidate pairs on shared GPU
+allocations. Both programs get untimed warm requests; only their parameter
+records are separately allocated. The sidecar records each request's variant.
+`--pv-profile` instead forwards to `m6_prefill_profile.py` for real-prefix stage
+timestamps; it cannot be combined with alternating request timing.
+These probes do not enable candidates in serving configuration. The standalone
+attention tools' `context` denotes historical rows; `attended_context` includes
+active query rows. Full-model `--context` includes the requested output budget.
+
+`m6_pv_stages.py --dtype turbo4 --context 32640 --rows 128 --out <stages.json>`
+checks a diagnostic split of PV, partition merge, inverse rotation/normalization
+and gating against the fused output. The split deliberately adds FP32 partial
+writes/reads, temporary output buffers and launches. Its stage timings must not
+be presented as an additive decomposition of the production fused kernel.
+Packed V conversion stays fused into tile loading; historical KV is never
+expanded into a full BF16 cache. Shader validation and performance runs must
+be recorded separately. System-wide IORegistry memory/utilization snapshots
+are not per-process residency, hardware occupancy or DRAM-traffic counters.
+`timed_vm` uses a preallocated Mach VM-statistics sampler immediately around
+the measured call. Wider host snapshots also include output readback and logging;
+retain both, and flag any timed swap before making stable-performance claims.
+Request wall time measures the pretokenized generation call, including prompt
+logit readback; it is not HTTP latency. The first generated token belongs to
+prefill, so a 128-output request has 127 tokens in its decode throughput metric.
+See [the decode/PV report](../../docs/research/m6-decode-pv-20261015.md) for the
+completed comparison and the decision to leave tiled PV disabled by default.

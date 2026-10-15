@@ -27,7 +27,8 @@ from .module import LowerContext, Module, StateEntry, WeightSpec
 class GQAAttention(Module):
     def __init__(self, hidden: int, heads: int, kv_heads: int, head_dim: int, rotary_dim: int, rope_theta: float,
                  eps: float, *, hf_prefix: str, prefix: str = "", max_context: int, gate: bool = True,
-                 norm_one_plus: bool = True, qk_norm: bool = True) -> None:
+                 norm_one_plus: bool = True, qk_norm: bool = True, kv_cache_dtype: str = "bf16",
+                 k_cache_dtype: str | None = None, v_cache_dtype: str | None = None) -> None:
         """``gate``: the ``[q | gate]`` projection and the ``σ(gate)`` output gate (the Qwen3.5 hybrid); ``norm_one_plus``:
         the per-head q/k RMSNorm scales by ``1 + w`` (Gemma-style) or by ``w`` (the standard RMSNorm of Qwen3)."""
         super().__init__(prefix=prefix)
@@ -37,6 +38,11 @@ class GQAAttention(Module):
         self.rotary_dim, self.rope_theta, self.eps, self.gate = rotary_dim, rope_theta, eps, gate
         self.norm_one_plus = norm_one_plus
         self.qk_norm = qk_norm
+        from .kv_quant import cache_row_bytes, resolve_kv_cache_dtypes
+        self.k_cache_dtype, self.v_cache_dtype = resolve_kv_cache_dtypes(kv_cache_dtype, k_cache_dtype, v_cache_dtype)
+        for dtype in (self.k_cache_dtype, self.v_cache_dtype):
+            cache_row_bytes(head_dim, dtype)
+        self.kv_cache_dtype = kv_cache_dtype
         self.max_context = max_context
         self.hf_prefix = hf_prefix
         hd, kd = heads * head_dim, kv_heads * head_dim
@@ -85,8 +91,15 @@ class GQAAttention(Module):
                 "k_norm": WeightSpec(f"{self.hf_prefix}k_norm.weight", (self.head_dim,), "f32", transform=tf, aux=True, perm=perm)}
 
     def state_entries(self, checkpoints: int = 1) -> List[StateEntry]:
-        shape = (self.max_context, self.kv_heads, self.head_dim)
-        return [StateEntry(f"{self.prefix}k_cache", shape, DType.BF16), StateEntry(f"{self.prefix}v_cache", shape, DType.BF16)]
+        from .kv_quant import cache_row_bytes
+        entries = []
+        for name, dtype in (("k_cache", self.k_cache_dtype), ("v_cache", self.v_cache_dtype)):
+            packed = dtype != "bf16"
+            width = cache_row_bytes(self.head_dim, dtype) if packed else self.head_dim
+            entries.append(StateEntry(f"{self.prefix}{name}", (self.max_context, self.kv_heads, width),
+                                      DType.U8 if packed else DType.BF16))
+        return entries
+
 
     # ---- oracle -----------------------------------------------------------------------------------------------
     def forward(self, x: Any, residual: Any, state: Dict[str, Any], pos: int) -> Any:
@@ -116,7 +129,31 @@ class GQAAttention(Module):
         cos, sin = cos.to(proj.dtype), sin.to(proj.dtype)
         q = oracle.apply_partial_rope(q, cos, sin)
         k = oracle.apply_partial_rope(k, cos, sin)
-        o = oracle.attention_step(q, k, v, state[f"{self.prefix}k_cache"], state[f"{self.prefix}v_cache"], pos, d ** -0.5)
+        if self.k_cache_dtype == self.v_cache_dtype == "bf16":
+            o = oracle.attention_step(q, k, v, state[f"{self.prefix}k_cache"], state[f"{self.prefix}v_cache"], pos, d ** -0.5)
+        else:
+            from .kv_quant import quantize, dequantize
+            perm = rope_head_perm(d, self.rotary_dim)
+            inv = np.argsort(perm)
+            def side(value, name, dtype, is_key):
+                cache = state[f"{self.prefix}{name}"]
+                if dtype == "bf16":
+                    history, fresh, stored = cache[:pos].float(), value.float(), value
+                else:
+                    old = dequantize(cache[:pos].cpu().numpy(), dtype, d)
+                    raw = value.float().cpu().numpy()
+                    packed = quantize(raw[..., perm] if is_key else raw, dtype)
+                    decoded = dequantize(packed, dtype, d)
+                    history = torch.from_numpy((old[..., inv] if is_key else old).copy()).to(proj.device)
+                    fresh = torch.from_numpy((decoded[..., inv] if is_key else decoded).copy()).to(proj.device)
+                    stored = torch.from_numpy(packed).to(cache.device)
+                full = torch.zeros((pos+t, self.kv_heads, d), dtype=torch.float32, device=proj.device)
+                full[:pos] = history
+                cache[pos:pos+t] = stored
+                return full, fresh
+            fk, fresh_k = side(k, "k_cache", self.k_cache_dtype, True)
+            fv, fresh_v = side(v, "v_cache", self.v_cache_dtype, False)
+            o = oracle.attention_step(q, fresh_k, fresh_v, fk, fv, pos, d ** -0.5)
         o = o.to(proj.dtype)                                                # the reference's BF16 attention output
         if gate is not None:
             o = o * torch.sigmoid(gate)                                     # BF16 · bf16(σ(gate)) → BF16, as the reference
@@ -145,11 +182,11 @@ class GQAAttention(Module):
         g.op("gqa_decode", [proj, kc, vc, cos, sin, qn, kn], [part_o, part_md], domain=BlockDomain("heads", self.heads),
              klass=OpClass.MAP, updates=[kc.name, vc.name], heads=self.heads, kv_heads=self.kv_heads,
              head_dim=self.head_dim, rotary_dim=self.rotary_dim, eps=self.eps, scaling=self.head_dim ** -0.5,
-             qk_norm=self.qk_norm, segments=[s for s in self.kernel_segments() if s[0] != "gate"], rope="permuted", chunk=chunk, **ctx.mixer_attrs)
+             qk_norm=self.qk_norm, kv_cache_dtype=self.kv_cache_dtype, k_cache_dtype=self.k_cache_dtype, v_cache_dtype=self.v_cache_dtype, segments=[s for s in self.kernel_segments() if s[0] != "gate"], rope="permuted", chunk=chunk, **ctx.mixer_attrs)
         ins = [part_o, part_md]
         if self.gate:
             ins.append(self.qkv.lower(g, h, norm=norm, rows=(self.core_rows, hd), sibling=True).value)
         o = g.value(f"{self.prefix}attn", (t, hd), DType.BF16)
         g.op("gqa_merge", ins, [o], domain=BlockDomain("heads", self.heads), klass=OpClass.MAP, heads=self.heads,
-             kv_heads=self.kv_heads, head_dim=self.head_dim, gate=self.gate, qk_norm=self.qk_norm, chunk=chunk, **ctx.mixer_attrs)
+             kv_heads=self.kv_heads, head_dim=self.head_dim, gate=self.gate, qk_norm=self.qk_norm, kv_cache_dtype=self.kv_cache_dtype, k_cache_dtype=self.k_cache_dtype, v_cache_dtype=self.v_cache_dtype, chunk=chunk, **ctx.mixer_attrs)
         return self.o_proj.lower(g, o, residual=h, name=f"{self.prefix}h").value

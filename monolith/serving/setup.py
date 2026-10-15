@@ -32,16 +32,27 @@ class ServingAssets:
     recipe_key: str | None = None
     prefill_chunk_size: int | None = None
     draft_sampling: str = 'argmax'
+    kv_cache_dtype: str = 'bf16'
+    prefix_cache: bool = True
+    k_cache_dtype: str | None = None
+    v_cache_dtype: str | None = None
+
+    @property
+    def cache_dtypes(self):
+        from ..nn.kv_quant import resolve_kv_cache_dtypes
+        return resolve_kv_cache_dtypes(self.kv_cache_dtype, self.k_cache_dtype, self.v_cache_dtype)
 
     def options(self, prompt_tokens):
         profile = copy.deepcopy(self.profile)
-        options = dict(profile=profile, max_context=self.capacity)
+        options = dict(profile=profile, max_context=self.capacity, kv_cache_dtype=self.kv_cache_dtype)
+        if self.k_cache_dtype is not None or self.v_cache_dtype is not None:
+            options.update(k_cache_dtype=self.cache_dtypes[0], v_cache_dtype=self.cache_dtypes[1])
         key = None
         if self.draft_dir:
             options.update(drafter_dir=str(self.draft_dir), drafter_pack=str(self.draft_pack),
                            drafter_kind='dspark', verify='fixed', verify_length=self.gamma,
                            drafter_options=dict(block_size=self.gamma), draft_sampling=self.draft_sampling)
-        if self.recipes:
+        if self.recipes and self.cache_dtypes == ("bf16", "bf16"):
             keys = sorted(int(k) for k in self.recipes)
             key = self.recipe_key or str(max((k for k in keys if k <= prompt_tokens), default=keys[0]))
             recipe = self.recipes[key]
@@ -73,9 +84,14 @@ def prepare(args, *, device_info=None):
         args.draft = default_draft(args.model, model_dir)
         if args.draft:
             LOG.info('Automatically selected DSpark head: %s (seven proposals plus anchor)', args.draft)
-    limit = backend.serving_context_limit(drafter=bool(args.draft))
+    kv_cache_dtype = getattr(args, 'kv_cache_dtype', 'bf16')
+    from ..nn.kv_quant import resolve_kv_cache_dtypes
+    k_dtype, v_dtype = resolve_kv_cache_dtypes(kv_cache_dtype, getattr(args, 'k_cache_dtype', None), getattr(args, 'v_cache_dtype', None))
+    quantized = (k_dtype, v_dtype) != ('bf16', 'bf16')
+    cache_options = dict(kv_cache_dtype=kv_cache_dtype, k_cache_dtype=k_dtype, v_cache_dtype=v_dtype)
+    limit = backend.serving_context_limit(drafter=bool(args.draft), **cache_options)
     if limit is not None and args.max_context > limit:
-        LOG.warning('Clamping --max-context from %s to %s; a larger context does not fit %s '
+        LOG.warning('Clamping --max-context from %s to %s for the %s serving policy '
                     'with %s resident', args.max_context, limit, profile.chip,
                     'the drafter' if args.draft else 'this model')
         args.max_context = limit
@@ -92,6 +108,12 @@ def prepare(args, *, device_info=None):
         raise ValueError(f'--draft-block-size must be between 1 and {draft.gamma}')
     capacity = args.max_context + max(0, gamma - 1)
     model = cls.from_checkpoint(str(model_dir), max_context=capacity)
+    from ..nn.kv_quant import configure_kv_cache
+    configure_kv_cache(model, kv_cache_dtype, k_cache_dtype=k_dtype, v_cache_dtype=v_dtype)
+    if quantized:
+        LOG.info('Target KV cache: K=%s, V=%s; using general attention kernels (draft cache stays BF16)', k_dtype, v_dtype)
+    if quantized and (args.kernel_config or args.kernel_config_key):
+        raise ValueError('--kernel-config recipes require both K and V caches to use bf16')
     if draft:
         draft = DRAFTERS.get('dspark').from_checkpoint(str(draft_dir), target_lm_head=model.lm_head,
                                                        max_context=capacity, block_size=gamma)
@@ -125,6 +147,28 @@ def prepare(args, *, device_info=None):
         finally:
             checkpoint.close()
         LOG.info('DSpark draft format: %s (Markov embedding kept in source precision)', quantization)
+    # Quantized attention has no BF16 recipe variants to compile at startup.
+    if quantized:
+        recipes = {}
+    prefill_rows = backend.serving_prefill_chunk(
+        recipes, model, max_context=args.max_context, **cache_options)
+    if quantized:
+        # General quantized attention does not support the BF16-only large
+        # exact-prefill optimizations selected by some chip profiles.
+        prefill_rows = min(prefill_rows or 128, 128)
+    prefix_cache = backend.serving_prefix_cache(max_context=args.max_context, **cache_options)
+    if profile.backend == 'm6' and any(dtype in ('turbo4', 'q4_0') for dtype in (k_dtype, v_dtype)):
+        requested_rows, _ = args.prefill_chunk_size
+        # Smaller than 32 rows disables arena lifetime reuse; larger chunks at
+        # 64K exceed this device's measured residency budget.
+        if requested_rows is not None and not 32 <= requested_rows <= prefill_rows:
+            raise ValueError(f'M6 K={k_dtype}, V={v_dtype} at {args.max_context} context requires --prefill-chunk-size '
+                             f'between 32 and {prefill_rows}; use auto-exact for the measured setting')
+    if not prefix_cache:
+        if args.prefix_cache_dir:
+            raise ValueError(f'--prefix-cache-dir is unavailable for M6 K={k_dtype}, V={v_dtype} above 8192 context; '
+                             'long-context serving reserves memory for the model and live KV cache')
+        LOG.info('Long-context serving: prefix snapshots disabled to preserve unified-memory residency')
     root = Path(args.pack).expanduser() if args.pack else default_pack_cache()
     layout = PackLayout(lane_order=profile.lane_order, scale_placement=profile.scale_placement)
     pack = ensure_pack(model_dir, model, root, capacity=capacity, layout=layout,
@@ -139,4 +183,4 @@ def prepare(args, *, device_info=None):
              profile.backend, model_dir, draft_dir, gamma + 1 if gamma else 1, sorted(recipes))
     return ServingAssets(model_dir, pack, args.max_context, capacity, profile,
                          draft_dir, draft_pack, gamma, recipes, args.kernel_config_key,
-                         backend.serving_prefill_chunk(recipes, model), getattr(args, 'draft_sampling', 'argmax'))
+                         prefill_rows, getattr(args, 'draft_sampling', 'argmax'), kv_cache_dtype, prefix_cache, k_dtype, v_dtype)

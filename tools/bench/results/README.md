@@ -13,6 +13,9 @@ The earlier serving study has its [own archive and restore instructions](qwen8b-
 
 | Study | Raw evidence | Report |
 |---|---|---|
+| M6 decode regression audit and experimental tiled PV | [Measurements](m6-decode-pv-20261015.json) | [Investigation and qualification](../../../docs/research/m6-decode-pv-20261015.md) |
+| M6 NVFP4 projection and probability partials, 8K–64K | [Measurements](m6-projection-partials-20261014.json) | [Qualification report](../../../docs/research/m6-projection-partials-20261014.md) |
+| M6 matrix attention and quantized long-context prefill | [Measurements](m6-mma-prefill-20261014.json) | [Qualification report](../../../docs/research/m6-mma-prefill-20261014.md) |
 | Kernel sweeps and early decode baselines | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [GEMV study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/gemv-kernel-study.md), [decode kernels](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/decode-kernels.md) |
 | Llama and SmolLM2 generation | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [Model comparison](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/llama-mlx-comparison.md) |
 | Normalization fusion and grid searches | [Top-level JSONL files](https://github.com/jiazhihao/mpk-apple/tree/ade38fb5f81ebdf852a2b65a616703b03f4ec424/tools/bench/results/) | [Fusion study](https://github.com/lithos-ai/lithos-metal/blob/46b2bc4cda57826c072d94afe90a58633aaeb6d9/docs/research/norm-projection-fusion.md) |
@@ -33,3 +36,11 @@ python tools/bench/m1_gate_table.py "$benchmark_evidence/m1/apple-m5-pro-20c"
 Individual files can also be extracted with `git show <commit>:<path>`; the reports
 include commands for restoring their exact prompt/input files. The archive links
 remain usable from shallow clones that do not contain the evidence commit locally.
+
+## M6 prefill bottleneck investigation
+
+[m6-prefill-bottlenecks-20261014.json](m6-prefill-bottlenecks-20261014.json)
+records real-prefix stage profiles, NVFP4/GDN geometry sweeps, shader validation
+and repeated 8K full-model comparisons. That study kept projection changes
+benchmark-only; the [follow-up qualification](../../../docs/research/m6-projection-partials-20261014.md)
+records the long-context evidence and final production selection.

@@ -33,6 +33,63 @@ generation or `--draft PATH_OR_HUB_ID` to select another DSpark checkpoint.
 The default endpoint is `http://127.0.0.1:8000`, with a 32K context capacity. Use `--max-context` to adjust
 capacity to the model and available memory. Run `lithos-metal serve --help` for all options.
 
+### Quantized KV cache
+
+Select target-model K/V storage independently of weight quantization:
+
+```bash
+lithos-metal serve --model PATH_OR_HUB_ID --kv-cache-dtype q8_0
+lithos-metal serve --model PATH_OR_HUB_ID --kv-cache-dtype q4_0
+lithos-metal serve --model PATH_OR_HUB_ID --kv-cache-dtype turbo4
+```
+
+K and V can also use different formats:
+
+```bash
+lithos-metal serve --model nvidia/Qwen3.8-27B-NVFP4 \
+  --k-cache-dtype q8_0 --v-cache-dtype q4_0 --max-context 32768
+```
+
+Each side accepts `bf16`, `q8_0`, `q4_0` or `turbo4`. `--kv-cache-dtype` sets the
+shared default; a side-specific option overrides only that side, regardless of
+argument order. For example, `--kv-cache-dtype turbo4 --k-cache-dtype q8_0` means
+K=Q8_0 and V=Turbo4. Omitting all three options keeps BF16 for both.
+
+BF16 remains the default. Q8_0 stores 32 values in 34 bytes (53.125% of BF16 KV storage);
+Q4_0 stores 32 values in 18 bytes (28.125%). Turbo4 stores 128 values in 66 bytes (25.78125%). These ratios cover the target attention cache,
+not weights, workspaces, recurrent state or the draft cache. Q8_0 and Q4_0 require head dimensions divisible
+by 32; Turbo4 requires divisibility by 128. Unsupported shapes fail before allocation.
+
+All three quantized modes support prefill, decode and prefix snapshots through the general attention kernels.
+M6 accelerates qualified long-context prefill with matrix attention for BF16, Q8_0 and Turbo4.
+See the [M6 matrix attention measurements](docs/research/m6-mma-prefill-20261014.md)
+for dispatch thresholds, repeated prefill/decode results and numerical deviations.
+Q4_0, mixed KV formats and decode retain the existing attention path. Quantized target caches bypass
+BF16 direct-cache MMA/decoder recipes; `--kernel-config` is incompatible.
+Draft KV and recurrent state retain their original precision. Turbo4 attention runs in the rotated
+domain without reconstructing historical BF16 K/V.
+
+On a 32 GB Apple M6, Qwen3.8-27B-NVFP4 with DSpark supports up to 64K with Turbo4 or Q4_0:
+
+```bash
+lithos-metal serve --model nvidia/Qwen3.8-27B-NVFP4 --kv-cache-dtype turbo4 --max-context 65536
+```
+
+Use `--kv-cache-dtype q4_0` in the command above to select standard ggml Q4_0 instead.
+The default `auto-exact` prefill setting selects 128 rows through 32K and 32 rows above 32K.
+At 64K, explicit prefill sizes other than 32 are rejected. These smaller dynamic passes do not
+promise bitwise equivalence to 128-row passes. Above 8K, the M6 Turbo4/Q4_0 serving policy disables
+host/disk prefix snapshots to leave memory for live model state; `--prefix-cache-dir` is incompatible.
+Existing packs must cover the requested context plus DSpark's extra positions; omit `--pack` to
+build/reuse a compatible cache automatically. BF16 remains the default, including its existing
+M6 DSpark 8K context limit. Measured throughput and numerical deviations are recorded below;
+general long-context model quality has not been established.
+On M6 with DSpark, the capacity policy uses both formats: two 4-bit caches permit
+64K; Q8_0 paired with Q4_0/Turbo4 permits 32K. Combinations containing BF16 and
+symmetric Q8_0 retain the existing 8K limit. Long-context combinations disable
+prefix snapshots as described above.
+See [KV cache formats and limitations](docs/design/kv-quantization.md).
+
 ### Connect a coding agent
 
 Leave the server running and launch an installed client from another terminal:
@@ -89,6 +146,7 @@ see the [model adapter design](docs/design/models.md) for supported structures a
 | M4 Pro, 16 GPU cores | Unmeasured native fallback |
 | M4 Max, 32 or 40 GPU cores | Unmeasured native fallback |
 | M5 Max, 32 GPU cores | Independent, unmeasured native fallback |
+| M6, 12 GPU cores (Apple11) | Measured tensor acceleration; BF16 defaults to 8K speculative context, Turbo4/Q4_0 support up to 64K on the tested 32 GB machine ([details](monolith/backends/metal/m6/README.md)) |
 
 Backend selection uses the chip name, GPU family, and core count. Unmeasured backends have no automatic
 megakernel fusion and keep the tensor accelerator disabled. See [chip backends](monolith/backends/metal/README.md)

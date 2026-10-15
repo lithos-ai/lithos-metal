@@ -27,8 +27,9 @@ def dev():
 
 
 class Cfg:
-    def __init__(self, heads, kv, d, rot, ctx_max, t_max, chunk=64, rb=4, gate=True, v2=False, n_tg=None, steal=False, v3=False, nsg3=None, mma=False, step_state=False, lm_mode=0, adaptive=False, single_block=False, qk_norm=True, direct=False):
+    def __init__(self, heads, kv, d, rot, ctx_max, t_max, chunk=64, rb=4, gate=True, v2=False, n_tg=None, steal=False, v3=False, nsg3=None, mma=False, step_state=False, lm_mode=0, adaptive=False, single_block=False, qk_norm=True, direct=False, m6=False):
         self.heads, self.kv, self.d, self.rot, self.ctx_max, self.t_max = heads, kv, d, rot, ctx_max, t_max
+        self.m6 = m6
         self.direct = direct
         self.mma, self.step_state, self.lm_mode = mma, step_state, lm_mode
         self.single_block = single_block
@@ -36,7 +37,7 @@ class Cfg:
         self.qk_norm = qk_norm
         self.v2, self.n_tg, self.steal = v2, n_tg, steal                # v2: the partial granularity is 32 keys (the numpy model's chunk)
         self.v3, self.nsg3 = v3, nsg3 or kernels.gqa_v3_simdgroups(d)   # v3: one dispatch, a threadgroup of nsg3 SIMD-groups per query row
-        if v2 or (mma and d == 256):
+        if v2 or (mma and d == 256 and not m6):
             chunk = 32
         self.chunk, self.rb, self.gate = chunk, rb, gate
         self.rep = heads // kv
@@ -56,23 +57,54 @@ class Harness:
 
     def __init__(self, dev, cfg, qn, kn):
         self.dev, self.cfg = dev, cfg
+        prepared_turbo4 = (getattr(cfg, 'k_cache_dtype', getattr(cfg, 'kv_cache_dtype', 'bf16')) == 'turbo4'
+                          and getattr(cfg, 'turbo4_rotated', True) and getattr(cfg, 'turbo4_prepared_q', True))
         def library(source, macros, language_version=0):
             return nt.Library(dev, source, dict(macros, QK_NORM=str(int(cfg.qk_norm)),
-                MMA_PROB_FP16=str(int(getattr(cfg, 'prob_fp16', False)))), language_version)
+                **(kernels.perm_out_macros(cfg.heads*cfg.d,16,256) if getattr(cfg,'perm_output',False) else {}),
+                TURBO4_PREPARED_Q=str(int(prepared_turbo4)),
+                **({'TURBO4_ROTATED': str(int(cfg.turbo4_rotated))} if hasattr(cfg, 'turbo4_rotated') else {}),
+                MMA_PROB_FP16=str(int(getattr(cfg, 'prob_fp16', False))),
+                **{f'{side.upper()}_CACHE_TYPE': str({'bf16':0,'q8_0':1,'turbo4':2,'q4_0':3}[
+                    getattr(cfg, f'{side}_cache_dtype', getattr(cfg, 'kv_cache_dtype', 'bf16'))]) for side in ('k','v')},
+                KV_CACHE_TYPE=str({"bf16": 0, "q8_0": 1, "turbo4": 2, "q4_0": 3}[getattr(cfg, "kv_cache_dtype", "bf16")])), language_version)
         if cfg.mma:
             macros = dict(kernels.gqa_macros(cfg.d, chunk=cfg.chunk, rb_max=16, lm_mode=cfg.lm_mode, chain_i=2 if cfg.lm_mode == 2 else 0), FIXED_CHUNK="1", MMA_SG=str(kernels.gqa_mma_simdgroups(cfg.d, cfg.rep)))
             if cfg.direct:
                 macros.update(DIRECT_KV="1", MMA_SG="4")
             if cfg.adaptive:
                 macros["ADAPTIVE_CHUNK"] = "1"
+            if cfg.m6:
+                macros.update(M6_MMA='1', FIXED_CHUNK='0', RBMAX='4u', GQA_CHUNK_SG='144u')
             source = kernels.gqa_source(mma=True)
+            if getattr(cfg, 'pv_merge', False):
+                assert cfg.m6
+                macros['M6_PV_MERGE'] = '1'
+                if getattr(cfg, 'pv_rows', None) is not None:
+                    macros.update(PV_QM=str(cfg.pv_rows), PV_SG=str(getattr(cfg,'pv_simdgroups',8)))
+                source += '\n' + kernels.template('gqa_pv_merge_m6.metal')
             if cfg.step_state:
                 from monolith.core import StepStateLayout
                 self.layout = StepStateLayout()
                 macros["STEP_STATE"] = "1"
                 source = source.replace(kernels.PRELUDE, kernels.PRELUDE + self.layout.to_msl(), 1)
+            if getattr(cfg, 'pv_dispatch', False):
+                macros['M6_MMA_DISPATCH'] = '1'
+                fallback_macros=dict(macros, M6_PV_MERGE='0', M6_PV_FALLBACK='1', M6_PV_MERGE_DISPATCH='1')
+                tail_lib=library(source,fallback_macros,kernels.MSL_TENSOR_OPS)
+                self.p_tail_mma=nt.Pipeline(tail_lib,'gqa_decode_mma_m6')
+                self.p_tail_v1=nt.Pipeline(tail_lib,'gqa_decode')
+                self.p_tail_merge=nt.Pipeline(tail_lib,'gqa_merge')
+            if getattr(cfg, 'pv_adaptive', False):
+                small_macros={k:v for k,v in macros.items() if k not in ('PV_QM','PV_SG')}
+                small_macros['PV_ACTIVE_MAX']='64'
+                self.p_pv_small=nt.Pipeline(library(source,small_macros,kernels.MSL_TENSOR_OPS),'gqa_pv_merge_m6')
+                macros['PV_ACTIVE_MIN']='64'
             lib = library(source, macros, kernels.MSL_TENSOR_OPS)
-            self.p_dec, self.p_merge = nt.Pipeline(lib, "gqa_decode_mma"), nt.Pipeline(lib, "gqa_merge")
+            self.p_dec, self.p_merge = nt.Pipeline(lib, "gqa_decode_mma_m6" if cfg.m6 else "gqa_decode_mma"), nt.Pipeline(lib, "gqa_pv_merge_m6" if getattr(cfg, 'pv_merge', False) else "gqa_merge")
+            if cfg.m6 and prepared_turbo4:
+                self.p_turbo4_prepare = nt.Pipeline(lib, 'gqa_prepare_turbo4')
+                self.rotated_q = nt.Buffer(dev, cfg.t_max * cfg.heads * cfg.d * 4)
             if cfg.direct:
                 self.p_prepare = nt.Pipeline(lib, "gqa_prepare_mma")
         elif cfg.v3:
@@ -84,18 +116,26 @@ class Harness:
             self.p_dec, self.p_merge = nt.Pipeline(lib, "gqa_decode_v2"), nt.Pipeline(lib, "gqa_merge_v2")
         else:
             macros = kernels.gqa_macros(cfg.d, chunk=cfg.chunk, rb_max=cfg.rb, steal=cfg.steal, steal_hits=cfg.steal)
+            if getattr(cfg, 'chunk_sg', None) is not None:
+                macros['GQA_CHUNK_SG'] = str(cfg.chunk_sg)
             if getattr(cfg, "exact_sub", 0):
                 macros = dict(macros, EXACT_SUB=f"{cfg.exact_sub}u")
             lib = library(kernels.gqa_source(steal=cfg.steal), macros)
             self.p_dec, self.p_merge = nt.Pipeline(lib, "gqa_decode"), nt.Pipeline(lib, "gqa_merge")
+            if prepared_turbo4:
+                self.p_turbo4_prepare = nt.Pipeline(lib, 'gqa_prepare_turbo4')
+                self.rotated_q = nt.Buffer(dev, cfg.t_max * cfg.heads * cfg.d * 4)
             if cfg.steal:
                 self.p_reset = nt.Pipeline(lib, "steal_reset")
         cos, sin = rope_tables_permuted(THETA, cfg.d, cfg.rot, cfg.ctx_max)
         self.cos_b, self.sin_b = f32_to_bf16(cos), f32_to_bf16(sin)
         self.cos, self.sin = bf16_to_f32(self.cos_b), bf16_to_f32(self.sin_b)
         self.qn, self.kn = qn.astype(np.float32), kn.astype(np.float32)
-        nbytes = self.cache_bytes = cfg.ctx_max * cfg.kv * cfg.d * 2
-        self.k_cache, self.v_cache = nt.Buffer(dev, nbytes), nt.Buffer(dev, nbytes)
+        from monolith.nn.kv_quant import cache_row_bytes
+        self.k_cache_bytes = cfg.ctx_max * cfg.kv * cache_row_bytes(cfg.d, getattr(cfg, "k_cache_dtype", getattr(cfg, "kv_cache_dtype", "bf16")))
+        self.v_cache_bytes = cfg.ctx_max * cfg.kv * cache_row_bytes(cfg.d, getattr(cfg, "v_cache_dtype", getattr(cfg, "kv_cache_dtype", "bf16")))
+        self.cache_bytes = self.k_cache_bytes  # compatibility for symmetric-format tests
+        self.k_cache, self.v_cache = nt.Buffer(dev, self.k_cache_bytes), nt.Buffer(dev, self.v_cache_bytes)
         self.k_cache.fill(0); self.v_cache.fill(0)
         po, pm = kernels.gqa_workspace(cfg.kv, cfg.n_chunks_max, cfg.rows_max, cfg.d)
         self.part_o, self.part_md = nt.Buffer(dev, po), nt.Buffer(dev, pm)
@@ -119,8 +159,11 @@ class Harness:
         c = self.cfg
         t = proj_bf16.shape[0]
         t_act = t if t_active is None else t_active
+        n_sg = (dispatch_sg or self.dev.info().gpu_cores * 4) if c.mma else (t * c.heads) if c.v3 else (self.n_tg if c.v2 else self.n_sg)
+        if getattr(c, 'pv_dispatch', False):
+            n_sg = self.n_sg
         params = kernels.gqa_params(heads=c.heads, kv_heads=c.kv, t_active=t_act, position=position,
-                                    n_sg=(dispatch_sg or self.dev.info().gpu_cores * 4) if c.mma else (t * c.heads) if c.v3 else (self.n_tg if c.v2 else self.n_sg),
+                                    n_sg=n_sg,
                                     q_off=c.q_off, gate_off=c.gate_off, k_off=c.k_off, v_off=c.v_off, in_stride=c.n1,
                                     out_stride=c.heads * c.d, ctx_max=c.ctx_max, eps=EPS, scaling=c.scaling, has_gate=c.gate,
                                     n_chunks_max=c.n_chunks_max, rows_max=c.rows_max, nominal_sg=self.n_sg, gate_stride=c.n1 if c.v3 else 0)
@@ -159,19 +202,49 @@ class Harness:
             assert not r.error, r.error
             return bf16_to_f32(np.frombuffer(out.read(0, t * c.heads * c.d * 2), dtype=np.uint16).reshape(t, c.heads * c.d))
         n_disp = self.n_sg if dispatch_sg is None else dispatch_sg
+        crew_threads = 32 * getattr(c, 'v1_threadgroup_sgs', 12)
         d1 = (nt.Dispatch().pipeline(self.p_dec).buffer(0, pb).buffer(1, self.k_cache).buffer(2, self.v_cache)
               .buffer(3, self.bufs["cos"]).buffer(4, self.bufs["sin"]).buffer(5, self.bufs["qn"]).buffer(6, self.bufs["kn"])
-              .buffer(7, self.part_o).buffer(8, self.part_md).bytes(9, params).grid(-(-(n_disp * 32) // 384)).threadgroup(384).barrier())
+              .buffer(7, self.part_o).buffer(8, self.part_md).bytes(9, params).grid(-(-(n_disp * 32) // crew_threads)).threadgroup(crew_threads).barrier())
         if c.mma:
             d1.grid(dispatch_sg or self.dev.info().gpu_cores * 4).threadgroup(32 * kernels.gqa_mma_simdgroups(c.d, c.rep))
         merge_sg = getattr(c, "merge_sg", 1)
         d2 = (nt.Dispatch().pipeline(self.p_merge).buffer(0, self.part_o).buffer(1, self.part_md).buffer(2, pb).buffer(3, out)
               .bytes(4, params).grid(-(-(t * c.heads) // merge_sg)).threadgroup(32 * merge_sg))
+        if getattr(c, 'pv_merge', False):
+            qm = getattr(c,'pv_rows',None) or (16 if getattr(c, 'kv_cache_dtype', 'bf16') == 'bf16' else 8)
+            d2.buffer(5, self.v_cache).grid(c.kv * (-(-(t * c.rep) // qm))).threadgroup(32*getattr(c,'pv_simdgroups',8))
         if c.step_state:
             sb = nt.Buffer(self.dev, self.layout.pack(state or {'position': position, 't_this_step': t_act}))
             d1.buffer(15, sb)
             d2.buffer(15, sb)
         ds = [d1, d2]
+        if getattr(c, 'pv_dispatch', False):
+            def tail_core(pipeline, groups, threads):
+                dispatch=(nt.Dispatch().pipeline(pipeline).buffer(0,pb).buffer(1,self.k_cache).buffer(2,self.v_cache)
+                    .buffer(3,self.bufs['cos']).buffer(4,self.bufs['sin']).buffer(5,self.bufs['qn']).buffer(6,self.bufs['kn'])
+                    .buffer(7,self.part_o).buffer(8,self.part_md).bytes(9,params).grid(groups).threadgroup(threads).barrier())
+                if c.step_state: dispatch.buffer(15,sb)
+                if hasattr(self,'rotated_q'): dispatch.buffer(13,self.rotated_q)
+                return dispatch
+            old_merge=(nt.Dispatch().pipeline(self.p_tail_merge).buffer(0,self.part_o).buffer(1,self.part_md)
+                .buffer(2,pb).buffer(3,out).bytes(4,params).grid(t*c.heads).threadgroup(32).barrier())
+            if c.step_state: old_merge.buffer(15,sb)
+            ds=[tail_core(self.p_tail_v1,self.dev.info().gpu_cores,384),
+                tail_core(self.p_tail_mma,self.dev.info().gpu_cores*4,256),d1,old_merge,d2]
+        if hasattr(self, 'p_pv_small'):
+            small=(nt.Dispatch().pipeline(self.p_pv_small).buffer(0,self.part_o).buffer(1,self.part_md)
+                .buffer(2,pb).buffer(3,out).bytes(4,params).buffer(5,self.v_cache)
+                .grid(c.kv*(-(-(t*c.rep)//8))).threadgroup(256).barrier())
+            if c.step_state:small.buffer(15,sb)
+            ds.insert(ds.index(d2),small)
+        if hasattr(self, 'p_turbo4_prepare'):
+            d0 = (nt.Dispatch().pipeline(self.p_turbo4_prepare).buffer(0,pb)
+                  .buffer(3,self.bufs['cos']).buffer(4,self.bufs['sin']).buffer(5,self.bufs['qn'])
+                  .buffer(13,self.rotated_q).bytes(9,params).grid(-(-(t*c.heads)//4)).threadgroup(128).barrier())
+            if c.step_state: d0.buffer(15,sb)
+            d1.buffer(13,self.rotated_q)
+            ds = [d0,*ds]
         if c.direct:
             d1.threadgroup(128)
             d0 = (nt.Dispatch().pipeline(self.p_prepare).buffer(0, pb).buffer(1, self.k_cache).buffer(2, self.v_cache)
@@ -222,6 +295,11 @@ def ref_step(h, proj, position, k_cache, v_cache):
     pos = np.arange(position, position + t)
     q = norm_rope_np(q, h.qn, h.cos[pos][:, None, :], h.sin[pos][:, None, :], d, c.qk_norm)
     k = norm_rope_np(k, h.kn, h.cos[pos][:, None, :], h.sin[pos][:, None, :], d, c.qk_norm)
+    from monolith.nn.kv_quant import quantize, dequantize
+    kt = getattr(c, 'k_cache_dtype', getattr(c, 'kv_cache_dtype', 'bf16'))
+    vt = getattr(c, 'v_cache_dtype', getattr(c, 'kv_cache_dtype', 'bf16'))
+    k = dequantize(quantize(k, kt), kt, d)
+    v = dequantize(quantize(v, vt), vt, d)
     k_cache[position: position + t] = k
     v_cache[position: position + t] = v
     ctx = position + t
@@ -472,6 +550,29 @@ def _pick_chunk(ctx, kv, rep, rb, n_sg, n_chunks_max, ch=64):
     while ch > 16 and kv * -(-rep // rb) * -(-ctx // (ch // 2)) <= n_sg and -(-ctx // (ch // 2)) <= n_chunks_max:
         ch //= 2
     return ch
+
+
+@pytest.mark.parametrize('position,t', [(600, 8), (512, 128), (8192, 8), (8192, 128)])
+def test_worker_tuning_preserves_softmax_partition(dev, position, t):
+    cfg = Cfg(24, 4, 256, 64, 8448, t)
+    tuned = Cfg(24, 4, 256, 64, 8448, t)
+    tuned.chunk_sg, tuned.v1_threadgroup_sgs = 144, 8
+    if position < 1000:
+        assert _pick_chunk(position+t, 4, 6, 4, 144, cfg.n_chunks_max) != _pick_chunk(
+            position+t, 4, 6, 4, 192, cfg.n_chunks_max)
+    rng = np.random.default_rng(913)
+    qn, kn = _norms(rng, cfg.d)
+    baseline, candidate = Harness(dev, cfg, qn, kn), Harness(dev, tuned, qn, kn)
+    baseline.n_sg, candidate.n_sg = 144, 192
+    keys = rbf(rng.normal(0, .5, (cfg.ctx_max, cfg.kv, cfg.d)))
+    values = rbf(rng.normal(0, .2, keys.shape))
+    keys[position:], values[position:] = 0, 0
+    baseline.set_caches(keys, values)
+    candidate.set_caches(keys, values)
+    proj = _random_proj(rng, cfg, t)
+    assert np.array_equal(baseline.step(proj, position), candidate.step(proj, position))
+    for expected, actual in zip(baseline.caches(), candidate.caches()):
+        assert np.array_equal(expected, actual)
 
 
 def test_exact_sub_reproduces_shorter_passes(dev):

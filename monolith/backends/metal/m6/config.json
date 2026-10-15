@@ -1,0 +1,36 @@
+{
+  "name": "apple-m6-12c",
+  "backend": "m6",
+  "chip": "Apple M6",
+  "gpu_family": "Apple11",
+  "gpu_cores": 12,
+  "nominal_gbps": 0,
+  "validation": "measured",
+  "measured": "2026-10-14",
+  "note": "Measured on 12-core M6 / 32 GB / macOS 27.0.1. Qualified NVFP4 prompt geometry and BF16/Turbo4 probability partials, with conservative verification and shape-scoped fallbacks. See monolith/backends/metal/m6/README.md.",
+  "engine": {
+    "family": "Apple11",
+    "lane_order": "interleaved16",
+    "scale_placement": "block",
+    "threadgroups_per_core": 1,
+    "sibling_order": "either",
+    "max_cb_ms": 16,
+    "attention": "v1",
+    "attention_prefill_mma": true,
+    "nvfp4_prefill_geometry": true,
+    "attention_probability_partials": true,
+    "attention_rows": 4,
+    "accelerator": "on",
+    "accelerator_min_t": {
+      "bf16": 16
+    },
+    "cost_T": {},
+    "gdn_mixer_fusion": {},
+    "attention_launch": {
+      "workers": 24,
+      "simdgroups": 8
+    }
+  },
+  "kernel_choices": "config_kernels.json",
+  "kernel_choices_sha256": "b59a8f73a5e5481106a4d40b18159aa78b2873841e083152d81f60ae11c77d53"
+}

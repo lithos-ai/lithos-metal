@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-14",
+  "device": "Apple M6, 12 GPU cores, 32 GiB RAM",
+  "model": "nvidia/Qwen3.8-27B-NVFP4",
+  "draft": "LithosAI/Qwen3.8-27B-DSpark-NVFP4",
+  "format": {
+    "name": "q4_0",
+    "block_values": 32,
+    "block_bytes": 18,
+    "bf16_byte_fraction": 0.28125,
+    "upstream_commit": "6e09de1b44ae328f641d1367bb4c875a8ffab43f",
+    "reference": "ggml/src/ggml-quants.c::quantize_row_q4_0_ref"
+  },
+  "serving": {
+    "context": 65536,
+    "capacity_with_draft": 65542,
+    "prefill_rows": 32,
+    "prefix_snapshots": false,
+    "advertised_context": 65536
+  },
+  "tests": {
+    "contract_passed": 180,
+    "metal_shader_validation_passed": 196,
+    "long_history_shader_validation_passed": 3,
+    "history_positions": [
+      8191,
+      32767,
+      65527
+    ],
+    "attention_rtol": 0.035,
+    "attention_atol": 0.004
+  },
+  "codec_relative_l2": {
+    "seed": 44,
+    "shape": [
+      5,
+      3,
+      256
+    ],
+    "first_row_zero": true,
+    "error": 0.08728004992008209
+  },
+  "requests": [
+    {
+      "name": "short",
+      "wall_s": 0.6555724580002789,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    },
+    {
+      "name": "sampled",
+      "wall_s": 0.7834817079997265,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    },
+    {
+      "name": "long",
+      "wall_s": 160.09597925000025,
+      "usage": {
+        "prompt_tokens": 12625,
+        "completion_tokens": 21,
+        "total_tokens": 12646
+      }
+    },
+    {
+      "name": "repeat",
+      "wall_s": 0.6246174580001025,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    }
+  ],
+  "long_request_metrics": {
+    "steps": 7,
+    "decode_gpu_ms": 1791.2228749996757,
+    "wall_ms": 160049.8779579998,
+    "prefill_gpu_ms": 158127.76962499818,
+    "prefill_wall_ms": 158217.99104167195,
+    "state_reset_ms": 0.0015830000847927295,
+    "checkpoint_ms": 0.0,
+    "setup_ms": 18.28779300012684,
+    "load_ms": 8.504666999670007,
+    "first_text_ms": null,
+    "decode_wall_ms": 1791.9893749998882,
+    "cached_prompt_tokens": 0,
+    "prefix_source": null,
+    "prefix_load_ms": 0.0,
+    "prefill_encode_ms": 2.3437500093132257,
+    "prefill_commit_ms": 1.085374993737787,
+    "prefill_wait_ms": 158212.3316666768,
+    "verify_tokens": 8,
+    "decode_step_ms": 255.88898214281082
+  },
+  "managed_buffer_bytes": 26455997808,
+  "system_swap": {
+    "page_bytes": 16384,
+    "pages_before": 108680,
+    "pages_after": 132488,
+    "delta_bytes": 390070272,
+    "note": "System-wide counters, not attribution to this process; this was not a zero-swap run."
+  },
+  "checks": {
+    "greedy": true,
+    "sampled": true,
+    "repeated_greedy_output_exact": true,
+    "sse": true,
+    "context_overflow_status": 400,
+    "temporary_server_stopped": true
+  },
+  "limitations": [
+    "64K service capacity with 12625 input tokens, not a full 64K-input model benchmark.",
+    "Synthetic codec/attention and checkpoint tests do not establish real-model perplexity or task quality."
+  ],
+  "source_sha256": {
+    "monolith/nn/kv_quant.py": "d1cdea1c084a27ce95ce5fb7f7d29ede83b9a4412b9a51fed45766b70abf3bd9",
+    "kernels/common/kv_quant.metal": "f56c112ccbfcee339d90887024a0fc15109cde7e81e9556e0f9efc9025edc6fc",
+    "monolith/compiler/emit.py": "5ec96d89c4f3f8086b2fc22e2dd1f9e458d05eb9f4ad60a381474003585299be",
+    "monolith/backends/metal/m6/backend.py": "a210f5a9635646c17f96c112de738673deacbcccecd0a93c3a8b34132c338d27",
+    "monolith/serving/setup.py": "c0a33f8d6aac39c8b35794c68a14edf435b44755e904a6f22d256c4cd6b656cc",
+    "monolith/serve.py": "e72f21944af8f7d77e2530ee8b9a54426a35b0146bbd2c3f5d0bb17533c79a47",
+    "monolith/generate.py": "c9b92dca357f6af7446a8439352eba4581a390a6d2b5fe681410f74540af5c82"
+  }
+}

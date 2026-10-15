@@ -128,7 +128,8 @@ class Backend:
         if self.session is None:
             self.session = load_session(self.model_dir, self.pack_dir, **options,
                 temperature=request.temperature, top_p=request.top_p, top_k=request.top_k, seed=request.seed,
-                autotune=False, measured_choices=True, prefill_chunk_size=self.prefill_chunk_size, prefix_cache=True,
+                autotune=False, measured_choices=True, prefill_chunk_size=self.prefill_chunk_size,
+                prefix_cache=getattr(assets, 'prefix_cache', True),
                 # exact chunks follow the 128-row chunking, its reusable prefixes included
                 prefix_cache_min_tokens=min(self.prefill_chunk_size, 128) if self.prefill_exact else self.prefill_chunk_size,
                 prefill_exact=self.prefill_exact)
@@ -750,6 +751,12 @@ def parse_args(argv=None):
     parser.add_argument("--kernel-config-key", help="Pin a context key in the selected recipe map")
     parser.add_argument("--served-model-name", default=None)
     parser.add_argument("--max-context", type=int, default=32768)
+    parser.add_argument("--kv-cache-dtype", choices=["bf16", "q8_0", "turbo4", "q4_0"], default="bf16",
+                        help="target attention KV cache storage (draft/recurrent state unchanged)")
+    parser.add_argument("--k-cache-dtype", choices=["bf16", "q8_0", "turbo4", "q4_0"],
+                        help="target K cache storage; overrides --kv-cache-dtype for K only")
+    parser.add_argument("--v-cache-dtype", choices=["bf16", "q8_0", "turbo4", "q4_0"],
+                        help="target V cache storage; overrides --kv-cache-dtype for V only")
     parser.add_argument("--prefill-chunk-size", type=_prefill_chunk, default='auto-exact', metavar='N|N-exact|auto-exact',
                         help="Prompt tokens per prefill pass. N-exact reproduces the results of 128-token passes bit for bit; "
                              "auto-exact (default) uses the chip's measured size for the model that way, else 128")
@@ -795,7 +802,7 @@ def main(argv=None):
     rows, exact = args.prefill_chunk_size
     store = (dict(root=args.prefix_cache_dir, max_bytes=args.prefix_cache_disk_size)
              if args.prefix_cache_dir else None)
-    backend = Backend(str(assets.model_dir), str(assets.pack_dir), args.max_context, rows or assets.prefill_chunk_size or 128,
+    backend = Backend(str(assets.model_dir), str(assets.pack_dir), assets.max_context, rows or assets.prefill_chunk_size or 128,
                       assets=assets, prefill_exact=exact, prefix_store=store)
     model_name = args.served_model_name or (assets.model_dir.name if Path(args.model).expanduser().exists() else args.model)
     if not args.no_warmup:
@@ -805,8 +812,10 @@ def main(argv=None):
     if args.keep_warm > 0:
         backend.keep_warm(args.keep_warm)
     app = create_app(backend, model_name, api_key)
-    logging.getLogger(__name__).info('lithos-metal ready: http://%s:%s — model=%s; DSpark=%s; verification rows=%s',
-                                   args.host, args.port, model_name, args.draft or 'disabled', assets.gamma + 1)
+    logging.getLogger(__name__).info('lithos-metal ready: http://%s:%s — model=%s; DSpark=%s; verification rows=%s; '
+                                   'context=%s; K=%s; V=%s; prefill rows=%s; prefix snapshots=%s',
+                                   args.host, args.port, model_name, args.draft or 'disabled', assets.gamma + 1,
+                                   assets.max_context, *assets.cache_dtypes, backend.prefill_chunk_size, assets.prefix_cache)
     try:
         uvicorn.run(app, host=args.host, port=args.port, workers=1)
     finally:

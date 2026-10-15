@@ -1,5 +1,6 @@
 """Chip selection, independent lowering/source overrides, and cache isolation."""
 import copy
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -22,6 +23,7 @@ from monolith.runtime.program import KernelSpec, OpSpec, Program
     ('Apple M4 Pro', 20, 9, 'm4_pro'), ('Apple M4 Max', 32, 9, 'm4_max'),
     ('Apple M4 Max', 40, 9, 'm4_max'), ('Apple M5 Pro', 20, 10, 'm5_pro'),
     ('Apple M5 Max', 32, 10, 'm5_max_32c'), ('Apple M5 Max', 40, 10, 'm5_max_40c'),
+    ('Apple M6', 12, 11, 'm6'),
 ])
 def test_exact_device_selection(name, cores, family, backend):
     config = config_for_device(cores, family, name)
@@ -70,6 +72,37 @@ def test_m3_ultra_60c_is_its_own_device():
     assert get_backend('m3_ultra_60c').serving_context_limit(drafter=True) is None
     assert get_backend('m3_ultra_60c').serving_prefill_chunk({}) == 512
     assert get_backend('m4_pro').serving_prefill_chunk({}) is None
+
+
+def test_m6_is_its_own_device():
+    config = config_for_device(12, 11, 'Apple M6')
+    assert config.key == 'apple11'
+    for name, cores, family in (
+            ('Apple M6', 10, 11), ('Apple M6', 12, 10),
+            ('Apple M6 Pro', 12, 11), ('Apple M5', 12, 11)):
+        assert config_for_device(cores, family, name) is None
+        with pytest.raises(ValueError, match='device is'):
+            get_backend('m6').validate_device(config,
+                SimpleNamespace(name=name, gpu_cores=cores, apple_family=family))
+    assert get_backend('m6').serving_recipes(None, None, None) == {}
+    assert get_backend('m6').serving_context_limit(drafter=True) == 8192
+    assert get_backend('m6').serving_context_limit(drafter=False) is None
+    assert get_backend('m6').serving_prefill_chunk({}) == 128
+    doc = copy.deepcopy(config.raw)
+    doc['gpu_cores'] = 10
+    with pytest.raises(ValueError, match='does not match backend'):
+        ChipConfig.from_dict('invalid', doc)
+
+
+def test_m6_measured_choices_are_available_and_fingerprinted():
+    from monolith.backends.metal.config import kernel_choices
+    config = config_for_device(12, 11, 'Apple M6')
+    sidecar = config.source.parent / config.raw['kernel_choices']
+    assert hashlib.sha256(sidecar.read_bytes()).hexdigest() == config.raw['kernel_choices_sha256']
+    assert kernel_choices(config) == json.loads(sidecar.read_text())['choices']
+    changed = copy.deepcopy(config)
+    changed.raw['kernel_choices_sha256'] = 'different measurements'
+    assert changed.fingerprint != config.fingerprint
 
 
 @pytest.mark.parametrize('backend', sorted(BACKENDS))

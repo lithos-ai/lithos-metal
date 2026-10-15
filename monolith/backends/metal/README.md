@@ -15,6 +15,7 @@ configuration or autotuning cache.
 | `m5_pro` | [20 cores](m5_pro/config.json) | Existing measured settings preserved |
 | `m5_max_32c` | [32 cores](m5_max_32c/config.json) | Unmeasured native fallback |
 | `m5_max_40c` | [40 cores](m5_max_40c/config.json) | Measured GDN default and explicit attention/MLP/draft recipes preserved |
+| `m6` | [12 cores](m6/config.json) | Measured Apple11 tensor acceleration with conservative BF16 verification; 128-token prefill, DSpark context capped at 8192 on the tested 32 GB machine |
 
 A configuration can ship measured kernel choices (`kernel_choices`, a file beside it): the autotuner's cache
 entries from that chip for its decode programs, plus the prompt pass's 32-row tile geometry measured in the prompt
@@ -26,6 +27,11 @@ Unmeasured configurations have no cost tables or automatic megakernel fusion,
 and keep the tensor accelerator off. They provide a starting point for validation
 on those devices, not a performance claim. The 30-core M3 Max, 16-core M4 Pro and
 32-core M5 Max have not been GPU-tested by this reorganization, nor the M4 Max on its own hardware.
+
+The [12-core M6 backend](m6/README.md) enables measured tensor acceleration,
+shape-scoped attention launches and 128-token prefill. BF16 verification remains
+on shaders below 16 rows, and speculative serving retains an 8192-token context
+cap on the tested 32 GB machine. It uses shared kernels without M5 fusion recipes.
 
 ## Source and compilation ownership
 
@@ -39,6 +45,7 @@ monolith/backends/metal/
   m4_pro/backend.py        # chip-owned Python hooks
   m5_pro/backend.py
   m5_max_32c/backend.py
+  m6/backend.py
   m5_max_40c/
     backend.py, scheduling.py, validation.py
     config.json

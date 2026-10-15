@@ -1,0 +1,365 @@
+{
+  "model": "nvidia/Qwen3.8-27B-NVFP4",
+  "draft": "LithosAI/Qwen3.8-27B-DSpark-NVFP4",
+  "device": "Apple M6, 12 GPU cores, 32 GiB unified memory",
+  "source_commit": "6932d5b7e249321beeff4f102a82d8e5064bb201",
+  "changed_engine_source_sha256": {
+    "monolith/compiler/emit.py": "f403812e60cd4623b27819cb86469b6b51713c52cc35f222687c68b18ea9c246",
+    "kernels/common/gqa_decode.metal": "d77156b7f59d74aad257a7e2a4b5013e3baa5255a4ba3584a0bf128e22673129",
+    "kernels/common/kv_quant.metal": "1bb80f87017ddab76573dad11999e6f530de84913814e29d5f599559da0bddf9"
+  },
+  "method": {
+    "kernel": "Matched seeded Q/K/V; H=24, KV=4, D=256; 24x8 SIMD launch; original softmax partition; includes Q prepare/core/merge for rotated path. 60 samples per case, forward/reverse sweeps.",
+    "full_model": "Same prompt, packs, M6 profile, greedy N=7, 128 output tokens, no prefix reuse. Single full request per configuration. Compile and warmup excluded; prefix restore check after timing. 8K repeated after increasing only the checkpoint probe budget; timed results and token/acceptance sequences were consistent.",
+    "contexts": "Capacity minus 128 input tokens; 128 output tokens. Full-model old Turbo4 values are from the previous run; BF16 32K was remeasured.",
+    "memory": "Unique engine buffer allocations, not peak system RAM. System VM counters are global.",
+    "serving": "Direct Session engine qualification. BF16 default and production 8K serving limit unchanged."
+  },
+  "validation": {
+    "regression_passed": 227,
+    "http_tests_skipped_missing_httpx": 4,
+    "metal_shader_validation_passed": 30,
+    "disk_restore_cases_passed": 4,
+    "disk_restore_shader_validation": true,
+    "real_model_prefix_restore": {
+      "prompt_tokens": 275,
+      "cached_prompt_tokens": 128,
+      "output_tokens": 32,
+      "identical_tokens": true,
+      "cache_bytes": 312672912
+    },
+    "baseline_comparisons": {
+      "run-64k-turbo4-p32.json": {
+        "same_tokens": true,
+        "same_acceptance_rounds": false,
+        "same_mean_acceptance": true
+      },
+      "run-32k-bf16-p64.json": {
+        "same_tokens": true,
+        "same_acceptance_rounds": true,
+        "same_mean_acceptance": true
+      }
+    },
+    "tolerances": "Existing attention oracle rtol=0.035, atol=0.004 unchanged; codec tolerances unchanged.",
+    "numerical_notes": "Floating-point reassociation; Turbo4 generated outputs at 8K/16K/32K differ from the old path. This is a single synthetic prompt performance study, not a perplexity or model-quality evaluation."
+  },
+  "kernels": [
+    {
+      "context": 8192,
+      "query_rows": 8,
+      "median_ms": {
+        "bf16": 2.521791662729811,
+        "legacy": 8.833062500343658,
+        "rotated": 2.6742291593109258
+      },
+      "speedup": 3.3030312565358804,
+      "vs_legacy": {
+        "relative_l2": 9.524599126945918e-05,
+        "max_abs": 6.103515625e-05,
+        "rms": 6.267062243068006e-07
+      },
+      "vs_bf16": {
+        "relative_l2": 0.10980764869512157,
+        "max_abs": 0.00463104248046875,
+        "rms": 0.0007249232232077655
+      },
+      "cache_bytes": {
+        "bf16": 33587200,
+        "legacy": 8659200,
+        "rotated": 8659200
+      },
+      "query_bytes": 196608
+    },
+    {
+      "context": 8192,
+      "query_rows": 128,
+      "median_ms": {
+        "bf16": 41.353083339345176,
+        "legacy": 147.00758334220154,
+        "rotated": 47.75591666839318
+      },
+      "speedup": 3.078311413494386,
+      "vs_legacy": {
+        "relative_l2": 0.00014423668168734075,
+        "max_abs": 0.0001220703125,
+        "rms": 9.579973032402986e-07
+      },
+      "vs_bf16": {
+        "relative_l2": 0.10992970758337803,
+        "max_abs": 0.0052490234375,
+        "rms": 0.0007329999221172477
+      },
+      "cache_bytes": {
+        "bf16": 34078720,
+        "legacy": 8785920,
+        "rotated": 8785920
+      },
+      "query_bytes": 3145728
+    },
+    {
+      "context": 16384,
+      "query_rows": 8,
+      "median_ms": {
+        "bf16": 5.078458329080604,
+        "legacy": 17.833291669376194,
+        "rotated": 5.374687498260755
+      },
+      "speedup": 3.318014614830543,
+      "vs_legacy": {
+        "relative_l2": 0.00017147682974854605,
+        "max_abs": 6.103515625e-05,
+        "rms": 7.886716342697032e-07
+      },
+      "vs_bf16": {
+        "relative_l2": 0.11147690058231784,
+        "max_abs": 0.003017425537109375,
+        "rms": 0.0005125337297946953
+      },
+      "cache_bytes": {
+        "bf16": 67141632,
+        "legacy": 17309952,
+        "rotated": 17309952
+      },
+      "query_bytes": 196608
+    },
+    {
+      "context": 16384,
+      "query_rows": 128,
+      "median_ms": {
+        "bf16": 82.93545833294047,
+        "legacy": 293.35485416231677,
+        "rotated": 91.93864583357936
+      },
+      "speedup": 3.1907676201075046,
+      "vs_legacy": {
+        "relative_l2": 0.0001613019314176372,
+        "max_abs": 0.0001220703125,
+        "rms": 7.456481216694711e-07
+      },
+      "vs_bf16": {
+        "relative_l2": 0.11196561716155161,
+        "max_abs": 0.0050506591796875,
+        "rms": 0.0005170542239100563
+      },
+      "cache_bytes": {
+        "bf16": 67633152,
+        "legacy": 17436672,
+        "rotated": 17436672
+      },
+      "query_bytes": 3145728
+    },
+    {
+      "context": 32768,
+      "query_rows": 8,
+      "median_ms": {
+        "bf16": 10.198229159868788,
+        "legacy": 36.09508334193379,
+        "rotated": 10.815395835379604
+      },
+      "speedup": 3.3373797770636013,
+      "vs_legacy": {
+        "relative_l2": 0.00019072968739844537,
+        "max_abs": 6.103515625e-05,
+        "rms": 6.536314311472076e-07
+      },
+      "vs_bf16": {
+        "relative_l2": 0.10435017523940882,
+        "max_abs": 0.002044677734375,
+        "rms": 0.00035666523535385
+      },
+      "cache_bytes": {
+        "bf16": 134250496,
+        "legacy": 34611456,
+        "rotated": 34611456
+      },
+      "query_bytes": 196608
+    },
+    {
+      "context": 32768,
+      "query_rows": 128,
+      "median_ms": {
+        "bf16": 169.81589583156165,
+        "legacy": 584.7106041692314,
+        "rotated": 182.88645832944894
+      },
+      "speedup": 3.1971235569335725,
+      "vs_legacy": {
+        "relative_l2": 0.00019253475395487432,
+        "max_abs": 0.0001220703125,
+        "rms": 6.629640687295995e-07
+      },
+      "vs_bf16": {
+        "relative_l2": 0.10427252926402944,
+        "max_abs": 0.002437591552734375,
+        "rms": 0.00035810229875833107
+      },
+      "cache_bytes": {
+        "bf16": 134742016,
+        "legacy": 34738176,
+        "rotated": 34738176
+      },
+      "query_bytes": 3145728
+    }
+  ],
+  "full_model": [
+    {
+      "file": "run-8k-turbo4-p128.json",
+      "context": 8192,
+      "kv_dtype": "turbo4",
+      "prefill_rows": 128,
+      "input_tokens": 8064,
+      "output_tokens": 128,
+      "prefill_s": 71.02981879170693,
+      "decode_tps": 15.383932844905683,
+      "round_ms": 235.83992142895502,
+      "wall_s": 79.31331579100515,
+      "mean_accepted": 2.676470588235294,
+      "acceptance_rate": 0.38235294117647056,
+      "nonterminal_rounds": 34,
+      "allocations_gib": 22.289061676710844,
+      "allocation_delta_mib": 4.4375,
+      "target_kv_mib": 132.0966796875,
+      "system_swapouts_mib": 0.0,
+      "system_swapouts_after_warmup_mib": 0.0,
+      "prefill_speedup": 1.6894213579309734,
+      "decode_speedup": 1.4909128552220132,
+      "round_speedup": 1.4103538349109452,
+      "same_output_as_baseline": false,
+      "baseline": {
+        "prefill_s": 119.9992929166765,
+        "decode_tps": 10.318465489798763,
+        "round_ms": 332.61773761242273,
+        "mean_accepted": 2.4166666666666665
+      },
+      "prefix_restore": {
+        "prompt_tokens": 275,
+        "cached_prompt_tokens": 128,
+        "output_tokens": 32,
+        "identical_tokens": true,
+        "cache_bytes": 312672912
+      }
+    },
+    {
+      "file": "run-16k-turbo4-p128.json",
+      "context": 16384,
+      "kv_dtype": "turbo4",
+      "prefill_rows": 128,
+      "input_tokens": 16256,
+      "output_tokens": 128,
+      "prefill_s": 187.01609800002188,
+      "decode_tps": 12.78085161406776,
+      "round_ms": 292.23237867742733,
+      "wall_s": 197.01618545799283,
+      "mean_accepted": 2.787878787878788,
+      "acceptance_rate": 0.39826839826839827,
+      "nonterminal_rounds": 33,
+      "allocations_gib": 22.648702275007963,
+      "allocation_delta_mib": 4.4375,
+      "target_kv_mib": 264.0966796875,
+      "system_swapouts_mib": 0.0,
+      "system_swapouts_after_warmup_mib": 0.0,
+      "prefill_speedup": 2.0693816914540304,
+      "decode_speedup": 1.74984352786688,
+      "round_speedup": 1.6526361130608962,
+      "same_output_as_baseline": false,
+      "baseline": {
+        "prefill_s": 387.007689208418,
+        "decode_tps": 7.303996849162886,
+        "round_ms": 482.95378240800346,
+        "mean_accepted": 2.4857142857142858
+      }
+    },
+    {
+      "file": "run-32k-bf16-p64.json",
+      "context": 32768,
+      "kv_dtype": "bf16",
+      "prefill_rows": 64,
+      "input_tokens": 32640,
+      "output_tokens": 128,
+      "prefill_s": 538.1942753749026,
+      "decode_tps": 9.2624651508963,
+      "round_ms": 391.7362595222325,
+      "wall_s": 552.0957681250002,
+      "mean_accepted": 2.5,
+      "acceptance_rate": 0.35714285714285715,
+      "nonterminal_rounds": 34,
+      "allocations_gib": 24.563006054610014,
+      "allocation_delta_mib": 0.0,
+      "target_kv_mib": 2048.375,
+      "system_swapouts_mib": 104.5625,
+      "system_swapouts_after_warmup_mib": 0.0,
+      "prefill_speedup": 1.0083774276129738,
+      "decode_speedup": 1.0083042041779966,
+      "round_speedup": 1.0082612919874694,
+      "same_output_as_baseline": true,
+      "baseline": {
+        "prefill_s": 542.7029589585727,
+        "decode_tps": 9.186181226376393,
+        "round_ms": 394.9725071442247,
+        "mean_accepted": 2.5
+      }
+    },
+    {
+      "file": "run-32k-turbo4-p128.json",
+      "context": 32768,
+      "kv_dtype": "turbo4",
+      "prefill_rows": 128,
+      "input_tokens": 32640,
+      "output_tokens": 128,
+      "prefill_s": 538.5778732500912,
+      "decode_tps": 9.038196333980018,
+      "round_ms": 401.44761309701215,
+      "wall_s": 552.7833209170058,
+      "mean_accepted": 2.6470588235294117,
+      "acceptance_rate": 0.37815126050420167,
+      "nonterminal_rounds": 34,
+      "allocations_gib": 24.077779661864042,
+      "allocation_delta_mib": 4.4375,
+      "target_kv_mib": 528.0966796875,
+      "system_swapouts_mib": 0.0,
+      "system_swapouts_after_warmup_mib": 0.0,
+      "prefill_speedup": 2.511959040084631,
+      "decode_speedup": 1.9980091682362051,
+      "round_speedup": 1.9424365144386624,
+      "same_output_as_baseline": false,
+      "baseline": {
+        "prefill_s": 1352.8855575001212,
+        "decode_tps": 4.523601031299933,
+        "round_ms": 779.786502313881,
+        "mean_accepted": 2.4
+      }
+    },
+    {
+      "file": "run-64k-turbo4-p32.json",
+      "context": 65536,
+      "kv_dtype": "turbo4",
+      "prefill_rows": 32,
+      "input_tokens": 65408,
+      "output_tokens": 128,
+      "prefill_s": 1935.3262545829643,
+      "decode_tps": 5.836602698934606,
+      "round_ms": 621.6829785698792,
+      "wall_s": 1957.7250181660056,
+      "mean_accepted": 2.5294117647058822,
+      "acceptance_rate": 0.36134453781512604,
+      "nonterminal_rounds": 34,
+      "allocations_gib": 24.546302746981382,
+      "allocation_delta_mib": 1.25,
+      "target_kv_mib": 1056.0966796875,
+      "system_swapouts_mib": 0.0,
+      "system_swapouts_after_warmup_mib": 0.0,
+      "prefill_speedup": 2.702932620764179,
+      "decode_speedup": 2.266525452032189,
+      "round_speedup": 2.2664962667000976,
+      "same_output_as_baseline": true,
+      "baseline": {
+        "prefill_s": 5231.056465333654,
+        "decode_tps": 2.575132211156707,
+        "round_ms": 1409.042149999628,
+        "mean_accepted": 2.5294117647058822
+      }
+    }
+  ],
+  "raw_evidence": "build/kv-rotated-20261013",
+  "baseline_evidence": "build/kv-long-context-20261013"
+}

@@ -462,7 +462,7 @@ def test_the_identity_changes_with_the_weights_and_the_configurations(tmp_path):
     s.layout, s.prefix_cache, s._kv_buffers = NS(size=8, offsets={'step': 0}), PrefixCache(entries, 1 << 20), set()
     s.prefill_exact, s.prefill_chunk_size = True, 512
     for name in ('commute_norm', 'gdn_mixer_fusion', 'fast_math', 'accelerator', 'attention', 'prefill_attention',
-                 'prefill_optimizations'):
+                 'prefill_optimizations', 'kv_cache_dtype'):
         setattr(s, name, None)
     s.model, s.drafter = NS(config=NS(rms_norm_eps=1e-6)), NS(cfg=NS(rms_norm_eps=1e-6))
     before = s.prefix_identity(test=True)
@@ -473,6 +473,14 @@ def test_the_identity_changes_with_the_weights_and_the_configurations(tmp_path):
     s.drafter.cfg.rms_norm_eps = 1e-5                           # the drafter's too
     assert s.prefix_identity(test=True) != before
     s.drafter.cfg.rms_norm_eps = 1e-6
+    assert s.prefix_identity(test=True) == before
+    s.k_cache_dtype, s.v_cache_dtype = 'q8_0', 'q4_0'
+    mixed = s.prefix_identity(test=True)
+    s.k_cache_dtype, s.v_cache_dtype = 'q4_0', 'q8_0'
+    assert s.prefix_identity(test=True) != mixed
+    s.k_cache_dtype, s.v_cache_dtype = 'q8_0', 'q4_0'
+    assert s.prefix_identity(test=True) == mixed
+    del s.k_cache_dtype, s.v_cache_dtype
     assert s.prefix_identity(test=True) == before
     (pack_dir / 'weights.pack').write_bytes(b'v' * 64)          # same size and manifest, other weights
     os.utime(pack_dir / 'weights.pack', ns=(1, 2))

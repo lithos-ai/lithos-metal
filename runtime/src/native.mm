@@ -44,7 +44,8 @@ NB_MODULE(_native, m) {
   nb::class_<Pipeline>(m, "Pipeline")
       .def(nb::init<const Library&, const std::string&, bool>(), nb::arg("library"), nb::arg("function"), nb::arg("support_icb") = false)
       .def_prop_ro("max_threads_per_threadgroup", &Pipeline::max_threads_per_threadgroup)
-      .def_prop_ro("thread_execution_width", &Pipeline::thread_execution_width);
+      .def_prop_ro("thread_execution_width", &Pipeline::thread_execution_width)
+      .def_prop_ro("static_threadgroup_memory_length", &Pipeline::static_threadgroup_memory_length);
 
   nb::class_<Dispatch>(m, "Dispatch")
       .def(nb::init<>())

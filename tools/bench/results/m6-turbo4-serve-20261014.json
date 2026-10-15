@@ -1,0 +1,105 @@
+{
+  "date": "2026-10-14",
+  "device": "Apple M6, 12 GPU cores, 32 GiB RAM",
+  "model": "nvidia/Qwen3.8-27B-NVFP4",
+  "draft": "LithosAI/Qwen3.8-27B-DSpark-NVFP4",
+  "interface": "lithos-metal serve; real localhost HTTP on port 8001",
+  "config": {
+    "kv_cache_dtype": "turbo4",
+    "max_context": 65536,
+    "capacity_including_draft": 65542,
+    "prefill_rows": 32,
+    "prefix_snapshots": false,
+    "warmup": true
+  },
+  "advertised_context": 65536,
+  "requests": [
+    {
+      "name": "short",
+      "wall_s": 1.037708207994001,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    },
+    {
+      "name": "sampled",
+      "wall_s": 0.7482089169934625,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    },
+    {
+      "name": "long",
+      "wall_s": 161.02027058300155,
+      "usage": {
+        "prompt_tokens": 12625,
+        "completion_tokens": 21,
+        "total_tokens": 12646
+      }
+    },
+    {
+      "name": "repeat",
+      "wall_s": 0.6385512920096517,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    }
+  ],
+  "long_request_metrics": {
+    "steps": 6,
+    "decode_gpu_ms": 1566.0513333568815,
+    "wall_ms": 160995.64129200007,
+    "prefill_gpu_ms": 159250.83883340994,
+    "prefill_wall_ms": 159367.94879192114,
+    "state_reset_ms": 0.000790998456068337,
+    "checkpoint_ms": 0.0,
+    "setup_ms": 32.690292020561174,
+    "load_ms": 7.148125005187467,
+    "first_text_ms": null,
+    "decode_wall_ms": 1566.7895833402872,
+    "cached_prompt_tokens": 0,
+    "prefix_source": null,
+    "prefix_load_ms": 0.0,
+    "prefill_encode_ms": 4.578374803066254,
+    "prefill_commit_ms": 1.6887083500623703,
+    "prefill_wait_ms": 159357.58195842803,
+    "verify_tokens": 8,
+    "decode_step_ms": 261.00855555948027
+  },
+  "managed_buffer_bytes": 26353490912,
+  "swapouts_before": 288652,
+  "swapouts_after": 288652,
+  "checks": {
+    "short_greedy": true,
+    "sampling_variant": true,
+    "long_prompt_above_8k": true,
+    "greedy_reset_output_exact": true,
+    "context_overflow_status": 400,
+    "sse_done_and_content": true,
+    "temporary_server_stopped": true
+  },
+  "tests": {
+    "targeted_contract_passed": 229,
+    "metal_shader_validation_passed": 181,
+    "provision_passed": 7,
+    "full_contract_unrelated_failures": [
+      "Two test_streaming_moe_oracle cases: installed Transformers Qwen3MoeRotaryEmbedding does not accept device keyword"
+    ],
+    "sandbox_errors": "Five localhost fixture setup errors; all seven provision tests subsequently passed outside sandbox"
+  },
+  "caveat": "Integration smoke test at 64K capacity with a 12625-token prompt, not a rerun of the full 64K-input benchmark. Long prompt timings are one run; contract tests ran concurrently on CPU.",
+  "source_sha256": {
+    "monolith/serving/setup.py": "af1cf622817a94f6f8c4dd11b731e52b81036737583528c3dad8444cf419cb84",
+    "monolith/serve.py": "e11bf2552a5609f5654f88232a6ac1e0309c8802c22382ed8467622ac3f068c5",
+    "monolith/generate.py": "578d189bb71e48cc7d53a16cd9305dadf05767f59ce75924a407eb1bdc7b58ea",
+    "monolith/backends/metal/m6/backend.py": "ae2da47421441ef8eb5056ade515e71f8eff5aec2c43e49ca09b4644d679410d",
+    "kernels/common/gqa_decode.metal": "d77156b7f59d74aad257a7e2a4b5013e3baa5255a4ba3584a0bf128e22673129",
+    "kernels/common/kv_quant.metal": "1bb80f87017ddab76573dad11999e6f530de84913814e29d5f599559da0bddf9"
+  }
+}

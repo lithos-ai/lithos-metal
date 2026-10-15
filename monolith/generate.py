@@ -87,7 +87,8 @@ class Session:
                  prefill_attention: Optional[str] = None, decoder_kernel_config: Optional[Dict[str, Any]] = None,
                  prefix_cache: bool = False, prefix_cache_min_tokens: int = 0, device=None, pipeline_cache=None,
                  prefill_optimizations: bool = True, prefix_cache_max_bytes: Optional[int] = None,
-                 prefill_exact: bool = False, measured_choices: bool = False) -> None:
+                 prefill_exact: bool = False, measured_choices: bool = False, kv_cache_dtype: str = "bf16",
+                 k_cache_dtype: Optional[str] = None, v_cache_dtype: Optional[str] = None) -> None:
         """``drafter`` (a ``Drafter`` built with the model's head) and its pack turn the session speculative: one
         small dynamic-T decode program holds the round; ``verify`` / ``verify_threshold`` as in ``compile_program``.
         ``draft_sampling`` (temperature > 0): ``argmax`` drafts the drafter's argmax and keeps it iff the target's
@@ -99,6 +100,17 @@ class Session:
 
         from .nn.pack_plan import bind_pack_formats
 
+        from .nn.kv_quant import configure_kv_cache
+        self.k_cache_dtype, self.v_cache_dtype = configure_kv_cache(
+            model, kv_cache_dtype, k_cache_dtype=k_cache_dtype, v_cache_dtype=v_cache_dtype)
+        self.kv_cache_dtype = kv_cache_dtype
+        if self.k_cache_dtype != "bf16" or self.v_cache_dtype != "bf16":
+            if prefill_exact and prefill_chunk_size > self.EXACT_ROWS:
+                raise ValueError("Quantized KV cache does not support prefill_exact above 128 rows")
+            if decoder_kernel_config:
+                raise ValueError("Quantized KV cache does not support BF16 decoder kernel recipes")
+            decoder_kernel_config = None
+            prefill_optimizations = False
         self.model, self.pack = model, PackFile(pack_dir)
         bind_pack_formats(model, self.pack)                    # a pack re-quantized at pack time differs from the checkpoint the tree was built from
         self.spec_steps_per_cb, self.spec_in_flight = 1, 2     # the round's pump cadence (generate); the plain path takes the call's
@@ -204,7 +216,13 @@ class Session:
     def prefill_engine(self, prompt_tokens: Optional[int] = None, rows: Optional[int] = None):
         """A separate graph/ICB for prompt chunks; short prompts use a smaller bucket."""
         bound = rows or self.prefill_chunk_size
-        if prompt_tokens is not None and not self.prefill_exact:
+        # Quantized prefill reuses scratch only at >=32 rows. Smaller buckets
+        # can consume *more* memory, and keeping several buckets duplicates
+        # arenas at long context. Run short inputs with dynamic T in the one
+        # configured graph, also matching prepare() and load().
+        fixed_quantized = any(getattr(self, f"{side}_cache_dtype", getattr(self, "kv_cache_dtype", "bf16")) != "bf16"
+                              for side in ("k", "v")) and bound >= 32
+        if prompt_tokens is not None and not self.prefill_exact and not fixed_quantized:
             bound = min(bound, 1 << (max(1, prompt_tokens) - 1).bit_length())
         # The last prefill pass bootstraps drafting as well as ingesting the prompt.
         bound = max(bound, self.drafter.gamma + 1 if self.drafter is not None else 1)
@@ -314,7 +332,9 @@ class Session:
                    layout=[self.layout.size, sorted(self.layout.offsets.items())], entries=entries,
                    prefill=[self.prefill_exact, self.prefill_chunk_size, self.EXACT_ROWS],
                    numerics=[self.commute_norm, self.gdn_mixer_fusion, self.fast_math, self.accelerator, self.attention,
-                             self.prefill_attention, self.prefill_optimizations], extra=extra)
+                             self.prefill_attention, self.prefill_optimizations,
+                             getattr(self, "k_cache_dtype", self.kv_cache_dtype),
+                             getattr(self, "v_cache_dtype", self.kv_cache_dtype)], extra=extra)
         return hashlib.sha256(json.dumps(doc, sort_keys=True, default=repr).encode()).hexdigest()
 
     @property
@@ -400,6 +420,9 @@ class Session:
 
     def _compile(self, bound, *, dynamic, prefill):
         exact = prefill and self.prefill_exact and bound > self.EXACT_ROWS
+        attention = self.prefill_attention if prefill and self.prefill_attention is not None else self.attention
+        if prefill and self.prefill_exact:
+            attention = get_backend(self.profile.backend).exact_prefill_attention(attention)
         shared = exact and self.decoder_kernel_config is not None
         if shared and 0 not in self._programs:
             # The exact prompt graph reads the packed layouts the decoder derives.
@@ -408,19 +431,22 @@ class Session:
                                ring_capacity=self.ring_capacity, layout=self.layout, tuner=self._tuner(prefill), drafter=self.drafter,
                                drafter_pack=self.drafter_pack, verify=self.verify, verify_threshold=self.verify_threshold,
                                verify_length=self.verify_length, barriers=self.barriers,
-                               attention=self.prefill_attention if prefill and self.prefill_attention is not None else self.attention,
+                               attention=attention,
                                accelerator=self.accelerator, commute_norm=self.commute_norm,
                                prefill=prefill, gdn_mixer_fusion=self.gdn_mixer_fusion)
         if not prefill:
             # one attention partial workspace for all layers (the prefill program gets it from scratch reuse below)
             from .compiler.shared_partials import share_attention_partials
             share_attention_partials(prog, barriers=self.barriers)
-        if prefill and bound >= 32 and self.prefill_optimizations:
+        if prefill and bound >= 32:
             from .compiler.arena import reuse_arenas
-            from .compiler.prefill import specialize_prompt
-            prog = specialize_prompt(prog)
-            with using_backend(self.profile.backend) as backend:
-                prog = backend.optimize_prefill(prog, exact=exact)
+            if self.prefill_optimizations:
+                from .compiler.prefill import specialize_prompt
+                prog = specialize_prompt(prog)
+                with using_backend(self.profile.backend) as backend:
+                    prog = backend.optimize_prefill(prog, exact=exact)
+            # Scratch lifetime reuse is format-independent and still needed when
+            # quantized KV bypasses BF16 attention/fusion optimizations.
             reuse_arenas(prog, barriers=self.barriers)
         if exact:
             from .compiler.prefill import exact_attention
@@ -801,6 +827,12 @@ def main(argv=None) -> int:
     ap.add_argument("--barriers", default="minimal", choices=["minimal", "all"], help="ICB barriers: only where a dependency needs one, or on every op")
     ap.add_argument("--attention", default=None, choices=["v1", "v2", "v3", "mma", "mma-direct", "auto"],
                     help="attention kernel (auto = chip policy; mma-direct = measured static-eight-row long-context shapes, otherwise auto)")
+    ap.add_argument("--kv-cache-dtype", default="bf16", choices=["bf16", "q8_0", "turbo4", "q4_0"],
+                    help="target attention KV cache storage (default: bf16)")
+    ap.add_argument("--k-cache-dtype", choices=["bf16", "q8_0", "turbo4", "q4_0"],
+                        help="target K cache storage; overrides --kv-cache-dtype for K only")
+    ap.add_argument("--v-cache-dtype", choices=["bf16", "q8_0", "turbo4", "q4_0"],
+                        help="target V cache storage; overrides --kv-cache-dtype for V only")
     ap.add_argument("--prefill-attention", default=None, choices=["v1", "v2", "v3", "mma", "auto"],
                     help="independent prefill attention selection (v3 avoids large matrix partial workspaces)")
     ap.add_argument("--accelerator", default=None, choices=["on", "off"], help="T > 1 GEMVs on the tensor-ops tile (default: the chip profile's)")
@@ -829,7 +861,8 @@ def main(argv=None) -> int:
                         verify_threshold=a.verify_threshold, verify_length=a.verify_length, sts_path=a.sts, barriers=a.barriers,
                         drafter_options=draft_options,
                         prefill_chunk_size=a.prefill_chunk_size, attention=a.attention, fast_math=(a.math == "fast"), accelerator=a.accelerator, commute_norm=a.commute_norm,
-                        gdn_mixer_fusion=a.gdn_mixer_fusion, prefill_attention=a.prefill_attention,
+                        gdn_mixer_fusion=a.gdn_mixer_fusion, prefill_attention=a.prefill_attention, kv_cache_dtype=a.kv_cache_dtype,
+                        k_cache_dtype=a.k_cache_dtype, v_cache_dtype=a.v_cache_dtype,
                         decoder_kernel_config=json.loads(a.decoder_kernel_config.read_text()) if a.decoder_kernel_config else None)
     gen = sess.generate(ids, a.max_new_tokens)
     wall = time.time() - t0

@@ -2,10 +2,9 @@ from ..base import MetalBackend
 
 
 class Backend(MetalBackend):
-    """Native fallback pending measurements on 40-core M3 Max.
-
-    Its own device configuration: core count and measured lane order are per
-    chip. Tensor acceleration and mixer fusion stay off.
+    """40-core M3 Max: the profile measured on this chip (config.json), with the
+    Apple9 matrix tile from 4 rows for NVFP4/FP8 and 8 for INT4/BF16. Mixer
+    fusion stays off.
     """
     id = "m3_max_40c"
 

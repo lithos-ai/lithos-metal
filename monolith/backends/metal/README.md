@@ -9,7 +9,7 @@ configuration or autotuning cache.
 | --- | --- | --- |
 | `m3_pro` | [18 cores](m3_pro/config.json) | Existing probe-derived settings preserved |
 | `m3_max_30c` | [30 cores](m3_max_30c/config.json) | Unmeasured native fallback. On the 36 GB machine, DSpark serving fits through 20480 context; 22528 does not |
-| `m3_max_40c` | [40 cores](m3_max_40c/config.json) | Unmeasured native fallback. On the 48 GB machine the GPU test tiers pass with the accelerator off; cases that force it on need this chip's tile thresholds (`tools/profile_writer.py`). DSpark serving is capped at 20480 context, the 30-core part's measured fit |
+| `m3_max_40c` | [40 cores](m3_max_40c/config.json) | Measured (`profile_writer`, 48 GB): the Apple9 matrix tile from 4 rows (NVFP4, FP8) and 8 (INT4, BF16). DSpark serving is capped at 20480 context, the 30-core part's measured fit |
 | `m3_ultra_60c` | [60 cores](m3_ultra_60c/config.json) | Measured (`profile_writer`, 256 GB): the Apple9 matrix tile from 4 rows |
 | `m4_pro` | [16 cores](m4_pro/config-16c.json), [20 cores](m4_pro/config-20c.json) | 20 cores measured (`profile_writer`, 48 GB): the Apple9 matrix tile from 2 rows (NVFP4); 16 cores an unmeasured native fallback |
 | `m4_max` | [32 cores](m4_max/config-32c.json), [40 cores](m4_max/config-40c.json) | Unmeasured native fallback |

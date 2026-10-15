@@ -4,21 +4,270 @@
   "chip": "Apple M3 Max",
   "gpu_family": "Apple9",
   "gpu_cores": 40,
-  "nominal_gbps": 0,
-  "validation": "unmeasured",
-  "note": "Conservative native-kernel fallback for the 40-core M3 Max (Apple9). No latency, bandwidth, fusion or acceptance claims. Tune on this exact chip.",
+  "nominal_gbps": 280.0,
+  "validation": "measured",
+  "note": "Measured on a 40-core, 48 GB M3 Max (macOS 27.0.1) by tools/profile_writer.py with the Apple9 matrix tile. The 30-core M3 Max keeps its own unmeasured configuration.",
   "engine": {
     "family": "Apple9",
     "lane_order": "interleaved16",
     "scale_placement": "block",
-    "threadgroups_per_core": 1,
+    "threadgroups_per_core": 2,
     "sibling_order": "either",
     "max_cb_ms": 16,
-    "attention": "v1",
+    "attention": "v2",
     "attention_rows": 4,
-    "accelerator": "off",
-    "accelerator_min_t": {},
-    "cost_T": {},
-    "gdn_mixer_fusion": {}
+    "attention_v2_threadgroups": 2,
+    "accelerator": "on",
+    "accelerator_min_t": {
+      "nvfp4": 4,
+      "fp8": 4,
+      "int4_affine": 8,
+      "bf16": 8
+    },
+    "cost_T": {
+      "nvfp4": {
+        "1": 1.0,
+        "2": 1.27,
+        "4": 1.924,
+        "8": 5.464
+      },
+      "fp8": {
+        "1": 1.0,
+        "2": 1.218,
+        "4": 1.746,
+        "8": 2.804
+      },
+      "int4_affine": {
+        "1": 1.0,
+        "2": 1.385,
+        "4": 2.288,
+        "8": 6.179
+      },
+      "bf16": {
+        "1": 1.0,
+        "2": 1.144,
+        "4": 1.245,
+        "8": 2.204
+      },
+      "accelerator_nvfp4": {
+        "8": 1.941,
+        "16": 3.124,
+        "32": 6.826
+      },
+      "accelerator_fp8": {
+        "8": 1.561,
+        "16": 2.279,
+        "32": 5.05
+      },
+      "accelerator_int4_affine": {
+        "8": 2.576,
+        "16": 3.983,
+        "32": 7.869
+      },
+      "accelerator_bf16": {
+        "8": 1.361,
+        "16": 1.726,
+        "32": 2.524
+      }
+    },
+    "note": "written by tools/profile_writer.py from the kernel harnesses (min-of-N over >= 2 GB streamed per point): cost_T = the pass cost relative to a T = 1 shader pass at the best geometry per T; accelerator_<fmt> = gemm_tile at TM rows in the same unit; sibling_order and max_cb_ms are the probes' (p11, p6/p6b) and attention_rows the file's: they carry over"
+  },
+  "memory_gb": 48,
+  "os": "macOS 27.0.1",
+  "gpu_working_set_gb": 37.44,
+  "max_buffer_gb": 28.08,
+  "measured": "2026-10-15",
+  "nominal_note": "[M] stand-in: the best measured streaming rate (278 GB/s) rounded up; replace with the spec figure",
+  "hosts_target_model": true,
+  "hosts_target_model_note": "21 GB of weights against recommendedMaxWorkingSetSize 37.44 GB, maxBufferLength 28.08 GB",
+  "writer": {
+    "tool": "tools/profile_writer.py",
+    "written": "2026-10-15",
+    "command": "python tools/profile_writer.py",
+    "decisions": {
+      "lane_order": "a tie (interleaved16 278 GB/s, contiguous 277 GB/s): the profile keeps interleaved16",
+      "scale_placement": "block streams 1.065x inline (the unit's padding gone)",
+      "threadgroups_per_core": "x2 at 0.297 ms against x1 0.307",
+      "accelerator": "nvfp4: the tile from T = 4 (tile TM8 1.94, TM16 3.12, TM32 6.83 vs shader T2 1.27, T4 1.92, T8 5.46); fp8: the tile from T = 4 (tile TM8 1.56, TM16 2.28, TM32 5.05 vs shader T2 1.22, T4 1.75, T8 2.80); int4_affine: the tile from T = 8 (tile TM8 2.58, TM16 3.98, TM32 7.87 vs shader T2 1.39, T4 2.29, T8 6.18); bf16: the tile from T = 8 (tile TM8 1.36, TM16 1.73, TM32 2.52 vs shader T2 1.14, T4 1.25, T8 2.20)",
+      "attention": "v2 faster at every point: (1024, 1): 0.334 vs 0.436 ms, (1024, 4): 0.285 vs 0.458 ms, (4096, 1): 0.190 vs 0.247 ms, (4096, 4): 0.550 vs 0.930 ms; v3 not faster at every point (at (4096, 1): 0.304 vs v1 0.247 / v2 0.190 ms)"
+    },
+    "measurements": {
+      "family": "Apple9",
+      "chip": "Apple M3 Max",
+      "shape": "17408x5120",
+      "copies": null,
+      "reps": 3,
+      "lane_order_gbps": {
+        "interleaved16": 278.5,
+        "contiguous": 276.8
+      },
+      "lane_order_measured_with": "interleaved16",
+      "scale_placement_gbps": {
+        "inline": 215.3,
+        "block": 229.2
+      },
+      "scale_placement_measured_with": "nvfp4",
+      "threadgroups_ms": {
+        "1": 0.3066,
+        "2": 0.2969
+      },
+      "shader_ms": {
+        "nvfp4": {
+          "1": 0.1902,
+          "2": 0.2416,
+          "4": 0.3659,
+          "8": 1.0393
+        },
+        "fp8_e4m3": {
+          "1": 0.2552,
+          "2": 0.3108,
+          "4": 0.4455,
+          "8": 0.7157
+        },
+        "int4_affine": {
+          "1": 0.191,
+          "2": 0.2646,
+          "4": 0.4371,
+          "8": 1.1802
+        },
+        "bf16": {
+          "1": 0.5015,
+          "2": 0.5739,
+          "4": 0.6244,
+          "8": 1.1052
+        }
+      },
+      "shader_geometry": {
+        "nvfp4": {
+          "1": "1blk/SG tg64",
+          "2": "1blk/SG tg64",
+          "4": "1blk/SG tg64",
+          "8": "1blk/SG tg64"
+        },
+        "fp8_e4m3": {
+          "1": "1blk/SG tg64",
+          "2": "1blk/SG tg64",
+          "4": "1blk/SG tg64",
+          "8": "1blk/SG tg64"
+        },
+        "int4_affine": {
+          "1": "1blk/SG tg64",
+          "2": "1blk/SG tg64",
+          "4": "1blk/SG tg64",
+          "8": "1blk/SG tg64"
+        },
+        "bf16": {
+          "1": "1blk/SG tg64",
+          "2": "1blk/SG tg64",
+          "4": "1blk/SG tg64",
+          "8": "1blk/SG tg64"
+        }
+      },
+      "shader_gbps": {
+        "nvfp4": {
+          "1": 263.6,
+          "2": 207.5,
+          "4": 137.0,
+          "8": 48.2
+        },
+        "fp8_e4m3": {
+          "1": 349.3,
+          "2": 286.8,
+          "4": 200.1,
+          "8": 124.5
+        },
+        "int4_affine": {
+          "1": 262.5,
+          "2": 189.5,
+          "4": 114.7,
+          "8": 42.5
+        },
+        "bf16": {
+          "1": 355.4,
+          "2": 310.6,
+          "4": 285.5,
+          "8": 161.3
+        }
+      },
+      "tile_ms": {
+        "nvfp4": {
+          "8": 0.3692,
+          "16": 0.5942,
+          "32": 1.2984
+        },
+        "fp8_e4m3": {
+          "8": 0.3984,
+          "16": 0.5815,
+          "32": 1.2888
+        },
+        "int4_affine": {
+          "8": 0.4921,
+          "16": 0.7607,
+          "32": 1.5029
+        },
+        "bf16": {
+          "8": 0.6823,
+          "16": 0.8658,
+          "32": 1.2657
+        }
+      },
+      "tile_gbps": {
+        "nvfp4": {
+          "8": 135.8,
+          "16": 84.4,
+          "32": 38.6
+        },
+        "fp8_e4m3": {
+          "8": 223.7,
+          "16": 153.3,
+          "32": 69.2
+        },
+        "int4_affine": {
+          "8": 101.9,
+          "16": 65.9,
+          "32": 33.4
+        },
+        "bf16": {
+          "8": 261.3,
+          "16": 205.9,
+          "32": 140.8
+        }
+      },
+      "attention_ms": {
+        "v1": {
+          "(1024, 1)": 0.4365,
+          "(1024, 4)": 0.4582,
+          "(4096, 1)": 0.2467,
+          "(4096, 4)": 0.9305
+        },
+        "v2": {
+          "(1024, 1)": 0.3343,
+          "(1024, 4)": 0.285,
+          "(4096, 1)": 0.1897,
+          "(4096, 4)": 0.5503
+        },
+        "v3": {
+          "(1024, 1)": 0.1012,
+          "(1024, 4)": 0.0983,
+          "(4096, 1)": 0.3039,
+          "(4096, 4)": 0.318
+        }
+      },
+      "attention_rep": 8
+    },
+    "previous_engine": {
+      "family": "Apple9",
+      "lane_order": "interleaved16",
+      "scale_placement": "block",
+      "threadgroups_per_core": 1,
+      "sibling_order": "either",
+      "max_cb_ms": 16,
+      "attention": "v1",
+      "attention_rows": 4,
+      "accelerator": "off",
+      "accelerator_min_t": {},
+      "cost_T": {},
+      "gdn_mixer_fusion": {}
+    }
   }
 }

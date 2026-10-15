@@ -93,14 +93,14 @@ def test_every_backend_takes_the_served_model_in_its_prefill_hook(backend):
 
 def test_unmeasured_backends_have_no_borrowed_tuning():
     configs = load_configs()
-    for name in ('apple-m3-max-30c', 'apple-m3-max-40c', 'apple-m4-pro-16c', 'apple-m4-max-32c', 'apple-m4-max-40c',
-                 'apple-m5-max-32c'):
+    for name in ('apple-m3-max-30c', 'apple-m4-pro-16c', 'apple-m4-max-32c', 'apple-m4-max-40c', 'apple-m5-max-32c'):
         config = configs[name]
         assert config.validation == 'unmeasured'
         assert config.accelerator == 'off'
         assert not config.cost_t and not config.gdn_mixer_fusion
         assert config.threadgroups_per_core == 1
     assert configs['apple-m5-max-40c'].validation == 'measured'
+    assert configs['apple-m3-max-40c'].validation == 'measured' and configs['apple-m3-max-40c'].accelerator == 'on'
     assert configs['apple-m5-max-40c'].gdn_mixer_fusion['workers'] == 80
 
 

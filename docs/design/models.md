@@ -53,6 +53,30 @@ This integration remains experimental. Isolated-layer agreement and short contin
 general long-context qualification. Routing near the top-k boundary can amplify rounding differences, so
 validation must check the full chain and continuation as well as individual expert kernels.
 
+## Qwen3 dense models
+
+[The Qwen3 package](../../monolith/models/qwen3) registers `Qwen3ForCausalLM`: a pre-norm decoder with GQA
+attention, per-head Q/K RMSNorm, full-width default rotary embeddings, and a gated SiLU MLP, with a tied or
+separate vocabulary head. It composes library modules only. Sliding-window attention, scaled rotary embeddings,
+and other activations fail configuration validation.
+
+The NVIDIA NVFP4 Qwen3-8B reproduces its golden through the GPU step program, in plain decode
+(`tests/models/qwen3/test_gpu_golden.py`) and with its public DSpark drafter
+(`tests/models/qwen3/test_spec_golden.py`).
+
+## Qwen3 mixture-of-experts models
+
+[The Qwen3-MoE package](../../monolith/models/qwen3_moe) registers `Qwen3MoeForCausalLM`: the dense Qwen3 decoder
+with each sparse layer's MLP replaced by the library's `SparseMoE` (router, top-k selection with the reference's
+optional renormalization, expert gate/up and down projections, weighted sum), and no shared expert. Following the
+reference, a layer is sparse unless `mlp_only_layers` lists it or `decoder_sparse_step` skips it. Configuration
+limits match the dense package.
+
+Synthetic checkpoints exercise the package's tensor mapping, lowering, and emitted programs
+(`tests/contract/test_moe_package.py`); the routing and expert kernels have their own oracle tests
+(`tests/kernels/test_moe_*.py`). The reference oracle streams expert weights from the checkpoint, so large
+models fit in host memory (`tools/goldens/moe_streaming_hf.py`).
+
 ## Llama-compatible models
 
 [The Llama package](../../monolith/models/llama) registers `LlamaForCausalLM`.
@@ -74,6 +98,7 @@ apply the checkpoint's tokenizer/chat template; the serving adapter does this be
 | Target | Automatic draft |
 | --- | --- |
 | `nvidia/Qwen3.8-27B-NVFP4` | `LithosAI/Qwen3.8-27B-DSpark-NVFP4` |
+| `mlx-community/Qwen3.8-27B-4bit` (affine 4-bit) | `LithosAI/Qwen3.8-27B-DSpark-NVFP4` |
 | `nvidia/Qwen3.6-35B-A3B-NVFP4` | `LithosAI/Qwen3.6-35B-A3B-DSpark-NVFP4` |
 
 Known IDs and identifiable local snapshots can select a pair automatically. Unknown checkpoints or arbitrary

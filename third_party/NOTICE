@@ -72,6 +72,17 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   output rows, extended for packed BF16 weights, fused normalization and epilogues.
   License: `third_party/MLX-LICENSE`.
 
+## ggml / llama.cpp (ggml-org/llama.cpp @ `3cf03257f219afbe7334045ff7c6a06ac68c627d`, MIT)
+
+- `monolith/formats/gguf.py` — adapted from `ggml/src/ggml-common.h` and `ggml/src/ggml-quants.c` (MIT): the
+  `block_*` structs of Q2_0, Q4_0, Q5_0, Q8_0, Q3_K, Q4_K, Q5_K, Q6_K, IQ4_NL and IQ4_XS as numpy structured dtypes and
+  their `dequantize_row_*` / `get_scale_min_k4` rules re-implemented in numpy; the `kvalues_iq4nl` table copied; the
+  type ids of `ggml/include/ggml.h`. License: `third_party/GGML-LICENSE`.
+- `tests/contract/gguf_reference.py` — adapted from `gguf-py/gguf/quants.py` (MIT): the `dequantize_blocks` of BF16,
+  Q4_0, Q5_0, Q8_0, Q3_K, Q4_K (with `get_scale_min`), Q5_K, Q6_K, IQ4_NL and IQ4_XS, copied unchanged, and the block
+  sizes of `gguf-py/gguf/constants.py` `GGML_QUANT_SIZES`; its Q2_0 decode is a scalar port of
+  `ggml/src/ggml-quants.c` `dequantize_row_q2_0`. License: `third_party/GGML-LICENSE`.
+
 ## Original
 
 - `probes/` — original to this repository.

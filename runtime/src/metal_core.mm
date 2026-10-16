@@ -125,6 +125,22 @@ Queue::~Queue() = default;
 
 static double now_ms() { static mach_timebase_info_data_t tb; if (!tb.denom) mach_timebase_info(&tb); return (double)mach_absolute_time() * tb.numer / tb.denom / 1e6; }
 
+// A completed command buffer's failure: its error, then every report Metal shader validation (MTL_SHADER_VALIDATION=1)
+// logged on it. Validation drops an out-of-bounds access and records it only in `logs`, which are complete when
+// waitUntilCompleted returns: the status stays completed and the error nil (measured), so this string is how the
+// caller sees it, with or without MTL_SHADER_VALIDATION_REPORT_TO_STDERR. A report ends with the host stack that
+// allocated the buffer — the same nanobind frames for every buffer — which is cut.
+static std::string failure(id<MTLCommandBuffer> cb) {
+  std::string e = cb.error ? [cb.error.localizedDescription UTF8String] : "";
+  for (id<MTLFunctionLog> log in cb.logs) {
+    NSString* d = log.description;
+    NSRange cut = [d rangeOfString:@"\nMTLBuffer allocated here"];
+    if (cut.location != NSNotFound) d = [d substringToIndex:cut.location];
+    e += (e.empty() ? "" : "\n") + std::string("shader validation: ") + [d UTF8String];
+  }
+  return e;
+}
+
 RunResult Queue::run(const std::vector<Dispatch>& dispatches, bool concurrent) {
   @autoreleasepool {
     double t0 = now_ms();
@@ -144,7 +160,7 @@ RunResult Queue::run(const std::vector<Dispatch>& dispatches, bool concurrent) {
     RunResult r;
     r.gpu_ms = (cb.GPUEndTime - cb.GPUStartTime) * 1e3;
     r.wall_ms = now_ms() - t0;
-    if (cb.error) r.error = [cb.error.localizedDescription UTF8String];
+    r.error = failure(cb);
     return r;
   }
 }
@@ -192,7 +208,7 @@ std::vector<std::pair<double, double>> Queue::profile(const std::vector<Dispatch
     [cb commit];
     [cb waitUntilCompleted];
     [dev sampleTimestamps:&cpu1 gpuTimestamp:&gpu1];
-    if (cb.error) throw std::runtime_error([cb.error.localizedDescription UTF8String]);
+    if (std::string e = failure(cb); !e.empty()) throw std::runtime_error(e);
     NSData* data = [samples resolveCounterRange:NSMakeRange(0, 2 * dispatches.size())];
     if (!data || data.length < 2 * dispatches.size() * sizeof(MTLCounterResultTimestamp))
       throw std::runtime_error("counter samples could not be resolved");
@@ -338,7 +354,7 @@ RunnerStats Runner::run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_f
     st.wait_ms += now_ms() - waiting;
     st.gpu_ms += (cb.GPUEndTime - cb.GPUStartTime) * 1e3;
     st.command_buffers++;
-    if (cb.error && st.error.empty()) st.error = [cb.error.localizedDescription UTF8String];
+    if (st.error.empty()) st.error = failure(cb);
     drain_ring(r);
     st.done = *(volatile uint32_t*)((char*)r.state.contents + r.done_off) != 0;
     { std::lock_guard<std::mutex> lk(r.mu); tokens_seen = r.tokens.size(); }   // drained since the last drain(): this call's tokens

@@ -78,6 +78,8 @@ struct Dispatch {
   bool barrier_before = false;         // this dispatch waits for every dispatch before it (ICBs, concurrent encoders)
 };
 
+// `error`: the command buffer's error and its shader-validation reports, one "shader validation: …" line each
+// (empty = clean). Validation leaves the command buffer completed without an error, so this is its only failure signal.
 struct RunResult { double gpu_ms; double wall_ms; std::string error; };
 
 class Queue {
@@ -125,7 +127,7 @@ struct RunnerStats {
   double commit_ms = 0;       // host wall time in Metal commit()
   double wait_ms = 0;         // host wall time waiting for completion (overlaps GPU time)
   bool done = false;          // StepState.done was observed
-  std::string error;
+  std::string error;          // the first failed command buffer's error and validation reports (as RunResult); stops the pump
 };
 
 class Runner {

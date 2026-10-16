@@ -42,8 +42,23 @@ Regenerate the archive and formula together for each version.
 | `tests/layers` | torch, transformers, the small checkpoint | each layer's `forward()` oracle vs the HF module on real weights (cos > 0.999, max-abs ≤ scale/64) |
 | `tests/models` | torch, the small checkpoint (+ the Metal module for `test_gpu_golden`) | the model oracle vs its HF golden: per-layer hidden states (cos > 0.999) and 48 greedy tokens; the same through the compiled step program on the GPU |
 
+After a kernel or emitter change, run the GPU tiers under Metal shader validation:
+
+```bash
+MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 pytest tests/kernels tests/runtime
+```
+
+Validation drops a store outside its binding and logs it on the command buffer, which still completes without an
+error. The runtime raises each report where the command buffer completes (`Queue.run`, `Queue.profile`, `Engine.run`,
+`Engine.profile`) as `RuntimeError: shader validation: <report>`, so the test that ran the kernel fails whatever it
+checks, in any capture mode (`-s` included), and a report in a fixture fails the run as an error.
+`MTL_SHADER_VALIDATION=1` alone is enough; `MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1` adds each full report on
+stderr (otherwise it goes to the unified log). Command buffers the runtime does not commit, such as MLX's in the
+mlx-lm comparisons, are not checked. On an M3 Max under macOS 27, validation reported out-of-bounds stores but not
+out-of-bounds loads.
+
 CI runs the contract tier on every push and the other tiers on bare-metal Macs when a maintainer comments
-`/mac-test` on the pull request ([CI](docs/ci.md)).
+`/mac-test` on the pull request, under validation with `/mac-test --shader-validation` ([CI](docs/ci.md)).
 
 Goldens live in `tests/models/<name>/goldens/` (`<tag>.safetensors` + `<tag>.json`), produced by
 `tools/goldens/hf_golden.py` from the HF model in BF16 with eager attention on the CPU; the JSON records the

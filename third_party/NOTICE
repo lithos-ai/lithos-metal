@@ -83,6 +83,15 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   sizes of `gguf-py/gguf/constants.py` `GGML_QUANT_SIZES`; its Q2_0 decode is a scalar port of
   `ggml/src/ggml-quants.c` `dequantize_row_q2_0`. License: `third_party/GGML-LICENSE`.
 
+## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
+
+- `monolith/formats/basalt_reader.py` — reads the `.basalt` layout of `include/basalt/core/model_format.hpp` and
+  `tools/model_file.py`, with the checks of `src/core/model_file.cpp`, `src/core/weights.cpp`,
+  `src/kernels/cpu/expert_layout.cpp` and `src/core/mtp.cpp`; written against them, no code copied. The test writer
+  in `tests/contract/test_basalt_reader.py` follows `tools/model_file.py`'s `ModelWriter` the same way, and
+  `tests/contract/test_gguf_formats.py` compiles basalt's references only from a checkout the user points
+  `BASALT_SRC` at; nothing of basalt is vendored.
+
 ## Original
 
 - `probes/` — original to this repository.

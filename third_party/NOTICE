@@ -92,6 +92,14 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `tests/contract/test_gguf_formats.py` compiles basalt's references only from a checkout the user points
   `BASALT_SRC` at; nothing of basalt is vendored.
 
+## Test data
+
+- `tests/contract/fixtures/basalt_pack.safetensors` — byte ranges (49 KB: the header and section table, three index
+  sections and a few weight rows) of `Qwen3.8-FN-GSQ-RCO-Q2_0.basalt` in `jesdga/Qwen3.8-Flash-Next-Basalt` @
+  `2a6a758dc12f1d027d2d35b8964110df7e80f70b`, range-read by `tests/contract/fixtures/make_basalt_fixture.py`. The
+  weights are Qwen's under the Qwen Community License 1.0 (quantized by ISTA DASLab); the licence text is in the pack's
+  `meta` section.
+
 ## Original
 
 - `probes/` — original to this repository.

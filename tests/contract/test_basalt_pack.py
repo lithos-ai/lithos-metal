@@ -37,7 +37,7 @@ def test_header_indexes_and_row_offsets():
     for name, data in text.items():                                                      # the range reads and the table agree
         assert len(data) == secs[name].nbytes and hashlib.sha256(data).digest() == secs[name].sha256
 
-    di = parse_dense_index(text["dense.index"].decode())
+    di = parse_dense_index(text["dense.index"].decode(), secs["dense"].nbytes)          # every check, real sizes
     assert (di.version, di.align, len(di.rows)) == (3, 64, 1079) and {r.kind for r in di.rows} == {0, 2, 4, 5}
     at = 0
     for r in di.rows:                                                                    # the pool is the rows, 64-aligned, in order
@@ -47,13 +47,13 @@ def test_header_indexes_and_row_offsets():
     native = [r for r in di.rows if r.in_gguf]
     assert len(native) == 303 and all((r.kind, r.src_bytes, r.code_bits, r.group_elems) == (0, 0, 8, 32) for r in native)
 
-    lay = parse_experts_layout(text["experts.layout"].decode())
+    lay = parse_experts_layout(text["experts.layout"].decode(), secs["experts"].nbytes)
     assert (lay.version, lay.n_expert, len(lay.layers), lay.total) == (5, 512, 48, secs["experts"].nbytes)
     assert {(e.gu_type, e.d_type, e.blob_bytes) for e in lay.layers} == {(42, 42, 1382400)}   # every routed expert Q2_0
     dims = PACK["expert_dims"]
     assert lay.matrices(47, *dims) == ((42, 0, 640, 2560), (42, 460800, 640, 2560), (42, 921600, 2560, 640))
 
-    mtp = parse_mtp_dense_index(text["mtp/dense.index"].decode())
+    mtp = parse_mtp_dense_index(text["mtp/dense.index"].decode(), secs["mtp/dense"].nbytes)
     assert len(mtp) == 29 and {t.kind for t in mtp} == set(MTP_KINDS)
     assert all(t.offset % 256 == 0 for t in mtp) and max(t.offset + t.nbytes for t in mtp) == secs["mtp/dense"].nbytes
 

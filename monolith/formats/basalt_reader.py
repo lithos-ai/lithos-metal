@@ -2,10 +2,13 @@
 # Copyright (c) 2026 Jesús Gulfo
 """Reader for basalt's ``.basalt`` model file (github.com/jesdga95/basalt, MIT): the layout of
 include/basalt/core/model_format.hpp, whose Python side is basalt's tools/model_file.py, with the checks basalt's own
-readers make (src/core/model_file.cpp, src/core/weights.cpp, src/kernels/cpu/expert_layout.cpp, src/core/mtp.cpp).
+readers make (src/core/model_file.cpp, src/core/weights.cpp, src/kernels/cpu/expert_layout.cpp,
+src/core/expert_source.cpp, src/core/mtp.cpp).
 Where a looser parse could still decode a plausible weight from a wrong offset, it is stricter and also refuses:
 
 * a section named twice (basalt takes the first);
+* a negative offset or size (basalt reads a negative ``meta`` number as its magnitude, and an index's as an unsigned
+  one that can wrap past its bounds checks);
 * a ``meta`` tensor without ``bytes`` (basalt's converter always writes it; basalt's reader treats it as optional);
 * a ``dense.index`` that is not v3 (basalt does not check the version), a row of more than 19 fields (basalt refuses
   fewer and ignores the extra ones), or a header whose tensor count is not the table's;
@@ -102,9 +105,30 @@ class DenseRow(namedtuple("DenseRow", "name file kind src_off src_bytes dst_off 
         return self.code_bits != 0 and self.dst_bytes == 0
 
 
-def parse_dense_index(text: str) -> DenseIndex:
-    """``dense.index`` v3. A row that is not exactly 19 fields is refused (basalt refuses fewer): a misparsed row is a
-    wrong byte offset that decodes to a plausible weight."""
+def _check_loaded_row(r: DenseRow, dense_bytes: int) -> None:
+    """weights.cpp's ``WeightTable::load`` on a row it copies out of ``dense`` (lines 284-386)."""
+    if r.file != 0:
+        raise ValueError(f"dense.index: {r.name} names file {r.file}; a .basalt pack has file 0 (dense) only")
+    if r.codes_bytes:                                        # codes, scales (fp16 ones widen to f32), then offsets
+        if r.scales_fp16 and r.scales_bytes % 4:
+            raise ValueError(f"dense.index: {r.name}: an fp16 scale plane of an odd byte count")
+        scales = r.scales_bytes // 2 if r.scales_fp16 else r.scales_bytes
+        planes = (r.codes_bytes + scales + r.offset_bytes, r.codes_bytes + r.scales_bytes + r.offset_bytes)
+    elif r.kind in (1, 3):                                   # BF16 or F16 promoted to F32: 4 bytes in, 2 out
+        planes = (4 * r.ne0 * max(r.ne1, 1), 2 * r.ne0 * max(r.ne1, 1))
+    else:
+        planes = (r.src_bytes, r.dst_bytes)
+    if planes != (r.src_bytes, r.dst_bytes):
+        raise ValueError(f"dense.index: {r.name} is {r.src_bytes}/{r.dst_bytes} bytes in/out, its planes make "
+                         f"{planes[0]}/{planes[1]}")
+    if r.src_bytes and not 0 <= r.src_off <= r.src_off + r.src_bytes <= dense_bytes:     # an empty row reads nothing
+        raise ValueError(f"dense.index: {r.name} runs past the end of the dense section")
+
+
+def parse_dense_index(text: str, dense_bytes: int) -> DenseIndex:
+    """``dense.index`` v3 over a ``dense`` section of ``dense_bytes``. A row that is not exactly 19 fields is refused
+    (basalt refuses fewer): a misparsed row is a wrong byte offset that decodes to a plausible weight. A row basalt
+    loads (any but an ``in_gguf`` one) must name file 0, have planes that add up to its sizes and lie in ``dense``."""
     version = header = None
     rows: List[DenseRow] = []
     for line in text.splitlines():
@@ -124,23 +148,31 @@ def parse_dense_index(text: str) -> DenseIndex:
         raise ValueError("dense.index: no '# align … pool …' header or no rows")
     if header[2] != len(rows):
         raise ValueError(f"dense.index: the header counts {header[2]} tensors, the table has {len(rows)}")
+    for r in rows:
+        if not r.in_gguf:
+            _check_loaded_row(r, dense_bytes)
     return DenseIndex(version, header[0], header[1], tuple(rows))
 
 
 class ExpertsLayout(namedtuple("ExpertsLayout", "version n_expert total layers")):
     """``experts.layout``: ``layers[l]`` is layer ``l``'s :data:`ExpertLayer`; offsets are into ``experts``."""
 
+    def _layer(self, layer: int) -> ExpertLayer:
+        if not 0 <= layer < len(self.layers):
+            raise IndexError(f"layer {layer} of {len(self.layers)}")
+        return self.layers[layer]
+
     def blob_offset(self, layer: int, expert: int) -> int:
         if not 0 <= expert < self.n_expert:
             raise IndexError(f"expert {expert} of {self.n_expert}")
-        e = self.layers[layer]
+        e = self._layer(layer)
         return e.offset + expert * e.blob_bytes
 
     def matrices(self, layer: int, n_embd: int, n_ff: int) -> Tuple[Tuple[int, int, int, int], ...]:
         """``(type id, byte offset in the blob, rows, values per row)`` of the blob's gate, up and down matrices —
         ``[n_ff, n_embd]``, ``[n_ff, n_embd]``, ``[n_embd, n_ff]`` as GGUF rows (basalt's native_fmt). The model's
         sizes are the caller's; a blob they do not fill exactly is refused."""
-        e = self.layers[layer]
+        e = self._layer(layer)
         gu_row, d_row = ggml_row_bytes(e.gu_type, n_embd), ggml_row_bytes(e.d_type, n_ff)
         up = gu_row * n_ff
         if 2 * up + d_row * n_embd != e.blob_bytes:
@@ -149,9 +181,11 @@ class ExpertsLayout(namedtuple("ExpertsLayout", "version n_expert total layers")
         return (e.gu_type, 0, n_ff, n_embd), (e.gu_type, up, n_ff, n_embd), (e.d_type, 2 * up, n_embd, n_ff)
 
 
-def parse_experts_layout(text: str, n_expert: Optional[int] = None) -> ExpertsLayout:
-    """``experts.layout`` up to v5; the header's ``n_expert`` wins over the argument (a pruned pack ships fewer).
-    Columns past the fifth are ignored, as basalt ignores them; the layers must tile the section from offset 0."""
+def parse_experts_layout(text: str, experts_bytes: int, n_expert: Optional[int] = None) -> ExpertsLayout:
+    """``experts.layout`` up to v5 over an ``experts`` section of ``experts_bytes``; the header's ``n_expert`` wins
+    over the argument (a pruned pack ships fewer). Columns past the fifth are ignored, as basalt ignores them. The
+    layers must tile the section from offset 0 and fill it, or fill all of it but one blob of padding: basalt's
+    default (arena) expert source takes either, its ``--mmap-experts`` one the first only (expert_source.cpp)."""
     version, total, layers = 0, None, {}
     for line in text.splitlines():
         if line.startswith("#"):
@@ -172,7 +206,7 @@ def parse_experts_layout(text: str, n_expert: Optional[int] = None) -> ExpertsLa
             layer = ExpertLayer(*(int(x) for x in f[:5]))
         except (TypeError, ValueError):
             raise ValueError(f"experts.layout: a malformed line: {line!r}") from None
-        if layer.layer < 0 or layer.layer in layers:
+        if min(layer) < 0 or layer.layer in layers:
             raise ValueError(f"experts.layout: a malformed line: {line!r}")
         layers[layer.layer] = layer
     if not n_expert or not layers:
@@ -184,11 +218,14 @@ def parse_experts_layout(text: str, n_expert: Optional[int] = None) -> ExpertsLa
         at += layers[i].blob_bytes * n_expert
     if total is not None and total != at:
         raise ValueError(f"experts.layout: the layers fill {at} bytes, the header says {total}")
+    if experts_bytes not in (at, at + max(e.blob_bytes for e in layers.values())):
+        raise ValueError(f"experts.layout: the layers fill {at} bytes, the experts section is {experts_bytes}")
     return ExpertsLayout(version, n_expert, at, tuple(layers[i] for i in range(len(layers))))
 
 
-def parse_mtp_dense_index(text: str) -> Tuple[MtpTensor, ...]:
-    """``mtp/dense.index``: six fields per line; the size of a known kind must match its rows and columns."""
+def parse_mtp_dense_index(text: str, dense_bytes: int) -> Tuple[MtpTensor, ...]:
+    """``mtp/dense.index`` over an ``mtp/dense`` section of ``dense_bytes``: six fields per line, the size of a known
+    kind matching its rows and columns, every tensor inside the section (mtp.cpp's ``MtpDrafter::load``)."""
     out = []
     for line in text.splitlines():
         if not line or line.startswith("#"):
@@ -202,6 +239,8 @@ def parse_mtp_dense_index(text: str) -> Tuple[MtpTensor, ...]:
             raise ValueError(f"mtp/dense.index: a malformed line: {line!r}") from None
         if t.kind in MTP_KINDS and t.nbytes != t.rows * ggml_row_bytes(MTP_KINDS[t.kind], t.cols):
             raise ValueError(f"mtp/dense.index: {t.name} is {t.nbytes} bytes, not {t.rows} x {t.cols} {t.kind}")
+        if not 0 <= t.offset <= t.offset + t.nbytes <= dense_bytes:
+            raise ValueError(f"mtp/dense.index: {t.name} names bytes past the mtp/dense section")
         out.append(t)
     return tuple(out)
 
@@ -246,18 +285,24 @@ class BasaltFile:
     def tensor(self, name: str) -> GgufTensor:
         """A ``gguf``-section tensor, its offset from the start of the file; the size must match its type and shape."""
         t, g = self.meta()["tensors"][name], self.section("gguf")
-        ne, off, nbytes, type_id = tuple(int(x) for x in t["shape"]), int(t["offset"]), int(t["bytes"]), int(t["type_id"])
-        if not 1 <= len(ne) <= 4 or off > g.nbytes or nbytes > g.nbytes - off:
-            raise ValueError(f"meta.tensors[{name!r}] is malformed or runs past the gguf section")
+        try:
+            ne, off, nbytes = tuple(int(x) for x in t["shape"]), int(t["offset"]), int(t["bytes"])
+            type_id = int(t["type_id"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"meta.tensors[{name!r}] is malformed (a field is missing or not an integer)") from None
+        if not 1 <= len(ne) <= 4:
+            raise ValueError(f"meta.tensors[{name!r}] is malformed (a shape of rank {len(ne)})")
+        if not 0 <= off <= off + nbytes <= g.nbytes:
+            raise ValueError(f"meta.tensors[{name!r}] runs past the gguf section")
         if type_id in GGML_TYPES and nbytes != ggml_row_bytes(type_id, ne[0]) * int(np.prod(ne[1:], dtype=np.int64)):
             raise ValueError(f"meta.tensors[{name!r}]: {nbytes} bytes do not match type {type_id} and shape {list(ne)}")
         return GgufTensor(name, type_id, ne, g.offset + off, nbytes)
 
     def dense_index(self) -> DenseIndex:
-        return parse_dense_index(self.read("dense.index").decode())
+        return parse_dense_index(self.read("dense.index").decode(), self.section("dense").nbytes)
 
     def experts_layout(self) -> ExpertsLayout:
-        return parse_experts_layout(self.read("experts.layout").decode())
+        return parse_experts_layout(self.read("experts.layout").decode(), self.section("experts").nbytes)
 
     def mtp_dense_index(self) -> Tuple[MtpTensor, ...]:
-        return parse_mtp_dense_index(self.read("mtp/dense.index").decode())
+        return parse_mtp_dense_index(self.read("mtp/dense.index").decode(), self.section("mtp/dense").nbytes)

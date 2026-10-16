@@ -126,22 +126,25 @@ Queue::~Queue() = default;
 static double now_ms() { static mach_timebase_info_data_t tb; if (!tb.denom) mach_timebase_info(&tb); return (double)mach_absolute_time() * tb.numer / tb.denom / 1e6; }
 
 // A completed command buffer's failure: its error, then every report Metal shader validation (MTL_SHADER_VALIDATION=1)
-// logged on it. Validation drops an out-of-bounds access and records it only in `logs`, which are complete when
-// waitUntilCompleted returns: the status stays completed and the error nil (measured), so this string is how the
-// caller sees it, with or without MTL_SHADER_VALIDATION_REPORT_TO_STDERR. A report ends with the host stack that
-// allocated the buffer — the same nanobind frames for every buffer — which is cut.
-static std::string failure(id<MTLCommandBuffer> cb) {
+// logged on it (`reported`: there was one). Validation drops an out-of-bounds access and records it only in `logs`,
+// which are complete when waitUntilCompleted returns: the status stays completed and the error nil (measured), so this
+// string is how the caller sees it, with or without MTL_SHADER_VALIDATION_REPORT_TO_STDERR. A report ends with the host
+// stack that allocated the buffer — the same nanobind frames for every buffer — which is cut.
+static std::string failure(id<MTLCommandBuffer> cb, bool* reported = nullptr) {
   std::string e = cb.error ? [cb.error.localizedDescription UTF8String] : "";
   for (id<MTLFunctionLog> log in cb.logs) {
     NSString* d = log.description;
     NSRange cut = [d rangeOfString:@"\nMTLBuffer allocated here"];
     if (cut.location != NSNotFound) d = [d substringToIndex:cut.location];
     e += (e.empty() ? "" : "\n") + std::string("shader validation: ") + [d UTF8String];
+    if (reported) *reported = true;
   }
   return e;
 }
 
 RunResult Queue::run(const std::vector<Dispatch>& dispatches, bool concurrent) {
+  RunResult r;
+  bool reported = false;
   @autoreleasepool {
     double t0 = now_ms();
     id<MTLCommandBuffer> cb = [impl->q commandBuffer];
@@ -157,12 +160,12 @@ RunResult Queue::run(const std::vector<Dispatch>& dispatches, bool concurrent) {
     [en endEncoding];
     [cb commit];
     [cb waitUntilCompleted];
-    RunResult r;
     r.gpu_ms = (cb.GPUEndTime - cb.GPUStartTime) * 1e3;
     r.wall_ms = now_ms() - t0;
-    r.error = failure(cb);
-    return r;
+    r.error = failure(cb, &reported);
   }
+  if (reported) throw std::runtime_error(r.error);   // a caller that drops the RunResult still fails on a report
+  return r;
 }
 
 bool Queue::supports_profiling() const {

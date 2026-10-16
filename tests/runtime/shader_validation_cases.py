@@ -1,7 +1,8 @@
 """The cases ``test_shader_validation.py`` runs in a pytest subprocess under Metal shader validation; a tier run does not
 collect this file (no ``test_`` prefix). One kernel stores 64 floats into a buffer of 64 (in bounds) or 32 (out of
 bounds) through each command-buffer path of the runtime: ``Queue.run``, ``Engine.run`` (ICB replay by the host pump)
-and ``Engine.profile`` (``Queue.profile``). Each case checks only what an ordinary GPU test checks."""
+and ``Engine.profile`` (``Queue.profile``). No case checks a result (the queue case drops its ``RunResult``), so only
+the runtime can fail one; the module fixture's teardown stores out of bounds after every test body has ended."""
 import pytest
 
 from monolith.core.step_state import StepStateLayout
@@ -29,9 +30,18 @@ def test_store(path, floats):
         dev = nt.Device()
         out = nt.Buffer(dev, floats * 4)
         pso = nt.Pipeline(nt.Library(dev, SRC), "store64")
-        r = nt.Queue(dev).run([nt.Dispatch().pipeline(pso).buffer(0, out).grid(2).threadgroup(32)])
-        assert not r.error, r.error
+        nt.Queue(dev).run([nt.Dispatch().pipeline(pso).buffer(0, out).grid(2).threadgroup(32)])
     elif path == "engine":
         Engine(_program(floats)).run(1, steps_per_cb=1, in_flight=1)
     else:
         Engine(_program(floats)).profile(1)
+
+
+@pytest.fixture(scope="module")
+def store_after_the_tests():
+    yield
+    Engine(_program(32)).run(1, steps_per_cb=1, in_flight=1)
+
+
+def test_outside_the_test_body(store_after_the_tests):
+    pass

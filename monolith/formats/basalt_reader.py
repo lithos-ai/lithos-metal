@@ -1,8 +1,17 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jesús Gulfo
 """Reader for basalt's ``.basalt`` model file (github.com/jesdga95/basalt, MIT): the layout of
 include/basalt/core/model_format.hpp, whose Python side is basalt's tools/model_file.py, with the checks basalt's own
-readers make (src/core/model_file.cpp, src/core/weights.cpp, src/kernels/cpu/expert_layout.cpp, src/core/mtp.cpp) and
-a few stricter ones: a section named twice, a ``dense.index`` whose header miscounts its rows, an ``mtp/dense.index``
-size that disagrees with its kind and shape.
+readers make (src/core/model_file.cpp, src/core/weights.cpp, src/kernels/cpu/expert_layout.cpp, src/core/mtp.cpp).
+Where a looser parse could still decode a plausible weight from a wrong offset, it is stricter and also refuses:
+
+* a section named twice (basalt takes the first);
+* a ``meta`` tensor without ``bytes`` (basalt's converter always writes it; basalt's reader treats it as optional);
+* a ``dense.index`` that is not v3 (basalt does not check the version), a row of more than 19 fields (basalt refuses
+  fewer and ignores the extra ones), or a header whose tensor count is not the table's;
+* an ``experts.layout`` layer listed twice (basalt keeps the last) or a header total the layers do not fill;
+* an ``mtp/dense.index`` line of more than 6 fields (basalt refuses fewer and ignores the extra ones), or one whose
+  size disagrees with its kind and shape.
 
 Little-endian. A 64 KiB header — ``FileHeader`` (magic ``BASALTMF``, version 1, section count, file size) and one
 128-byte ``SectionEntry`` per section (NUL-padded name, offset, size, SHA-256) — then the sections, each at a multiple of
@@ -23,6 +32,9 @@ The other sections (``tokenizer/*``, ``gguf``, ``dense``, ``experts``, ``mtp/exp
 bytes by name. ``mtp/experts`` is not GGUF blocks: basalt writes its Q2_0 experts planar (all codes, then all fp16
 scales; gate and up rows interleaved), see basalt's include/basalt/kernels/cpu/expert.hpp.
 """
+
+# adapted from jesdga95/basalt tools/model_file.py @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT,
+# third_party/BASALT-LICENSE): the layout constants and the FileHeader / SectionEntry structs
 
 from __future__ import annotations
 
@@ -91,7 +103,7 @@ class DenseRow(namedtuple("DenseRow", "name file kind src_off src_bytes dst_off 
 
 
 def parse_dense_index(text: str) -> DenseIndex:
-    """``dense.index`` v3. A row that is not exactly 19 fields is refused, as basalt refuses it: a misparsed row is a
+    """``dense.index`` v3. A row that is not exactly 19 fields is refused (basalt refuses fewer): a misparsed row is a
     wrong byte offset that decodes to a plausible weight."""
     version = header = None
     rows: List[DenseRow] = []

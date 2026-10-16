@@ -72,6 +72,36 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   output rows, extended for packed BF16 weights, fused normalization and epilogues.
   License: `third_party/MLX-LICENSE`.
 
+## ggml / llama.cpp (ggml-org/llama.cpp @ `3cf03257f219afbe7334045ff7c6a06ac68c627d`, MIT)
+
+- `monolith/formats/gguf.py` — adapted from `ggml/src/ggml-common.h` and `ggml/src/ggml-quants.c` (MIT): the
+  `block_*` structs of Q2_0, Q4_0, Q5_0, Q8_0, Q3_K, Q4_K, Q5_K, Q6_K, IQ4_NL and IQ4_XS as numpy structured dtypes and
+  their `dequantize_row_*` / `get_scale_min_k4` rules re-implemented in numpy; the `kvalues_iq4nl` table copied; the
+  type ids of `ggml/include/ggml.h` (F32 and F16 included). License: `third_party/GGML-LICENSE`.
+- `tests/contract/gguf_reference.py` — adapted from `gguf-py/gguf/quants.py` (MIT): the `dequantize_blocks` of BF16,
+  Q4_0, Q5_0, Q8_0, Q3_K, Q4_K (with `get_scale_min`), Q5_K, Q6_K, IQ4_NL and IQ4_XS, copied unchanged, and the block
+  sizes of `gguf-py/gguf/constants.py` `GGML_QUANT_SIZES`; its Q2_0 decode is a scalar port of
+  `ggml/src/ggml-quants.c` `dequantize_row_q2_0`. License: `third_party/GGML-LICENSE`; gguf-py's own `LICENSE` is the
+  same MIT text under "Copyright (c) 2023 Georgi Gerganov", which the file's header carries.
+
+## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
+
+- `monolith/formats/basalt_reader.py` — adapted from `tools/model_file.py` (MIT): the layout constants and the
+  `FileHeader` / `SectionEntry` structs of `include/basalt/core/model_format.hpp`; the parsers are written against the
+  checks of `src/core/model_file.cpp`, `src/core/weights.cpp`, `src/kernels/cpu/expert_layout.cpp` and
+  `src/core/mtp.cpp`. The test writer in `tests/contract/test_basalt_reader.py` follows `tools/model_file.py`'s
+  `ModelWriter`. `tests/contract/test_gguf_formats.py` compiles basalt's references only from a checkout the user points
+  `BASALT_SRC` at. License: `third_party/BASALT-LICENSE`.
+
+## Test data
+
+- `tests/contract/fixtures/basalt_pack.safetensors` — byte ranges (49 KB: the header and section table, three index
+  sections and a few weight rows) of `Qwen3.8-FN-GSQ-RCO-Q2_0.basalt` in `jesdga/Qwen3.8-Flash-Next-Basalt` @
+  `2a6a758dc12f1d027d2d35b8964110df7e80f70b`, range-read by `tests/contract/fixtures/make_basalt_fixture.py`. The
+  pack's `meta` section names the weights' licence: Qwen Community License 1.0, copyright 2026 Qwen, quantized by ISTA
+  DASLab (the source GGUF's `general.license` field reads `apache-2.0`). License: `third_party/QWEN-COMMUNITY-LICENSE`
+  (basalt's `tools/convert/qwen-community-license-1.0.txt`, identical to the text in `meta`).
+
 ## Original
 
 - `probes/` — original to this repository.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2023-2026 The ggml authors
 """The ggml block formats of GGUF files (llama.cpp), as the ``.basalt`` packs ship them (``basalt_reader.py``).
 
 A GGUF tensor ``[ne0, ne1]`` is ``ne1`` rows of ``ne0`` values, ``ne0`` the contiguous axis: the ``[N, K]`` matrix with
@@ -13,11 +15,10 @@ The one rounding step in all of them is the ``d·sc·q − dmin·m`` subtraction
 the same way: the oracle's values do not depend on the evaluation order, on FP contraction or on the device.
 
 Type ids are the GGUF tensor type numbers (ggml.h ``enum ggml_type``); ``GGML_TYPES`` maps the ones the format
-understands. 42 is ``GGML_TYPE_Q2_0`` (ggml.h at 3cf03257: ``GGML_TYPE_Q1_0 = 41, GGML_TYPE_Q2_0 = 42``): 64 values per
-block, an fp16 scale ``d`` and sixteen bytes of 2-bit codes, value ``(code − 1) · d``. BF16 rows are the ``bf16``
-plugin's ``[N, K]`` uint16 matrix. F32 and F16 are element types with an exact decode and no plugin: in a pack they
-are norms, biases and convolution taps (auxiliary tensors, never a GEMV slab), and ``"f32"`` already names the
-non-plugin float32 checkpoint dtype (checkpoint.py, pack_plan.py).
+understands. 42 is ``GGML_TYPE_Q2_0`` (ggml.h at 3cf03257: ``GGML_TYPE_Q1_0 = 41, GGML_TYPE_Q2_0 = 42``; basalt's
+include/basalt/ggml/ggml.h carries the same id): 64 values per block, an fp16 scale ``d`` and sixteen bytes of 2-bit
+codes, value ``(code − 1) · d``. BF16 rows are the ``bf16`` plugin's ``[N, K]`` uint16 matrix. F32 and F16 are
+one-value blocks, ``f32`` and ``f16``: a dtype view, exact (in a pack they are norms, biases and convolution taps).
 
 ``pack`` / ``unpack_pack`` (the block-lane-major GEMV packs) and ``msl_decode`` arrive with the Metal decode kernels.
 """
@@ -42,7 +43,6 @@ GGML_TYPES: Dict[int, Tuple[str, int, int]] = {
     11: ("q3_k", QK_K, 110), 12: ("q4_k", QK_K, 144), 13: ("q5_k", QK_K, 176), 14: ("q6_k", QK_K, 210),
     20: ("iq4_nl", 32, 18), 23: ("iq4_xs", QK_K, 136), 30: ("bf16", 1, 2), 42: ("q2_0", 64, 18),
 }
-ELEMENT_TYPES = {0: "<f4", 1: "<f2"}          # decoded by a dtype view
 
 # kvalues_iq4nl, copied from ggml/src/ggml-common.h (the commit above)
 KVALUES_IQ4NL = np.array([-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113], np.float32)
@@ -66,8 +66,6 @@ def ggml_dequantize(type_id: int, rows: Any, shape: Tuple[int, int]) -> np.ndarr
     raw = np.ascontiguousarray(rows).reshape(-1).view(np.uint8)
     if raw.size != n * ggml_row_bytes(type_id, k):
         raise ValueError(f"ggml type {type_id}: {raw.size} bytes are not {n} rows of {k} values")
-    if type_id in ELEMENT_TYPES:
-        return raw.view(ELEMENT_TYPES[type_id]).astype(np.float32).reshape(n, k)
     name = GGML_TYPES[type_id][0]
     fmt = FORMATS.get(name)
     weight = raw.view("<u2").reshape(n, k) if name == "bf16" else raw
@@ -129,6 +127,18 @@ def _ggml(type_id: int, layout: list):
         return register_format(name)(cls)
 
     return deco
+
+
+@_ggml(0, [("v", "<f4")])
+class F32(GGMLBlocks):
+    def _values(self, b):
+        return b["v"].astype(np.float32)[:, None]
+
+
+@_ggml(1, [("v", "<f2")])
+class F16(GGMLBlocks):
+    def _values(self, b):
+        return _f32(b["v"])[:, None]
 
 
 @_ggml(42, [("d", "<f2"), ("qs", "u1", 16)])

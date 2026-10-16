@@ -17,13 +17,13 @@ from monolith.formats import FORMATS, PackLayout
 from monolith.formats.gguf import GGML_TYPES, ggml_dequantize, ggml_row_bytes
 from tests.contract import gguf_reference as ref
 
-HALVES = {42: [0], 2: [0], 6: [0], 8: [0], 11: [108], 12: [0, 2], 13: [0, 2], 14: [208], 20: [0], 23: [0]}  # fp16 fields
+HALVES = {1: [0], 42: [0], 2: [0], 6: [0], 8: [0], 11: [108], 12: [0, 2], 13: [0, 2], 14: [208], 20: [0], 23: [0]}  # fp16 fields
 EDGES = np.array([0x0000, 0x8000, 0x0001, 0x03FF, 0x0400, 0x7BFF, 0xFBFF, 0x3C00, 0xBC00], np.uint16)  # ±0, subnormals, normal min / max, ±1
 
 
 def synthetic(type_id, n, nb, seed):
-    """``n`` rows of ``nb`` random blocks: every code and scale pattern, with the fp16 scales kept finite (an Inf or
-    NaN scale decodes to an implementation's NaN, not to a value) and the edge cases on the first blocks."""
+    """``n`` rows of ``nb`` random blocks: every code and scale pattern, with the fp16 scales (and F16 values) kept
+    finite (an Inf or NaN decodes to an implementation's NaN, not to a value) and the edge cases on the first blocks."""
     _, block, size = GGML_TYPES[type_id]
     raw = np.random.default_rng(seed).integers(0, 256, size=(n * nb, size), dtype=np.uint8)
     for at in HALVES.get(type_id, ()):
@@ -38,10 +38,9 @@ def test_type_table_and_plugins():
     assert GGML_TYPES[42] == ("q2_0", 64, 18) and FORMATS.get("q2_0").type_id == 42       # ggml.h: GGML_TYPE_Q2_0 = 42
     for type_id, (name, block, size) in GGML_TYPES.items():
         assert (block, size) == ref.SIZES[type_id], name
-        if name not in ("f32", "f16", "bf16"):
-            fmt = FORMATS.get(name)
+        fmt = FORMATS.get(name)                                                           # every type has a format plugin
+        if name != "bf16":                                                                # bf16: the existing [N, K] plugin
             assert fmt.type_id == type_id and fmt.layout.itemsize == size and fmt.bytes_per_weight == size / block
-    assert "f32" not in FORMATS and "f16" not in FORMATS                                   # element types, no plugin
     assert ggml_row_bytes(13, 2560) == 1760 and ggml_row_bytes(42, 2560) == 720
     with pytest.raises(ValueError):
         ggml_row_bytes(12, 100)                                                           # not whole blocks

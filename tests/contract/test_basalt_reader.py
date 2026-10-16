@@ -107,7 +107,9 @@ def test_refuses_a_broken_meta_tensor():
     secs = sample_sections()
     a = json.loads(secs["meta"])["tensors"]["a.weight"]                                   # 136 bytes at 0 of 4112
     for t, why in [({**a, "bytes": 135}, "do not match"), ({**a, "offset": len(secs["gguf"]) - 135}, "runs past"),
-                   ({**a, "offset": -136}, "runs past"), ({**a, "shape": [64, 2, 1, 1, 1]}, "rank 5"),
+                   ({**a, "offset": -136}, "negative"), ({**a, "shape": [-64, -2]}, "negative"),    # sizes that add up
+                   ({**a, "offset": float(len(secs["gguf"]) - 136)}, "not an integer"),   # int() 3976, basalt 0
+                   ({**a, "shape": [64, 2, 1, 1, 1]}, "rank 5"),
                    ({k: v for k, v in a.items() if k != "bytes"}, "missing")]:
         meta = json.loads(secs["meta"])
         meta["tensors"]["a.weight"] = t
@@ -141,7 +143,9 @@ def test_refuses_a_broken_dense_index():
                       (dense_index([]), "no rows"), (dense_index(DENSE_ROWS, "# dense index v3\n"), "no rows"),
                       (edit(1, "b.weight 1 2 0 16 0 16 4 0 0 0 1 0 0 0 0 0 0 0"), "names file 1"),
                       (edit(1, "b.weight 0 2 49 16 0 16 4 0 0 0 1 0 0 0 0 0 0 0"), "runs past"),
-                      (edit(1, "b.weight 0 2 -4 16 0 16 4 0 0 0 1 0 0 0 0 0 0 0"), "runs past"),
+                      (edit(1, "b.weight 0 2 -4 16 0 16 4 0 0 0 1 0 0 0 0 0 0 0"), "negative"),
+                      (edit(1, "b.weight 0 2 0 16 0 16 -4 0 0 0 1 0 0 0 0 0 0 0"), "negative"),      # a shape
+                      (edit(2, "q.weight 0 0 16 16 16 20 32 1 2 0 16 0 1 -8 8 20 1 0"), "negative"),  # planes add up
                       (edit(2, "q.weight 0 0 16 20 16 20 32 1 2 0 16 0 1 8 8 4 1 0"), "planes make 16/20"),
                       (edit(2, "q.weight 0 0 16 15 16 18 32 1 2 0 16 0 1 8 6 4 1 0"), "odd byte count"),
                       (edit(3, "p.weight 0 1 32 16 32 16 4 0 0 0 1 0 0 0 0 0 0 0"), "planes make 16/8"),
@@ -185,7 +189,8 @@ def test_refuses_a_broken_mtp_dense_index():
                             ("fc.weight q8_0 2 64 0 136 0\n", 512, "malformed"),
                             ("fc.weight q8_0 2 64 0 137\n", 512, "137 bytes"),
                             (good, 511, "past the mtp/dense section"),
-                            ("fc.weight q8_0 2 64 -8 136\n", 512, "past the mtp/dense section")]:
+                            ("fc.weight q8_0 2 64 -8 136\n", 512, "negative"),
+                            ("fc.weight q8_0 -1 -64 0 68\n", 512, "negative")]:                     # sizes that add up
         with pytest.raises(ValueError, match=why):
             parse_mtp_dense_index(text, size)
 

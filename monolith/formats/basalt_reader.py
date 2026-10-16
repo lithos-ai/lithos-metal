@@ -7,8 +7,9 @@ src/core/expert_source.cpp, src/core/mtp.cpp).
 Where a looser parse could still decode a plausible weight from a wrong offset, it is stricter and also refuses:
 
 * a section named twice (basalt takes the first);
-* a negative offset or size (basalt reads a negative ``meta`` number as its magnitude, and an index's as an unsigned
-  one that can wrap past its bounds checks);
+* a ``meta`` number that is negative or not an integer (basalt reads the first as its magnitude, the second as 0), and
+  a negative offset, size or shape in an index (basalt reads an offset or size as unsigned, which can wrap past its
+  bounds checks);
 * a ``meta`` tensor without ``bytes`` (basalt's converter always writes it; basalt's reader treats it as optional);
 * a ``dense.index`` that is not v3 (basalt does not check the version), a row of more than 19 fields (basalt refuses
   fewer and ignores the extra ones), or a header whose tensor count is not the table's;
@@ -121,7 +122,7 @@ def _check_loaded_row(r: DenseRow, dense_bytes: int) -> None:
     if planes != (r.src_bytes, r.dst_bytes):
         raise ValueError(f"dense.index: {r.name} is {r.src_bytes}/{r.dst_bytes} bytes in/out, its planes make "
                          f"{planes[0]}/{planes[1]}")
-    if r.src_bytes and not 0 <= r.src_off <= r.src_off + r.src_bytes <= dense_bytes:     # an empty row reads nothing
+    if r.src_bytes and r.src_off + r.src_bytes > dense_bytes:                           # an empty row reads nothing
         raise ValueError(f"dense.index: {r.name} runs past the end of the dense section")
 
 
@@ -141,7 +142,11 @@ def parse_dense_index(text: str, dense_bytes: int) -> DenseIndex:
         f = line.split()
         if len(f) != 19:
             raise ValueError(f"dense.index: a row of {len(f)} of 19 fields: {line!r}")
-        rows.append(DenseRow(f[0], *(int(x) for x in f[1:])))
+        r = DenseRow(f[0], *(int(x) for x in f[1:]))
+        if min(r.src_off, r.src_bytes, r.dst_off, r.dst_bytes, r.ne0, r.ne1, r.codes_bytes, r.scales_bytes,
+               r.offset_bytes) < 0:
+            raise ValueError(f"dense.index: a negative offset, size or shape: {line!r}")
+        rows.append(r)
     if version != 3:
         raise ValueError(f"dense.index: version {version}, this reader reads v3")
     if header is None or not header[1] or not rows:
@@ -237,9 +242,11 @@ def parse_mtp_dense_index(text: str, dense_bytes: int) -> Tuple[MtpTensor, ...]:
             t = MtpTensor(f[0], f[1], *(int(x) for x in f[2:]))
         except ValueError:
             raise ValueError(f"mtp/dense.index: a malformed line: {line!r}") from None
+        if min(t.rows, t.cols, t.offset, t.nbytes) < 0:
+            raise ValueError(f"mtp/dense.index: a negative shape, offset or size: {line!r}")
         if t.kind in MTP_KINDS and t.nbytes != t.rows * ggml_row_bytes(MTP_KINDS[t.kind], t.cols):
             raise ValueError(f"mtp/dense.index: {t.name} is {t.nbytes} bytes, not {t.rows} x {t.cols} {t.kind}")
-        if not 0 <= t.offset <= t.offset + t.nbytes <= dense_bytes:
+        if t.offset + t.nbytes > dense_bytes:
             raise ValueError(f"mtp/dense.index: {t.name} names bytes past the mtp/dense section")
         out.append(t)
     return tuple(out)
@@ -286,13 +293,14 @@ class BasaltFile:
         """A ``gguf``-section tensor, its offset from the start of the file; the size must match its type and shape."""
         t, g = self.meta()["tensors"][name], self.section("gguf")
         try:
-            ne, off, nbytes = tuple(int(x) for x in t["shape"]), int(t["offset"]), int(t["bytes"])
-            type_id = int(t["type_id"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError(f"meta.tensors[{name!r}] is malformed (a field is missing or not an integer)") from None
+            ne, off, nbytes, type_id = tuple(t["shape"]), t["offset"], t["bytes"], t["type_id"]
+        except (KeyError, TypeError):
+            raise ValueError(f"meta.tensors[{name!r}] is malformed (a field is missing)") from None
+        if not all(type(x) is int and x >= 0 for x in (off, nbytes, type_id) + ne):
+            raise ValueError(f"meta.tensors[{name!r}] is malformed (a number that is negative or not an integer)")
         if not 1 <= len(ne) <= 4:
             raise ValueError(f"meta.tensors[{name!r}] is malformed (a shape of rank {len(ne)})")
-        if not 0 <= off <= off + nbytes <= g.nbytes:
+        if off + nbytes > g.nbytes:
             raise ValueError(f"meta.tensors[{name!r}] runs past the gguf section")
         if type_id in GGML_TYPES and nbytes != ggml_row_bytes(type_id, ne[0]) * int(np.prod(ne[1:], dtype=np.int64)):
             raise ValueError(f"meta.tensors[{name!r}]: {nbytes} bytes do not match type {type_id} and shape {list(ne)}")

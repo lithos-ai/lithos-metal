@@ -101,6 +101,9 @@ class Program:
             for name in p.writes:
                 if self.buffers[name].role in ("weights", "params"):
                     raise ValueError(f"{where}: writes {name!r}, a read-only {self.buffers[name].role} buffer")
+                hit = next((b for b, spec in self.buffers.items() if spec.role in ("weights", "params") and same(name, b)), None)
+                if hit is not None:
+                    raise ValueError(f"{where}: writes {name!r}, which reaches the read-only {self.buffers[hit].role} buffer {hit!r}")
             for j in range(p.publish, p.wait):
                 reads, writes = self.ops[j].access()
                 op = f"op {j} ({self.ops[j].name or self.ops[j].kernel})"

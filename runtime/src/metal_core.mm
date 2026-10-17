@@ -295,6 +295,7 @@ struct RunnerImpl {
   id<MTLBuffer> ring; uint32_t cap;
   uint32_t tail = 0;                       // next ring slot the host reads
   std::vector<int32_t> tokens; std::mutex mu;
+  uint64_t taken = 0;                      // tokens drained from the ring since the current run began (max_tokens)
   std::atomic<std::thread::id> owner{};    // the thread inside run() or set_host_points(): one pump per runner
   bool resident = false;                   // the queue carries residency_set (replaces useResource)
   // host steps (set_host_points)
@@ -310,7 +311,7 @@ struct RunnerImpl {
   id<MTLBuffer> done_log = nil;            // StepState.done copied at the end of each step, indexed by step % kDoneLog
   uint64_t step_base = 0;                  // absolute index of the next step the runner begins
   uint64_t event_base = 0;                 // step index at which gpu_ev was created (its values count from there)
-  bool drop = false;                       // test support: commit_segment leaves out the signal of (drop_step, drop_point)
+  bool drop = false;                       // test support: encode_segment leaves out the signal of (drop_step, drop_point)
   uint64_t drop_step = 0;
   uint32_t drop_point = 0;
   ~RunnerImpl() { if (resident) [q removeResidencySet:residency_set]; }
@@ -383,6 +384,7 @@ static void drain_ring(RunnerImpl& r) {
     if ((uint32_t)(v >> 32) != r.tail + 1) break;
     r.tokens.push_back((int32_t)(uint32_t)v);
     r.tail++;
+    r.taken++;
   }
   *(volatile uint32_t*)((char*)r.state.contents + r.tail_off) = r.tail;
 }
@@ -426,34 +428,36 @@ void Runner::set_host_points(std::vector<HostPoint> points, uint32_t error_offse
                                std::to_string(points.size()) + " host points");
     drop = true; drop_step = std::stoull(s.substr(0, colon)); drop_point = (uint32_t)k;
   }
-  old.swap(r.points);
-  r.points = std::move(points);
-  r.error_off = error_offset; r.timeout_ms = timeout_ms; r.spin_us = spin_us;
-  r.drop = drop; r.drop_step = drop_step; r.drop_point = drop_point;
-  r.pub_at.assign(n + 1, {}); r.wait_at.assign(n + 1, {});
+  // The new schedule is built beside the old one: a throw (an allocation failure) leaves the runner as it was
+  std::vector<std::vector<uint32_t>> pub_at(n + 1), wait_at(n + 1);
   std::vector<bool> pass_cut(n + 1, false), cb_cut(n + 1, false);
   pass_cut[0] = pass_cut[n] = cb_cut[0] = cb_cut[n] = true;
-  for (uint32_t k = 0; k < r.points.size(); k++) {
-    const HostPoint& p = r.points[k];
-    r.pub_at[p.publish].push_back(k);
-    r.wait_at[p.wait].push_back(k);
+  for (uint32_t k = 0; k < points.size(); k++) {
+    const HostPoint& p = points[k];
+    pub_at[p.publish].push_back(k);
+    wait_at[p.wait].push_back(k);
     pass_cut[p.publish] = pass_cut[p.wait] = cb_cut[p.wait] = true;
   }
-  r.pass_cuts.clear(); r.cb_cuts.clear();
+  std::vector<uint32_t> pass_cuts, cb_cuts;
   for (uint32_t b = 0; b <= n; b++) {
-    if (pass_cut[b]) r.pass_cuts.push_back(b);
-    if (cb_cut[b]) r.cb_cuts.push_back(b);
+    if (pass_cut[b]) pass_cuts.push_back(b);
+    if (cb_cut[b]) cb_cuts.push_back(b);
   }
-  r.pub_seg.assign(n + 1, 0);
+  std::vector<uint32_t> pub_seg(n + 1, 0);
   for (uint32_t j = 0, b = 1; b <= n; b++) {
-    while (r.cb_cuts[j + 1] < b) j++;
-    r.pub_seg[b] = j;
+    while (cb_cuts[j + 1] < b) j++;
+    pub_seg[b] = j;
   }
-  r.gpu_ev = [r.dev newSharedEvent];                     // a fresh event: its values count from the current step
-  r.event_base = r.step_base;
+  id<MTLSharedEvent> gpu_ev = [r.dev newSharedEvent];   // a fresh event: its values count from the current step
   if (!r.fence) r.fence = [r.dev newFence];
   if (!r.done_log) r.done_log = [r.dev newBufferWithLength:kDoneLog * 4 options:MTLResourceStorageModeShared];
-  if (!r.gpu_ev || !r.fence || !r.done_log) throw std::runtime_error("host points: newSharedEvent, newFence or newBuffer failed");
+  if (!gpu_ev || !r.fence || !r.done_log) throw std::runtime_error("host points: newSharedEvent, newFence or newBuffer failed");
+  old.swap(r.points);                                    // from here on nothing allocates or throws
+  r.points = std::move(points);
+  r.pub_at.swap(pub_at); r.wait_at.swap(wait_at); r.pass_cuts.swap(pass_cuts); r.cb_cuts.swap(cb_cuts); r.pub_seg.swap(pub_seg);
+  r.gpu_ev = gpu_ev; r.event_base = r.step_base;
+  r.error_off = error_offset; r.timeout_ms = timeout_ms; r.spin_us = spin_us;
+  r.drop = drop; r.drop_step = drop_step; r.drop_point = drop_point;
 }
 
 std::vector<std::shared_ptr<HostTask>> Runner::host_tasks() const {
@@ -493,10 +497,10 @@ static void encode_pass(RunnerImpl& r, id<MTLCommandBuffer> cb, uint32_t a, uint
   r.fence_live = true;
 }
 
-// Commits command buffer `seg` of `step`: its passes, each followed by the signals of the points publishing at its end.
-// After the step's last pass, StepState.done is copied into done_log (whether the next step begins live), and the
-// next step's points that publish at boundary 0 are signalled.
-static id<MTLCommandBuffer> commit_segment(RunnerImpl& r, uint64_t step, uint32_t seg, bool reencode) {
+// Encodes command buffer `seg` of `step`, which the caller commits: its passes, each followed by the signals of the
+// points publishing at its end. After the step's last pass, StepState.done is copied into done_log (whether the next
+// step begins live), and the next step's points that publish at boundary 0 are signalled.
+static id<MTLCommandBuffer> encode_segment(RunnerImpl& r, uint64_t step, uint32_t seg, bool reencode) {
   const uint32_t n = (uint32_t)r.ops.size(), a = r.cb_cuts[seg], b = r.cb_cuts[seg + 1];
   id<MTLCommandBuffer> cb = [r.q commandBuffer];
   auto signal = [&](uint64_t s, uint32_t k) {
@@ -518,7 +522,6 @@ static id<MTLCommandBuffer> commit_segment(RunnerImpl& r, uint64_t step, uint32_
     if (c == n) for (uint32_t k : r.pub_at[0]) signal(step + 1, k);
     start = c;
   }
-  [cb commit];
   return cb;
 }
 
@@ -593,7 +596,7 @@ static RunnerStats run_host_steps(RunnerImpl& r, uint32_t max_steps, bool reenco
   auto observe_state = [&]() {                     // the GPU's writes so far are visible: drain, check the stops
     drain_ring(r);
     st.done = *(volatile uint32_t*)((char*)r.state.contents + r.done_off) != 0;
-    size_t seen; { std::lock_guard<std::mutex> lk(r.mu); seen = r.tokens.size(); }
+    uint64_t seen; { std::lock_guard<std::mutex> lk(r.mu); seen = r.taken; }   // a task may drain() the tokens
     if (st.done || (max_tokens && seen >= max_tokens)) stop = true;
   };
   double prev_end = 0;                             // GPU end of the command buffer retired last (0: none in this run)
@@ -630,8 +633,14 @@ static RunnerStats run_host_steps(RunnerImpl& r, uint32_t max_steps, bool reenco
         if (!ready || (enc_seg == 0 && !may_begin(enc_step))) break;
         const double e0 = now_ms();
         const bool after_point = !r.wait_at[a].empty() || (a == 0 && enc_step > S0 && !r.wait_at[n].empty());
-        @autoreleasepool { pending.push_back({commit_segment(r, enc_step, enc_seg, reencode), enc_step, enc_seg, after_point}); }
-        st.encode_ms += now_ms() - e0;
+        @autoreleasepool {
+          id<MTLCommandBuffer> cb = encode_segment(r, enc_step, enc_seg, reencode);
+          pending.push_back({cb, enc_step, enc_seg, after_point});   // tracked before it is committed: the failure
+          const double c0 = now_ms();                                // cleanup waits for every committed buffer
+          st.encode_ms += c0 - e0;
+          [cb commit];
+          st.commit_ms += now_ms() - c0;
+        }
         if (++enc_seg == nseg) { enc_seg = 0; enc_step++; }
       }
       if (!err.empty()) break;
@@ -711,14 +720,18 @@ static RunnerStats run_host_steps(RunnerImpl& r, uint32_t max_steps, bool reenco
 RunnerStats Runner::run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_flight, bool reencode, uint64_t max_tokens) {
   RunnerImpl& r = *impl;
   Hold hold(r.owner, "Runner.run");
-  { std::lock_guard<std::mutex> lk(r.mu); r.tokens.clear(); }   // an earlier run's undrained tokens are not this run's
-  r.tail = *(volatile uint32_t*)((char*)r.state.contents + r.tail_off);   // the ring tail lives in StepState: resume (or restart after a reset) from it
+  {
+    std::lock_guard<std::mutex> lk(r.mu);   // drain() may run on another thread meanwhile
+    r.tokens.clear();                        // an earlier run's undrained tokens are not this run's
+    r.taken = 0;
+    r.tail = *(volatile uint32_t*)((char*)r.state.contents + r.tail_off);   // the ring tail lives in StepState: resume (or restart after a reset) from it
+  }
   if (!r.points.empty()) return run_host_steps(r, max_steps, reencode, max_tokens);
   RunnerStats st;
   if (steps_per_cb == 0 || in_flight == 0) throw std::runtime_error("steps_per_cb and in_flight must be >= 1");
   double t0 = now_ms(), c0 = cpu_ms_now();
   std::deque<id<MTLCommandBuffer>> pending;
-  size_t tokens_seen = 0;
+  uint64_t tokens_seen = 0;
   auto observe = [&](id<MTLCommandBuffer> cb) {
     double waiting = now_ms();
     [cb waitUntilCompleted];
@@ -729,7 +742,7 @@ RunnerStats Runner::run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_f
     if (st.error.empty()) st.error = e;
     drain_ring(r);
     st.done = *(volatile uint32_t*)((char*)r.state.contents + r.done_off) != 0;
-    { std::lock_guard<std::mutex> lk(r.mu); tokens_seen = r.tokens.size(); }   // drained since the last drain(): this call's tokens
+    { std::lock_guard<std::mutex> lk(r.mu); tokens_seen = r.taken; }   // this call's tokens, whoever drained them
   };
   while (st.steps_submitted < max_steps && !st.done && st.error.empty() && (max_tokens == 0 || tokens_seen < max_tokens)) {
     @autoreleasepool {

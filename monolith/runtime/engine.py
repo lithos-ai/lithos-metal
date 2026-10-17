@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Union
 
@@ -58,6 +59,8 @@ class Engine:
         ``fn(step, point)``. ``host_timeout_ms``: the longest a run waits for the GPU to reach a host point or finish a
         command buffer."""
         self.program = program
+        self._run_lock = threading.Lock()                    # one run() at a time, its results collected included
+        self._run_thread: Optional[int] = None
         self.fast_math = fast_math
         self.dev = device or nt.Device()
         self.buffers: Dict[str, nt.Buffer] = {}
@@ -140,10 +143,22 @@ class Engine:
         queued buffers still complete, so a few more steps may run). A failed run raises RuntimeError with the run's
         StepReport, its tokens included, as ``report``; the exception a Python task raised is its cause, except that a
         task's KeyboardInterrupt or SystemExit is raised as it was."""
+        me = threading.get_ident()
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Engine.run: called from one of the engine's own host tasks" if self._run_thread == me
+                               else "Engine.run: already running on another thread")
+        self._run_thread = me
+        try:
+            return self._run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)
+        finally:
+            self._run_thread = None
+            self._run_lock.release()
+
+    def _run(self, max_steps: int, steps_per_cb: int, in_flight: int, reencode: bool, max_tokens: int) -> StepReport:
         st = self.runner.run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)
         report = StepReport(st.steps_submitted, st.command_buffers, st.gpu_ms, st.wall_ms, st.host_busy_ms, st.done, self.runner.drain(),
                             st.encode_ms, st.commit_ms, st.wait_ms, list(st.handoff_gaps_ms))
-        code = int(self.state()["error"]) if st.done else 0
+        code = int(self.state()["error"]) if st.done or st.steps_submitted == 0 else 0
         message = st.error or {3: "Megakernel: bounded worker barrier timed out",
                                4: "a host step failed in an earlier run; the program's state is unusable"}.get(code)
         if not message:
@@ -162,7 +177,7 @@ class Engine:
         """Per-dispatch GPU (start, end) ms for ``steps`` re-encoded steps (one encoder per op with timestamp counter
         samples, so the numbers carry encoder-boundary gaps the ICB replay does not have — use them for the shares
         and the per-op durations, not for the step total)."""
-        if self.program.host_points:
+        if self.program.host_points or self.runner.host_tasks():
             raise RuntimeError("profile() dispatches the ops without their tasks; a program with host points runs only through run()")
         q = nt.Queue(self.dev)
         return [q.profile(self.ops) for _ in range(steps)]

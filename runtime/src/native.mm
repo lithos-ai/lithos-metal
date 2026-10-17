@@ -17,7 +17,8 @@ namespace nb = nanobind;
 using namespace monolith;
 
 // A host task written in Python: fn(step, point). run() is called with the GIL released, so the call takes it; an
-// exception fails the run with its message and stays on the task (take_exception) for the caller to raise.
+// exception fails the run with its message and stays on the task (take_exception) for the caller to raise. The slot is
+// the task's own, so a task serves one runner: Engine wraps each callable in a CallableTask of its own.
 struct CallableTask : HostTask {
   nb::callable fn;
   nb::object exception;

@@ -118,7 +118,7 @@ The value, quoted: `const float h = __fmul_rn(g / (1.0f + __expf(-g)), up[i]); q
 over i in [grp_start[0] · n_ff, grp_start[n_groups] · n_ff), grid-strided; n_ff is a multiple of 32, so a warp is one
 q8_1 block. `swiglu_q8_1_entries_kernel` (`iq_kernels.cu:1909-1921`, basalt's old path) has the same body.
 
-| Site | basalt | PTX (13.3) | SASS (13.3; 13.0 the same) | Metal |
+| Site | basalt | PTX (13.3) | SASS (13.3; 13.0 has the same lines) | Metal |
 |---|---|---|---|---|
 | `__expf(-g)` | `:387` | `mul.f32 %r, %r, 0fBFB8AA3B`; `ex2.approx.f32` | `FMUL R0, R2, -1.4426950216293334961`; `FSETP.GEU.AND P0, PT, R0, -126, PT`; `@!P0 FMUL R0, R0, 0.5`; `MUFU.EX2 R10, R0`; `@!P0 FMUL R10, R10, R10` | `fast::exp2(g * as_type<float>(0xBFB8AA3Bu))` |
 | t | `:387` `1.0f + e` | `add.f32 %r, %r, 0f3F800000` | `FADD R13, R10, 1` | `1.0f + e` |
@@ -150,7 +150,8 @@ Notes:
 The decode path's shape: 20 calls a row. A 256-thread block holds 16 rows of 16 lanes (`d_rows` 16 for Q2_0 at n_ff
 640, `:2594`); the q8_1 rows of up to six entries are staged in shared memory (`s_hq_buf`, `:1726`, `:1792-1797`).
 `DEP` (`true` on the decode path's chain) adds only a prefetch and the programmatic wait: `<42, true>` and
-`<42, false>` have the same templates.
+`<42, false>` have identical template multisets in each version (13.0 and 13.3 differ only in how many shared-memory
+stores the staging copy unrolls into, 7 against 8).
 
 | Site | basalt | PTX (13.3) | SASS 13.0 | SASS 13.3 | Metal |
 |---|---|---|---|---|---|
@@ -184,3 +185,9 @@ because no subnormal reaches them, except the SwiGLU product (`ieee_mul`) and th
 subnormals. The Q2_0 decode, the q8_1 word readers and `dp4a` are the device functions `native_mmvq` uses
 (`basalt_fp.metal`). Basalt's plan pointers (`grp_ptr`, one blob address a group) become byte offsets into one
 buffer of blobs; the plan's other arrays, the scratch and the output keep basalt's layout.
+
+`tests/kernels/test_basalt_experts.py` checks every stage bit for bit against the numpy emulation of this page
+(`tests/kernels/basalt_emu.py`: `q2_0_dots`, `swiglu_q8_1`, with the exponential taken from the GPU's `expf_neg`), the
+two gate/up kernels and the two down trees bitwise against each other, `ieee_mul` against numpy's IEEE product on
+subnormal products, and ports `iq_multi_parity`'s `check_grouped` and `native_grouped_parity` (512 x 256 and, as its
+`--gu2` run, 2560 x 640) with float64 references for each stage and the whole expert.

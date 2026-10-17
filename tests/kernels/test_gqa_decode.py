@@ -180,7 +180,9 @@ class Harness:
             ds = [d0, d1, d2]
         self.hits = None
         if c.steal:
-            n_blocks = c.kv * (-(-(position + t_act) // c.chunk)) * (-(-(c.rep * t_act) // c.rb))
+            ctx = position + t_act                                     # the kernel's blocks: pick_chunk's chunk for params.n_sg
+            ch = _pick_chunk(ctx, c.kv, c.rep, c.rb, self.n_sg, c.n_chunks_max, c.chunk)
+            n_blocks = c.kv * (-(-ctx // ch)) * (-(-(c.rep * t_act) // c.rb))
             cursors = nt.Buffer(self.dev, max(4 * self.n_sg, 16)); cursors.fill(0)
             self.hits = nt.Buffer(self.dev, max(4 * n_blocks, 16)); self.hits.fill(0)
             self.n_blocks = n_blocks
@@ -452,14 +454,15 @@ def test_steal_variant_is_exactly_once_and_identical(dev):
     k = rng.standard_normal((cfg.ctx_max, cfg.kv, cfg.d)).astype(np.float32) * 0.5
     v = rng.standard_normal((cfg.ctx_max, cfg.kv, cfg.d)).astype(np.float32)
     proj = _random_proj(rng, cfg, 4)
-    position = 700                                                        # 11 chunks × 2 kv heads × 4 row groups = 88 blocks
+    position = 700                                                        # 704 keys in pick_chunk's run-time chunks: 16 keys from
+                                                                          # 8 cores up, 44 chunks × 2 kv heads × 4 row groups = 352 blocks
     plain.set_caches(k, v)
     ref = plain.step(proj, position)
     for name, disp in (("nominal", None), ("missing a third", plain.n_sg * 2 // 3), ("surplus", plain.n_sg * 2)):
         steal.set_caches(k, v)
         out = steal.step(proj, position, dispatch_sg=disp)
         hits = steal.block_hits()
-        assert hits.shape == (88,) and np.all(hits == 1), (name, hits.min(), hits.max())
+        assert np.all(hits == 1), (name, steal.n_blocks, hits.min(), hits.max())   # every block's counter
         assert np.array_equal(out, ref), name
         kk, vv = steal.caches()
         rk, rv = plain.caches()

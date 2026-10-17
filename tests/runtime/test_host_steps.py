@@ -712,21 +712,81 @@ def test_a_task_that_calls_its_own_runner_is_refused():
                       "set_host_points: called from one of the runner's own host tasks"]
 
 
-def test_an_interrupt_just_after_run_claims_the_engine_releases_it():
-    """A KeyboardInterrupt can land after any call; one that lands as run() has just claimed the engine must not leave
-    every later run refused."""
-    eng = Engine(_program(_base_buffers(10), [_tick()]))
-    claim = eng._claim
+def _signal_points(fn):
+    """The offsets in ``fn`` where CPython can raise a pending signal's KeyboardInterrupt: the instruction after one
+    that calls (the CALL family, and ``BEFORE_WITH``, which calls ``__enter__``), and each ``RESUME``."""
+    import dis
 
-    def claim_then_interrupt(token):
-        claim(token)
-        raise KeyboardInterrupt
+    code, prev, out = fn.__code__, None, []
+    for ins in dis.get_instructions(code):
+        if ins.opname == "RESUME" or (prev is not None and (prev.opname.startswith("CALL") or prev.opname == "BEFORE_WITH")):
+            out.append((code, ins.offset))
+        prev = ins
+    return out
 
-    eng._claim = claim_then_interrupt
-    with pytest.raises(KeyboardInterrupt):
-        eng.run(1)
-    del eng._claim
-    assert eng.run(1).steps == 1
+
+def test_an_interrupt_at_any_signal_point_of_the_claim_leaves_the_engine_usable():
+    """Ctrl-C during a run raises at the next point CPython checks for a signal. At every such point of run() and of
+    the claim it makes, the engine must stay claimable, so no interrupt leaves later runs refused or blocked."""
+    import sys
+    import threading
+
+    eng = Engine(_program(_base_buffers(1000), [_tick()]))
+    points = _signal_points(Engine.run) + _signal_points(Engine._claim)
+    assert len(points) >= 4                                           # the claim, the run, and the frames' entries
+
+    for code, offset in points:
+        raised = []
+
+        def trace(frame, event, arg, code=code, offset=offset, raised=raised):
+            if frame.f_code is not code:
+                return None
+
+            def step(frame, event, arg):
+                if event == "opcode" and frame.f_lasti == offset and not raised:
+                    raised.append(offset)
+                    raise KeyboardInterrupt
+                return step
+
+            frame.f_trace_opcodes = True
+            return step
+
+        sys.settrace(trace)
+        try:
+            eng.run(1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            sys.settrace(None)
+
+        steps = []
+        after = threading.Thread(target=lambda: steps.append(eng.run(1).steps))
+        after.start()
+        after.join(10.0)
+        where = f"{code.co_name} at offset {offset}"
+        assert not after.is_alive(), f"a run after an interrupt in {where} blocked"
+        assert steps == [1], f"a run after an interrupt in {where} failed"
+
+
+def test_an_interrupt_cannot_strand_the_claim():
+    """CPython raises a pending signal after a call returns, at a RESUME and at a backward jump. The claim therefore
+    holds no lock across such a point, because a ``with`` arms its release only after ``__enter__`` returns on Python
+    3.14 and later, and run()'s finally releases the claim without calling anything."""
+    import dis
+
+    WITH = ("BEFORE_WITH", "LOAD_SPECIAL")                            # the context-manager protocol, 3.13 and 3.14
+    for fn in (Engine.run, getattr(Engine, "_claim", None)):
+        if fn is None:
+            continue
+        held = [i.opname for i in dis.get_instructions(fn) if i.opname in WITH]
+        assert not held, f"{fn.__name__} holds a context manager across its claim: {held}"
+
+    ins = list(dis.get_instructions(Engine.run))
+    release = [i for i in ins if i.opname in ("CONTAINS_OP", "IS_OP", "DELETE_SUBSCR")]
+    assert release, "run() no longer releases the claim by subscript"
+    lo, hi = min(i.offset for i in release), max(i.offset for i in release)
+    inside = [i.opname for i in ins if lo <= i.offset <= hi]
+    assert not [n for n in inside if n.startswith("CALL") or n in ("RESUME", "JUMP_BACKWARD") or n in WITH], inside
 
 
 def test_plain_runs_between_host_step_runs_keep_the_step_count():

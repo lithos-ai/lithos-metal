@@ -9,6 +9,8 @@ from typing import Callable, Dict, List, Optional, Union
 from . import _native as nt
 from .program import Program
 
+_RUNNING = "running"                                     # the key Engine._run_owner keeps a run's token under
+
 
 @dataclass
 class StepReport:
@@ -59,8 +61,7 @@ class Engine:
         ``fn(step, point)``. ``host_timeout_ms``: the longest a run waits for the GPU to reach a host point or finish a
         command buffer."""
         self.program = program
-        self._run_guard = threading.Lock()                   # makes run()'s check and claim one step
-        self._run_owner: Optional[tuple] = None              # (thread, token) of the run() in progress, results included
+        self._run_owner: Dict[str, tuple] = {}               # the token of the run() in progress, its results included
         self.fast_math = fast_math
         self.dev = device or nt.Device()
         self.buffers: Dict[str, nt.Buffer] = {}
@@ -148,18 +149,17 @@ class Engine:
             self._claim(token)
             return self._run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)
         finally:
-            if self._run_owner is token:                     # reads and a store, no call: no interrupt lands between
-                self._run_owner = None
+            if _RUNNING in self._run_owner and self._run_owner[_RUNNING] is token:   # subscripts, no call: an
+                del self._run_owner[_RUNNING]                                        # interrupt lands at neither
 
     def _claim(self, token: tuple) -> None:
-        """Claims the engine for one run(); a second run() fails at once. run() claims inside its try, so a
-        KeyboardInterrupt that lands just after the claim still releases it."""
-        with self._run_guard:
-            owner = self._run_owner
-            if owner is not None:
-                raise RuntimeError("Engine.run: called from one of the engine's own host tasks" if owner[0] == token[0]
-                                   else "Engine.run: already running on another thread")
-            self._run_owner = token
+        """Claims the engine for one run(); a second run() fails at once. The claim is one dict.setdefault, which
+        tests and takes the claim in a single call, and run() makes it inside its try: an interrupt lands only after
+        a call returns, so a claim the call took is released by run()'s finally."""
+        owner = self._run_owner.setdefault(_RUNNING, token)
+        if owner is not token:
+            raise RuntimeError("Engine.run: called from one of the engine's own host tasks" if owner[0] == token[0]
+                               else "Engine.run: already running on another thread")
 
     def _run(self, max_steps: int, steps_per_cb: int, in_flight: int, reencode: bool, max_tokens: int) -> StepReport:
         st = self.runner.run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)

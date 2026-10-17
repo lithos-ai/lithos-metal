@@ -117,3 +117,166 @@ def q8_1_ieee(x):
         d = q8_1_finite(amax / F32(127.0))
         q = roundf(v / d[:, None])
     return q8_1_pack(d, s, q8_1_codes(q, amax))
+
+
+# ---- native_mmvq (matvec.md sections 4-5) -------------------------------------------------------------------------
+# The integer parts are computed from the decoded codes (each value's code, sub-block scale and min as ggml defines
+# them), independently of basalt's byte tricks; the float parts follow the sequence nvcc compiles, per thread.
+
+TRAITS = {2: (32, 2, 64, 18), 6: (32, 2, 64, 22), 8: (32, 4, 32, 34), 20: (32, 2, 64, 18), 11: (256, 16, 8, 110),
+          12: (256, 16, 8, 144), 13: (256, 16, 8, 176), 14: (256, 32, 4, 210), 23: (256, 8, 16, 136), 42: (64, 2, 64, 18)}
+KVALUES = np.array([-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113], np.int64)
+
+
+def kqs_of(type_id, tid):
+    return {2: 2 * (tid % 2), 6: 2 * (tid % 2), 20: 2 * (tid % 2), 8: 2 * (tid % 4), 11: tid % 16, 12: 2 * (tid % 16),
+            13: 2 * (tid % 16), 14: tid % 32, 23: 4 * (tid % 8), 42: tid % 2}[type_id]
+
+
+def _h(b, off):
+    return h2f(b[..., off].astype(np.uint16) | (b[..., off + 1].astype(np.uint16) << 8))
+
+
+def _scale_min_k4(sc, sb):
+    """get_scale_min_k4 on the 12 scale bytes ``sc`` (..., 12) for sub-block indices ``sb`` (broadcast)."""
+    g = lambda k: np.take_along_axis(sc, np.broadcast_to(k, sc.shape[:-1] + k.shape[-1:]), axis=-1).astype(np.int64)
+    lo, hi = sb < 4, np.clip(sb, 4, 7)
+    s = np.where(lo, g(np.clip(sb, 0, 3)) & 63, (g(hi + 4) & 0xF) | ((g(hi - 4) >> 6) << 4))
+    m = np.where(lo, g(np.clip(sb, 0, 3) + 4) & 63, (g(hi + 4) >> 4) | ((g(hi) >> 6) << 4))
+    return s, m
+
+
+def _dot(codes, a):
+    return (codes[None] * a).sum(axis=-1)
+
+
+def _contrib(type_id, tmp, blk, kby, kqs, d8, s8, a):
+    """One block step for every (column, row, thread): ``blk`` (rows, nt, bytes), ``kby`` and ``kqs`` (nt,), the q8_1
+    scales d8 / sums s8 (cols, blocks) and codes a (cols, blocks, 32) of the activations."""
+    nt = kqs.shape[0]
+    t = np.arange(nt)
+    xa = lambda b, pos: a[:, b[:, None], pos][:, None]                     # (cols, 1, nt, npos)
+    if type_id in (2, 6, 20, 8):
+        if type_id == 8:
+            pos = 4 * kqs[:, None] + np.arange(8)
+            codes = blk[..., 2:34].view(np.int8).astype(np.int64)
+        else:
+            pos = np.concatenate([4 * kqs[:, None] + np.arange(8), 16 + 4 * kqs[:, None] + np.arange(8)], axis=1)
+            qs = blk[..., 6:22] if type_id == 6 else blk[..., 2:18]
+            nib = np.concatenate([qs & 15, qs >> 4], axis=-1).astype(np.int64)
+            if type_id == 6:
+                qh = blk[..., 2:6].astype(np.int64)
+                qh = qh[..., 0] | (qh[..., 1] << 8) | (qh[..., 2] << 16) | (qh[..., 3] << 24)
+                nib = nib | (((qh[..., None] >> np.arange(32)) & 1) << 4)
+            codes = KVALUES[nib] if type_id == 20 else nib
+        c = np.take_along_axis(codes, np.broadcast_to(pos, codes.shape[:-1] + pos.shape[-1:]), axis=-1)
+        sumi = _dot(c, xa(kby, pos)).astype(F32)
+        d, dx, sx = _h(blk, 0)[None], d8[:, kby][:, None], s8[:, kby][:, None]
+        if type_id in (8, 20):
+            return fma_ftz(mul_ftz(d, dx), sumi, tmp)
+        k = F32(-4.0) if type_id == 2 else F32(-8.0)
+        return fma_ftz(d, fma_ftz(sumi, dx, mul_ftz(sx, k)), tmp)
+    if type_id == 42:
+        qs = blk[..., 2:18].astype(np.int64)
+        codes = ((qs[..., np.arange(64) // 4] >> (2 * (np.arange(64) % 4))) & 3) - 1
+        pos = 32 * kqs[:, None] + np.arange(32)
+        c = np.take_along_axis(codes, np.broadcast_to(pos, codes.shape[:-1] + pos.shape[-1:]), axis=-1)
+        b = kby + kqs
+        sumi = _dot(c, xa(b, np.broadcast_to(np.arange(32), (nt, 32)))).astype(F32)
+        return fma_ftz(mul_ftz(_h(blk, 0)[None], d8[:, b][:, None]), sumi, tmp)
+    if type_id == 23:
+        ib = kqs // 4
+        qs = blk[..., 8:136].astype(np.int64)
+        idx = 16 * ib[:, None] + np.arange(32) % 16
+        nib = (np.take_along_axis(qs, np.broadcast_to(idx, qs.shape[:-1] + idx.shape[-1:]), axis=-1)
+               >> (4 * (np.arange(32) // 16))) & 15
+        b = kby + ib
+        sumi = _dot(KVALUES[nib], xa(b, np.broadcast_to(np.arange(32), (nt, 32))))
+        sl = np.take_along_axis(blk[..., 4:8].astype(np.int64), np.broadcast_to((ib // 2)[None, :, None], blk.shape[:-1] + (1,)), axis=-1)[..., 0]
+        sh = blk[..., 2].astype(np.int64) | (blk[..., 3].astype(np.int64) << 8)
+        ls = ((sl >> (4 * (ib % 2))) & 15) | (((sh >> (2 * ib)) & 3) << 4)
+        sumi = (sumi * (ls - 32)[None]).astype(F32)
+        return fma_ftz(mul_ftz(_h(blk, 0)[None], d8[:, b][:, None]), sumi, tmp)
+    if type_id in (12, 13):
+        t16 = kqs // 2
+        ch, mm = t16 // 4, t16 % 4
+        pos = np.concatenate([4 * mm[:, None] + np.arange(4), 16 + 4 * mm[:, None] + np.arange(4)], axis=1)  # (nt, 8)
+        qs0 = 48 if type_id == 13 else 16
+        sc = blk[..., 4:16]
+        sumf_d = sumf_m = np.zeros(tmp.shape, F32)
+        for i in range(2):
+            sb = 2 * ch + i
+            qidx = qs0 + 32 * ch[:, None] + pos
+            q = np.take_along_axis(blk, np.broadcast_to(qidx, blk.shape[:-1] + qidx.shape[-1:]), axis=-1).astype(np.int64)
+            code = (q >> (4 * i)) & 15
+            if type_id == 13:
+                h = np.take_along_axis(blk, np.broadcast_to(16 + pos, blk.shape[:-1] + pos.shape[-1:]), axis=-1).astype(np.int64)
+                code = code | (((h >> sb[:, None]) & 1) << 4)
+            b = kby + sb
+            av = xa(b, pos)
+            dot1, dot2 = _dot(code, av), av.sum(axis=-1)
+            s, m = _scale_min_k4(sc, np.broadcast_to(sb[None, :, None], sc.shape[:-1] + (1,)))
+            dx = d8[:, b][:, None]
+            sumf_d = fma_ftz(dx, (dot1 * s[None, ..., 0]).astype(F32), sumf_d)
+            sumf_m = fma_ftz(dx, (dot2 * m[None, ..., 0]).astype(F32), sumf_m)
+        return add_ftz(tmp, fma_ftz(_h(blk, 0)[None], sumf_d, -mul_ftz(_h(blk, 2)[None], sumf_m)))
+    if type_id == 11:
+        iqs = kqs
+        h, pos = iqs // 8, 4 * (iqs % 8)[:, None] + np.arange(4)
+        sumf = np.zeros(tmp.shape, F32)
+        sc = blk[..., 96:108].astype(np.int64)
+        for i in range(4):
+            q = np.take_along_axis(blk, np.broadcast_to(32 + 32 * h[:, None] + pos, blk.shape[:-1] + (4,)), axis=-1).astype(np.int64)
+            hm = np.take_along_axis(blk, np.broadcast_to(pos, blk.shape[:-1] + (4,)), axis=-1).astype(np.int64)
+            code = ((q >> (2 * i)) & 3) - np.where((hm >> (4 * h[:, None] + i)) & 1, 0, 4)
+            isc = 8 * h + 2 * i + (iqs % 8) // 4
+            g = lambda k: np.take_along_axis(sc, np.broadcast_to(k[None, :, None], sc.shape[:-1] + (1,)), axis=-1)[..., 0]
+            s = (((g(isc % 8) >> (4 * (isc // 8))) & 15) | (((g(8 + isc % 4) >> (2 * (isc // 4))) & 3) << 4)) - 32
+            b = kby + 4 * h + i
+            sumf = fma_ftz(d8[:, b][:, None], (_dot(code, xa(b, pos)) * s[None]).astype(F32), sumf)
+        return fma_ftz(_h(blk, 108)[None], sumf, tmp)
+    if type_id == 14:
+        iqs = kqs
+        h, l = iqs // 16, 4 * (iqs % 16)[:, None] + np.arange(4)
+        sumf = np.zeros(tmp.shape, F32)
+        for i in range(2):
+            ql = np.take_along_axis(blk, np.broadcast_to(64 * h[:, None] + l, blk.shape[:-1] + (4,)), axis=-1).astype(np.int64)
+            qh = np.take_along_axis(blk, np.broadcast_to(128 + 32 * h[:, None] + l % 32, blk.shape[:-1] + (4,)), axis=-1).astype(np.int64)
+            code = (((ql >> (4 * i)) & 15) | (((qh >> (2 * (l // 32) + 4 * i)) & 3) << 4)) - 32
+            sidx = 192 + 8 * h + 4 * i + (iqs % 16) // 4
+            s = np.take_along_axis(blk, np.broadcast_to(sidx[None, :, None], blk.shape[:-1] + (1,)), axis=-1)[..., 0].view(np.int8).astype(np.int64)
+            b = kby + 4 * h + 2 * i + (iqs % 16) // 8
+            sumf = fma_ftz(d8[:, b][:, None], (_dot(code, xa(b, l % 32)) * s[None]).astype(F32), sumf)
+        return fma_ftz(_h(blk, 208)[None], sumf, tmp)
+    raise ValueError(type_id)
+
+
+def mmvq(type_id, w, xq, n_in, n_out, ncols, nw=4, row_chunk=64):
+    """native_mmvq's output (ncols, n_out) for GGUF rows ``w`` (n_out, row bytes) and q8_1 bytes ``xq``, in basalt's
+    thread mapping with ``nw`` SIMD-groups (4: the one-column and exact layouts; 2: the upstream layout above 4
+    columns): per thread the blocks kbx = tid / T + k * BPI', then SIMD-group order and the XOR butterfly."""
+    div, T, bpi, bb = TRAITS[type_id]
+    nb = n_in // div
+    blocks = np.asarray(w, np.uint8).reshape(n_out, nb, bb)
+    xb = np.asarray(xq, np.uint8).reshape(ncols, n_in // 32, 36)
+    d8, s8, a = _h(xb, 0), _h(xb, 2), xb[..., 4:].view(np.int8).astype(np.int64)
+    nt, bpi_l = 32 * nw, bpi * nw // 4
+    tid = np.arange(nt)
+    kqs, kby_per_block = kqs_of(type_id, tid), div // 32
+    out = np.zeros((ncols, n_out), F32)
+    for r0 in range(0, n_out, row_chunk):
+        rows = blocks[r0: r0 + row_chunk]
+        tmp = np.zeros((ncols, len(rows), nt), F32)
+        for k in range(-(-nb // bpi_l) + 1):
+            kbx = tid // T + k * bpi_l
+            valid = kbx < nb
+            if not valid.any():
+                break
+            kb = np.minimum(kbx, nb - 1)
+            new = _contrib(type_id, tmp, rows[:, kb], kb * kby_per_block, kqs, d8, s8, a)
+            tmp = np.where(valid[None, None], new, tmp)
+        t = tmp[..., :32]
+        for sgi in range(1, nw):
+            t = add_ftz(t, tmp[..., 32 * sgi: 32 * sgi + 32])
+        out[:, r0: r0 + row_chunk] = butterfly(t.reshape(-1, 32), add_ftz).reshape(ncols, len(rows))
+    return out

@@ -276,6 +276,44 @@ def basalt_q8_1_params(n_values: int) -> bytes:
     return struct.pack("<IIII", n_values, 0, 0, 0)
 
 
+# basalt's iteration traits per ggml type (native_mmvq.cu:897-1098): values per block (DIV), threads per block (T),
+# blocks per iteration with four SIMD-groups (BPI)
+MMVQ_TRAITS = {2: (32, 2, 64), 6: (32, 2, 64), 8: (32, 4, 32), 20: (32, 2, 64), 11: (256, 16, 8), 12: (256, 16, 8),
+               13: (256, 16, 8), 14: (256, 32, 4), 23: (256, 8, 16), 42: (64, 2, 64)}
+
+
+def basalt_mmvq_source() -> str:
+    """basalt's ``native_mmvq`` for the ten GGUF types of ``MMVQ_TRAITS`` (``basalt_mmvq``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_mmvq.metal")
+
+
+def basalt_mmvq_macros(type_id: int, n_in: int, ncols: int, *, upstream: bool = False) -> Dict[str, str]:
+    """basalt's launch for ``ncols`` columns: one column, 4 SIMD-groups and 1 row per threadgroup (4 rows for small
+    K: fewer blocks per row than BPI); several, the exact layout (basalt's default) with 1 row (2 for small K);
+    ``upstream``: llama.cpp's table that mmvq_multi_parity's negative control runs (4 SIMD-groups up to 4 columns,
+    else 2; always 2 rows)."""
+    if type_id not in MMVQ_TRAITS:
+        raise ValueError(f"basalt_mmvq: unsupported ggml type {type_id}")
+    div, _, bpi = MMVQ_TRAITS[type_id]
+    if n_in <= 0 or n_in % div or not 1 <= ncols <= 8:
+        raise ValueError(f"basalt_mmvq: n_in must be a positive multiple of {div} and ncols in 1..8")
+    small = n_in // div < bpi
+    if upstream:
+        nw, rows = (4 if ncols <= 4 else 2), 2
+    else:
+        nw, rows = 4, ((4 if small else 1) if ncols == 1 else (2 if small else 1))
+    return {"MMVQ_TYPE": str(type_id), "NCOLS": str(ncols), "ROWS": str(rows), "NW": str(nw)}
+
+
+def basalt_mmvq_grid(macros: Mapping[str, str], n_out: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup) for a ``basalt_mmvq_macros`` launch."""
+    return -(-n_out // int(macros["ROWS"])), 32 * int(macros["NW"])
+
+
+def basalt_mmvq_params(n_in: int, n_out: int) -> bytes:
+    return struct.pack("<IIII", n_in, n_out, 0, 0)
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

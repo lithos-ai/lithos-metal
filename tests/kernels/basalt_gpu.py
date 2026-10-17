@@ -43,3 +43,13 @@ def q8_1(x, kind="native", up=None):
     out = run(pso, ins + [nbytes], kernels.basalt_q8_1_params(n), len(ins) + 1,
               -(-n // kernels.Q8_1_THREADS), kernels.Q8_1_THREADS)
     return np.frombuffer(out[-1], np.uint8)
+
+
+def mmvq(type_id, w, xq, n_in, n_out, ncols, upstream=False):
+    """``basalt_mmvq`` in basalt's launch for ``ncols`` columns (``upstream``: the negative control's layout)."""
+    macros = kernels.basalt_mmvq_macros(type_id, n_in, ncols, upstream=upstream)
+    pso = pipeline(kernels.basalt_mmvq_source(), "basalt_mmvq", tuple(sorted(macros.items())))
+    grid, threads = kernels.basalt_mmvq_grid(macros, n_out)
+    out = run(pso, [np.ascontiguousarray(w, np.uint8).tobytes(), np.ascontiguousarray(xq, np.uint8).tobytes(),
+                    4 * ncols * n_out], kernels.basalt_mmvq_params(n_in, n_out), 3, grid, threads)
+    return np.frombuffer(out[2], np.float32).reshape(ncols, n_out)

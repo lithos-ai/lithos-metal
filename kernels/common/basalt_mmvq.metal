@@ -39,10 +39,7 @@
 
 struct MmvqParams { uint n_in; uint n_out; uint pad0; uint pad1; };
 
-// q8_1 block b of a column: 9 words, word 0 the fp16 pair (d, s), words 1..8 the codes
-static inline float q8_d(device const uint* x, int b) { return h2f(ushort(x[9 * b] & 0xffffu)); }
-static inline float q8_s(device const uint* x, int b) { return h2f(ushort(x[9 * b] >> 16)); }
-static inline int q8_w(device const uint* x, int b, int k) { return int(x[9 * b + 1 + k]); }
+// q8_d, q8_s, q8_w (a q8_1 block's scale, sum and code words) are basalt_fp.metal's.
 
 // native_mmvq.cu:441-457: the IQ4 codebook as four words and its two-stage byte lookup
 static inline int2 iq4_table_lookup(int q4) {
@@ -124,26 +121,10 @@ static inline float apply_acc(float tmp, thread const Wt& r, device const uint* 
 #define BPI 64
 #define BLOCK_BYTES 18
 static inline int kqs_of(int tid) { return tid % 2; }
-struct Wt { int qx[4]; int qy[4]; float d2; };
-static inline Wt wload(device const ushort* blk, int iqs) {
-    Wt r;
-    r.d2 = h2f(blk[0]);
-    for (int j = 0; j < 4; ++j) {
-        const int q = int(short(blk[1 + iqs * 4 + j]));                // qs read as int16 (2-byte aligned block)
-        const int qe = byte_perm(0x020100ff, 0x020100ff, q >> 0);
-        const int qo = byte_perm(0x020100ff, 0x020100ff, q >> 2);
-        r.qx[j] = byte_perm(qe, qo, 0x5140);
-        r.qy[j] = byte_perm(qe, qo, 0x7362);
-    }
-    return r;
-}
+typedef Q20W Wt;                                                        // basalt_fp.metal's Q2_0 decode
+static inline Wt wload(device const ushort* blk, int iqs) { return q2_0_load(blk, iqs); }
 static inline float apply_acc(float tmp, thread const Wt& r, device const uint* x, int iqs) {
-    int sumi = 0;
-    for (int j = 0; j < 4; ++j) {
-        sumi = dp4a(q8_w(x, iqs, j * 2), r.qx[j], sumi);
-        sumi = dp4a(q8_w(x, iqs, j * 2 + 1), r.qy[j], sumi);
-    }
-    return fma_ftz(mul_ftz(r.d2, q8_d(x, iqs)), float(sumi), tmp);    // d2 * d8 * sumi into tmp +=
+    return fma_ftz(mul_ftz(r.d2, q8_d(x, iqs)), float(q2_0_sumi(r, x, iqs)), tmp);   // d2 * d8 * sumi into tmp +=
 }
 
 #elif MMVQ_TYPE == 11

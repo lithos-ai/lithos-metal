@@ -1,7 +1,8 @@
 // Copyright (c) 2023-2026 The ggml authors (MIT)
 // Copyright (c) 2026 Jesús Gulfo (MIT)
-// Adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, include/basalt/kernels/dp4a.hpp and
-// include/basalt/kernels/q8_1_finite.hpp @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE),
+// Adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
+// include/basalt/kernels/dp4a.hpp and include/basalt/kernels/q8_1_finite.hpp
+// @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE),
 // which adapt ggml-org/llama.cpp ggml/src/ggml-cuda/{quantize.cu,vecdotq.cuh,mmvq.cu,common.cuh} @
 // 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
 //
@@ -19,9 +20,13 @@
 // - rcp_ftz(x): stands where SASS has MUFU.RCP (an approximate reciprocal NVIDIA does not specify bit for bit): the
 //   correctly rounded 1 / x of the flushed input, flushed.
 // - warp_sum_ftz / warp_max_ftz: basalt's warp_sum and warp_max (native_mmvq.cu:130-144), XOR butterflies with offsets
-//   16, 8, 4, 2, 1 on the value's bits (simd_sum documents no order and is never used).
+//   16, 8, 4, 2, 1 on the value's bits (simd_sum documents no order and is never used); warp_sum: the IEEE-built
+//   files' butterfly (iq_kernels.cu:545-549), plain adds.
+// - expf_neg: __expf(-g) as an IEEE-built file compiles it (docs/research/basalt-nvcc/experts.md).
 // - load_int_b2, dp4a, byte_perm, vsubss4: CUDA's two 16-bit loads, __dp4a, __byte_perm (3-bit selectors) and
 //   __vsubss4 as exact integer arithmetic.
+// - q8_d, q8_s, q8_w: a q8_1 block's scale, sum and code words; q2_0_load, q2_0_sumi: the Q2_0 decode and its exact
+//   integer dot, shared by native_mmvq and the routed experts.
 #pragma STDC FP_CONTRACT OFF
 
 static inline float ftz(float x) {
@@ -45,6 +50,16 @@ static inline float warp_max_ftz(float x) {
     for (ushort o = 16; o > 0; o >>= 1) x = max_ftz(x, shfl_xor(x, o));
     return x;
 }
+// basalt's warp_sum in an IEEE-built file (iq_kernels.cu:545-549): the same butterfly, plain FADD. The port uses it
+// only where no subnormal can reach the sum (docs/research/basalt-nvcc/experts.md), so the GPU's add is CUDA's.
+static inline float warp_sum(float x) {
+    for (ushort o = 16; o > 0; o >>= 1) x = x + shfl_xor(x, o);
+    return x;
+}
+
+// CUDA's __expf(-g) in an IEEE-built file: ex2.approx.f32 of fl(g * -log2 e) (experts.md section 2). MUFU.EX2 has no
+// documented Metal counterpart; the contract maps it to fast::exp2 of the same product.
+static inline float expf_neg(float g) { return fast::exp2(g * as_type<float>(0xBFB8AA3Bu)); }
 
 // fp16 field to fp32 (exact): CUDA's __half2float / __low2float, HADD2.F32 in SASS.
 static inline float h2f(ushort h) { return float(as_type<half>(h)); }
@@ -79,4 +94,36 @@ static inline int byte_perm(int x, int y, int s) {
 static inline int vsubss4(int a, int b) {
     const int4 d = clamp(int4(as_type<char4>(a)) - int4(as_type<char4>(b)), int4(-128), int4(127));
     return as_type<int>(char4(d));
+}
+
+// q8_1 block b of an activation row (basalt_q8_1.metal's layout): 9 words, word 0 the fp16 pair (d, s), words 1..8
+// the codes. P is a device or threadgroup pointer to the row's words.
+template <typename P> static inline float q8_d(P x, int b) { return h2f(ushort(x[9 * b] & 0xffffu)); }
+template <typename P> static inline float q8_s(P x, int b) { return h2f(ushort(x[9 * b] >> 16)); }
+template <typename P> static inline int q8_w(P x, int b, int k) { return int(x[9 * b + 1 + k]); }
+
+// Q2_0 (18-byte blocks: fp16 d, qs[16] of 2-bit codes, value = d * (code - 1)): basalt's Split<42> / Q20Traits
+// (iq_kernels.cu:864-895, native_mmvq.cu:976-1007). q2_0_load decodes the 32-value half iqs of the block at blk
+// (qs read as int16: the block is only 2-byte aligned), each code c as the byte c - 1 through __byte_perm;
+// q2_0_sumi is the exact integer dot with q8_1 block b of x.
+struct Q20W { int qx[4]; int qy[4]; float d2; };
+static inline Q20W q2_0_load(device const ushort* blk, int iqs) {
+    Q20W r;
+    r.d2 = h2f(blk[0]);
+    for (int j = 0; j < 4; ++j) {
+        const int q = int(short(blk[1 + iqs * 4 + j]));
+        const int qe = byte_perm(0x020100ff, 0x020100ff, q >> 0);
+        const int qo = byte_perm(0x020100ff, 0x020100ff, q >> 2);
+        r.qx[j] = byte_perm(qe, qo, 0x5140);
+        r.qy[j] = byte_perm(qe, qo, 0x7362);
+    }
+    return r;
+}
+template <typename P> static inline int q2_0_sumi(thread const Q20W& r, P x, int b) {
+    int sumi = 0;
+    for (int j = 0; j < 4; ++j) {
+        sumi = dp4a(q8_w(x, b, j * 2), r.qx[j], sumi);
+        sumi = dp4a(q8_w(x, b, j * 2 + 1), r.qy[j], sumi);
+    }
+    return sumi;
 }

@@ -314,6 +314,67 @@ def basalt_mmvq_params(n_in: int, n_out: int) -> bytes:
     return struct.pack("<IIII", n_in, n_out, 0, 0)
 
 
+# ---- basalt's routed experts for Q2_0 / Q2_0 (kernels/common/basalt_experts.metal; docs/research/basalt-nvcc/experts.md)
+
+EXPERT_THREADS = 256        # every expert dispatch: 256-thread threadgroups
+EXPERT_GROUP_ROWS = 24      # basalt's g_dec_gy: the most threadgroup rows a call takes when its caller leaves gy at 0
+
+
+def basalt_experts_source() -> str:
+    """basalt's ``native_expert_grouped`` for Q2_0 gate/up and down: ``basalt_expert_gu``, ``basalt_expert_swiglu_q8_1``
+    and ``basalt_expert_down``, dispatched in that order."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_q8_1.metal") + template("basalt_experts.metal")
+
+
+def basalt_expert_layout(n_embd: int, n_ff: int) -> Dict[str, int]:
+    """basalt's ``native_expert_layout(42, 42, n_embd, n_ff)`` (iq_kernels.cu:2517-2529): row bytes, the up and down
+    offsets and the bytes of one blob (n_ff gate rows, n_ff up rows, n_embd down rows), after its checks
+    (``native_expert_supported``, iq_kernels.cu:2511-2515)."""
+    if n_embd <= 0 or n_ff <= 0 or n_embd % 256 or n_ff % 64:
+        raise ValueError(f"basalt_experts: n_embd must be a multiple of 256 and n_ff of 64, got {n_embd}, {n_ff}")
+    gu_row, d_row = n_embd // 64 * 18, n_ff // 64 * 18
+    up_off = n_ff * gu_row
+    return {"n_embd": n_embd, "n_ff": n_ff, "gu_row": gu_row, "d_row": d_row, "up_off": up_off,
+            "down_off": 2 * up_off, "bytes": 2 * up_off + n_embd * d_row}
+
+
+def basalt_expert_macros(n_embd: int, n_ff: int, *, gu2: Optional[bool] = None,
+                         sub16: Optional[bool] = None) -> Dict[str, str]:
+    """basalt's kernel choice (iq_kernels.cu:2376-2382, 2594): gate/up on the two-rows-a-SIMD-group kernel where
+    ``gu2_usable`` holds (n_embd 2560, even n_ff, 4-byte aligned rows), the down kernel's 16-lane rows at n_ff 640.
+    ``gu2`` / ``sub16`` force a choice (tests compare the paths); gu2 needs n_embd 2560, sub16 n_ff 640."""
+    lay = basalt_expert_layout(n_embd, n_ff)
+    usable = n_embd == 2560 and n_ff % 2 == 0 and lay["gu_row"] % 4 == 0 and lay["up_off"] % 4 == 0
+    gu2 = usable if gu2 is None else gu2
+    sub16 = n_ff == 640 if sub16 is None else sub16
+    if (gu2 and not usable) or (sub16 and n_ff != 640):
+        raise ValueError("basalt_experts: the gu2 kernel needs n_embd 2560, the 16-lane down kernel n_ff 640")
+    return {"GU2": str(int(gu2)), "SUB16": str(int(sub16))}
+
+
+def basalt_expert_group_rows(cap_groups: int, grid_groups: int = 0) -> int:
+    """Threadgroup rows of the gate/up and down dispatches: basalt's gy (iq_kernels.cu:2566-2569), cap_groups when the
+    caller passes 0 or more than cap, capped at ``EXPERT_GROUP_ROWS`` when it passes 0. The result does not depend on
+    it."""
+    gy = cap_groups if grid_groups <= 0 or grid_groups > cap_groups else grid_groups
+    return min(gy, EXPERT_GROUP_ROWS) if grid_groups <= 0 else gy
+
+
+def basalt_expert_grids(macros: Mapping[str, str], n_embd: int, n_ff: int, cap_groups: int, cap_entries: int,
+                        grid_groups: int = 0) -> Tuple[Tuple[int, int], int, Tuple[int, int]]:
+    """Threadgroup grids of the gate/up, SwiGLU and down dispatches (each of ``EXPERT_THREADS`` threads)."""
+    gy = basalt_expert_group_rows(cap_groups, grid_groups)
+    gu_rows = 16 if macros["GU2"] == "1" else 8
+    d_rows = 16 if macros["SUB16"] == "1" else 8
+    return ((-(-2 * n_ff // gu_rows), gy), -(-cap_entries * n_ff // EXPERT_THREADS), (-(-n_embd // d_rows), gy))
+
+
+def basalt_expert_params(n_embd: int, n_ff: int) -> bytes:
+    """``ExpertParams``: the layout's n_embd, n_ff, row bytes and offsets."""
+    lay = basalt_expert_layout(n_embd, n_ff)
+    return struct.pack("<8I", n_embd, n_ff, lay["gu_row"], lay["d_row"], lay["up_off"], lay["down_off"], 0, 0)
+
+
 DEQUANT_TYPES = (11, 20, 23, 42)   # Q3_K, IQ4_NL, IQ4_XS, Q2_0: basalt's dequantizers for the types iq_parity checks
 
 

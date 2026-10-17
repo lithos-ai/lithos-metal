@@ -92,6 +92,38 @@ static inline float ieee_add(float a, float b) {
     return ieee_down64(ieee_up64(a) + ieee_up64(b));
 }
 
+// a * b with IEEE subnormals, for finite a and b (CUDA's mul.rn.f32 in an IEEE-built kernel). Normal operands with a
+// product of at least 2^-125 take the hardware's correctly rounded product; otherwise (a subnormal operand, which the
+// hardware flushes, or a product it may flush) the product is rebuilt from the exact integer product m of the
+// significands: |a * b| = m * 2^e units of 2^-149, rounded to nearest even on the grid of its binade (k = 0 is the
+// subnormal grid and binade -126), so that the float's bits are (k << 23) + r for r units of 2^(k - 149).
+static inline float ieee_mul(float a, float b) {
+    const float p = a * b;
+    const uint ab = as_type<uint>(a), bb = as_type<uint>(b);
+    uint ea = (ab >> 23) & 0xffu, eb = (bb >> 23) & 0xffu, ma = ab & 0x7fffffu, mb = bb & 0x7fffffu;
+    if (ea != 0u && eb != 0u && !(fabs(p) < 0x1p-125f)) return p;      // also inf and NaN
+    const uint sign = (ab ^ bb) & 0x80000000u;
+    if ((ea | ma) == 0u || (eb | mb) == 0u) return as_type<float>(sign);
+    if (ea == 0u) ea = 1u; else ma |= 0x800000u;
+    if (eb == 0u) eb = 1u; else mb |= 0x800000u;
+    const ulong m = ulong(ma) * ulong(mb);
+    const int e = int(ea + eb) - 151;                                   // |a * b| = m * 2^e units of 2^-149
+    const int lead = 63 - int(clz(m));
+    const int k = max(0, lead + e - 23);                                // the grid: 24 significant bits, or 2^-149
+    const int s = k - e;                                                // m * 2^e / 2^k = m >> s
+    ulong r;
+    if (s <= 0) {
+        r = m << uint(-s);
+    } else if (s > 63) {
+        r = 0;
+    } else {
+        r = m >> uint(s);
+        const ulong rem = m & ((1ul << uint(s)) - 1ul), tie = 1ul << uint(s - 1);
+        if (rem > tie || (rem == tie && (r & 1ul) != 0ul)) r += 1ul;
+    }
+    return as_type<float>(sign | (uint(k) << 23) + uint(r));            // r == 2^24 carries into the exponent
+}
+
 static inline void q8_1_store_ieee(float xi, device uchar* y, uint i) {
     int key = isnan(xi) ? -1 : int(as_type<uint>(fabs(xi)));        // fmaxf drops a NaN operand
     float sum = xi;

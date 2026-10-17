@@ -720,28 +720,32 @@ def test_a_real_interrupt_during_a_run_leaves_the_engine_usable():
     import threading
 
     eng = Engine(_program(_base_buffers(1000), [_tick()]))
+    outer = signal.signal(signal.SIGINT, signal.default_int_handler)  # a detached or nohup'd run ignores SIGINT
 
-    for name in ("_claim", "_run"):
-        inner = getattr(eng, name, None) or getattr(Engine, name).__get__(eng)
+    try:
+        for name in ("_claim", "_run"):
+            inner = getattr(eng, name, None) or getattr(Engine, name).__get__(eng)
 
-        def interrupt_after(*args, _inner=inner, **kw):
-            out = _inner(*args, **kw)
-            signal.raise_signal(signal.SIGINT)                        # the interpreter raises it at its next check
-            return out
+            def interrupt_after(*args, _inner=inner, **kw):
+                out = _inner(*args, **kw)
+                signal.raise_signal(signal.SIGINT)                    # the interpreter raises it at its next check
+                return out
 
-        setattr(eng, name, interrupt_after)
-        try:
-            with pytest.raises(KeyboardInterrupt):
-                eng.run(1)
-        finally:
-            delattr(eng, name)
+            setattr(eng, name, interrupt_after)
+            try:
+                with pytest.raises(KeyboardInterrupt):
+                    eng.run(1)
+            finally:
+                delattr(eng, name)
 
-        steps = []
-        after = threading.Thread(target=lambda: steps.append(eng.run(1).steps))
-        after.start()
-        after.join(10.0)
-        assert not after.is_alive(), f"a run after an interrupt in {name} blocked"
-        assert steps == [1], f"a run after an interrupt in {name} failed"
+            steps = []
+            after = threading.Thread(target=lambda: steps.append(eng.run(1).steps))
+            after.start()
+            after.join(10.0)
+            assert not after.is_alive(), f"a run after an interrupt in {name} blocked"
+            assert steps == [1], f"a run after an interrupt in {name} failed"
+    finally:
+        signal.signal(signal.SIGINT, outer)
 
 
 def test_an_interrupt_cannot_strand_the_claim():

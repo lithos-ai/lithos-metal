@@ -126,6 +126,40 @@ def experts(blobs, grp_off, grp_start, ent_tok, ent_dst, xq, n_embd, n_ff, n_out
             "hq": np.frombuffer(b_hq.read(0, b_hq.nbytes), np.uint8), "out": f32(b_out).reshape(n_out_rows, n_embd)}
 
 
+def mmvf(w, x, n_in, n_out, n_tok=1, ldx=None, ldy=None, fill=None):
+    """``basalt_mmvf`` in basalt's launch (``bf16_gemv_fp32_mmvf_multi``; one row with ldy >= n_out:
+    ``bf16_gemv_fp32_mmvf``) for BF16 bits ``w`` (n_out rows of n_in) and the float32 rows of ``x`` (row k at k * ldx,
+    (n_tok - 1) * ldx + n_in values); the output, (n_tok - 1) * ldy + n_out floats, starts as ``fill`` bytes."""
+    ldx = n_in if ldx is None else ldx
+    ldy = n_out if ldy is None else ldy
+    macros = kernels.basalt_mmvf_macros(n_in, n_out, n_tok, ldx, ldy)
+    pso = pipeline(kernels.basalt_mmvf_source(), "basalt_mmvf", tuple(sorted(macros.items())))
+    out = run(pso, [np.ascontiguousarray(x, np.float32).tobytes(), np.ascontiguousarray(w, np.uint16).tobytes(),
+                    4 * ((n_tok - 1) * ldy + n_out)], kernels.basalt_mmvf_params(n_in, n_out, n_tok, ldx, ldy), 3,
+              n_out, int(macros["BLOCK"]), fill)
+    return np.frombuffer(out[2], np.float32)
+
+
+def mmvf_cols(w, x, n_in, n_out, ncols, fill=None):
+    """basalt's ``bf16_gemv_fp32_mmvf_cols``: ``ncols`` contiguous columns of ``x`` in launches of up to 8 (one command
+    buffer, x and y bound at each chunk's offset), into an (ncols, n_out) output that starts as ``fill`` bytes."""
+    dev = device()
+    bx = nt.Buffer(dev, np.ascontiguousarray(x, np.float32).tobytes())
+    bw = nt.Buffer(dev, np.ascontiguousarray(w, np.uint16).tobytes())
+    by = nt.Buffer(dev, 4 * ncols * n_out)
+    if fill is not None:
+        by.fill(fill)
+    ds = []
+    for c0, nc in kernels.basalt_mmvf_cols(ncols):
+        macros = kernels.basalt_mmvf_macros(n_in, n_out, nc)
+        pso = pipeline(kernels.basalt_mmvf_source(), "basalt_mmvf", tuple(sorted(macros.items())))
+        ds.append(nt.Dispatch().pipeline(pso).buffer(0, bx, 4 * c0 * n_in).buffer(1, bw).buffer(2, by, 4 * c0 * n_out)
+                  .bytes(3, kernels.basalt_mmvf_params(n_in, n_out, nc)).grid(n_out).threadgroup(int(macros["BLOCK"])))
+    r = nt.Queue(dev).run(ds)
+    assert not r.error, r.error
+    return np.frombuffer(by.read(0, by.nbytes), np.float32).reshape(ncols, n_out)
+
+
 def dequant(type_id, raw, n):
     """``basalt_dequant_f32``: the ``n`` values (a multiple of 256) of the GGUF blocks ``raw``, as float32."""
     pso = pipeline(kernels.basalt_dequant_source(), "basalt_dequant_f32",

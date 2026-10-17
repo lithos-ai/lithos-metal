@@ -329,3 +329,35 @@ def swiglu_q8_1(gate, up, e):
     with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
         h = (g / (F32(1.0) + e)) * up
     return q8_1_ieee(h)
+
+
+# ---- the BF16 GEMVs on fp32 activations (docs/research/basalt-nvcc/bf16.md) -----------------------------------------
+# native_bf16.cu builds with --use_fast_math: every FMA and add is .FTZ.
+
+def bf16_bits(x):
+    """float32 to bf16 bits, round to nearest even (bf16_bits.hpp's bf16_from_f32 for non-NaN values)."""
+    b = np.asarray(x, F32).view(np.uint32).astype(np.uint64)
+    return ((b + ((b >> 16) & 1) + 0x7FFF) >> 16).astype(np.uint16)
+
+
+def mmvf(w, x, block):
+    """bf16_gemv_fp32_mmvf's outputs (n_tok, n_out) for BF16 bits ``w`` (n_out, n_in) and float32 rows ``x``
+    (n_tok, n_in) with ``block`` threads (basalt's mmvf_block_size), as bf16.md records it: thread t takes the pairs
+    t, t + block, ... in order, acc = fma(bf(w[2p]), x[2p], acc) then fma(bf(w[2p + 1]), x[2p + 1], acc) from +0,
+    all .FTZ; the XOR butterfly per warp; for block > 32 the butterfly again over 32 slots, the warp sums and +0s."""
+    w = np.asarray(w, np.uint16)
+    n_out, n_in = w.shape
+    x = np.asarray(x, F32).reshape(-1, n_in)
+    wf = (w.astype(np.uint32) << 16).view(F32)
+    acc = np.zeros((x.shape[0], n_out, block), F32)
+    pairs = n_in // 2
+    for p0 in range(0, pairs, block):
+        p = np.arange(p0, min(p0 + block, pairs))
+        a = fma_ftz(wf[None, :, 2 * p], x[:, None, 2 * p], acc[..., p - p0])
+        acc[..., p - p0] = fma_ftz(wf[None, :, 2 * p + 1], x[:, None, 2 * p + 1], a)
+    s = butterfly(acc.reshape(-1, 32), add_ftz).reshape(x.shape[0], n_out, block // 32)
+    if block > 32:
+        slots = np.zeros(s.shape[:2] + (32,), F32)
+        slots[..., : block // 32] = s
+        s = butterfly(slots.reshape(-1, 32), add_ftz).reshape(x.shape[0], n_out, 1)
+    return s[..., 0]

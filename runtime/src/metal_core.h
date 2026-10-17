@@ -78,7 +78,15 @@ struct Dispatch {
   bool barrier_before = false;         // this dispatch waits for every dispatch before it (ICBs, concurrent encoders)
 };
 
+// `error`: the command buffer's error (empty = clean). A Metal shader-validation report leaves the command buffer
+// completed without one, so run() raises the reports instead, one "shader validation: …" line each: a test fails
+// on a report whether or not it checks `error`.
 struct RunResult { double gpu_ms; double wall_ms; std::string error; };
+
+// The shader-validation reports read so far from this process's completed command buffers, on every path that commits
+// one: the test suite fails a test phase in which this grows, where a harness caught the raised error or a thread
+// raised it.
+uint64_t validation_reports();
 
 class Queue {
  public:
@@ -125,7 +133,7 @@ struct RunnerStats {
   double commit_ms = 0;       // host wall time in Metal commit()
   double wait_ms = 0;         // host wall time waiting for completion (overlaps GPU time)
   bool done = false;          // StepState.done was observed
-  std::string error;
+  std::string error;          // the first failed command buffer's error and validation reports; stops the pump (Engine.run raises it)
 };
 
 class Runner {

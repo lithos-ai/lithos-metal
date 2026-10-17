@@ -7,7 +7,7 @@
 gate/up, SwiGLU + IEEE q8_1 and down dispatches.
 
 Fixtures follow basalt's tests: Q2_0 rows of random bytes with a finite fp16 scale per block, sign | exponent 2..8 |
-any mantissa (2^-13 .. 2^-6; ``random_rows``, iq_multi_parity.cpp:68-87, native_grouped_parity.cpp:73-99); token
+any mantissa (2^-13 .. 2^-6; ``random_rows``, iq_multi_parity.cpp:72-90, native_grouped_parity.cpp:73-98); token
 activations N(0, 1) quantized by the IEEE q8_1 quantizer (``quantize_q8_1_rows``). basalt draws them with
 std::mt19937 and std:: distributions, whose outputs are implementation-defined; these draw the same distributions
 with numpy."""
@@ -58,9 +58,9 @@ def test_every_variant_builds_and_runs(n_embd, n_ff):
 # ---- calls as basalt's tests build them --------------------------------------------------------------------------
 
 class Call:
-    """One expert call: ``n_blobs`` blobs in one arena (each at a 256-byte aligned slot, native_grouped_parity.cpp:117),
+    """One expert call: ``n_blobs`` blobs in one arena (each at a 256-byte aligned slot, native_grouped_parity.cpp:118),
     groups of ``sizes`` entries from entry ``base`` on, each group its own blob while there are enough (plan_sizes,
-    :163-191), random tokens and scattered destinations (a permutation of the cap rows), and ``tokens`` q8_1 rows of
+    :164-188), random tokens and scattered destinations (a permutation of the cap rows), and ``tokens`` q8_1 rows of
     N(0, 1) activations from the IEEE quantizer."""
 
     def __init__(self, rng, n_embd, n_ff, sizes, tokens, *, base=0, cap=None, n_blobs=None, neg=0.5, cap_groups=None):
@@ -95,13 +95,16 @@ class Call:
 
     def per_entry(self, **kw):
         """Each entry alone (one group of one entry): the grouped kernels' arithmetic one entry a call, the comparand
-        that stands for basalt's older kernels. Rows no entry writes keep the NaN pattern."""
+        that stands for basalt's older kernels. Rows no entry writes keep the NaN pattern; each call must leave every
+        row but its own as it was, as basalt diffs the whole buffer (native_grouped_parity.cpp:226-234)."""
         out = np.full((self.cap, self.n_embd), 0xFFFFFFFF, np.uint32)
         for e in self.entries():
             g, d = self.group_of(e), int(self.ent_dst[e])
             r = gpu.experts(self.arena, [self.grp_off[g]], [0, 1], [self.ent_tok[e]], [d], self.xq, self.n_embd,
                             self.n_ff, self.cap, **kw)
-            out[d] = r["out"][d].view(np.uint32)
+            got = r["out"].view(np.uint32)
+            assert np.all(np.delete(got, d, axis=0) == 0xFFFFFFFF), ("stray store", e)
+            out[d] = got[d]
         return out
 
     def blob(self, e, part):
@@ -159,7 +162,7 @@ def check_against_emulation(c, r):
 def grouped_case(seed=18):
     """check_grouped's call: 9 groups of {1, 3, 4, 5, 0, 8, 2, 11, 1} entries (one pass of GRP_NC, partial passes, two
     passes and more), 8 tokens, cap_groups = groups + 2 (the extra threadgroup rows must exit), cap = entries + 3, the
-    entries' destinations a permutation of the first rows, random tokens (:248-275); Q2_0 / Q2_0 at 2560 x 640
+    entries' destinations a permutation of the first rows, random tokens (:254-264, :321); Q2_0 / Q2_0 at 2560 x 640
     (:497-500)."""
     rng = np.random.default_rng(seed)
     sizes = [1, 3, 4, 5, 0, 8, 2, 11, 1]
@@ -174,7 +177,7 @@ def test_check_grouped():
     finite;`` (iq_multi_parity.cpp:329), finite over the written rows. Also the kernel choices against each other
     (gate/up two rows or one row a SIMD-group, down on 16 or 32 lanes) and every stage against the emulation."""
     c = grouped_case()
-    r = c.run(scratch_fill=0x00)                                # out NaN-filled, scratch zeroed (:290-291)
+    r = c.run(scratch_fill=0x00)                                # out NaN-filled, scratch zeroed (:309-310)
     got = r["out"].view(np.uint32)
     diff = np.count_nonzero(got != c.per_entry())
     finite = np.isfinite(r["out"][: c.n_ent]).all()
@@ -186,7 +189,7 @@ def test_check_grouped():
     check_against_emulation(c, r)
 
 
-# ---- native_grouped_parity (native_grouped_parity.cpp:207-247, 513-532) ------------------------------------------
+# ---- native_grouped_parity (native_grouped_parity.cpp:219-248, 513-532) ------------------------------------------
 
 @pytest.mark.parametrize("n_embd, n_ff", [(512, 256), (2560, 640)])
 def test_native_grouped_parity(n_embd, n_ff):
@@ -320,7 +323,7 @@ def test_swiglu_q8_1_edges():
 # ---- float64 references ------------------------------------------------------------------------------------------
 
 def dequant_q8_1(xq, n):
-    """q8_1 rows back to float64: d * code (iq_multi_parity.cpp:100-110)."""
+    """q8_1 rows back to float64: d * code (iq_multi_parity.cpp:99-109)."""
     b = np.asarray(xq, np.uint8).reshape(-1, 36)
     return (b[:, :2].copy().view(np.float16).astype(np.float64) * b[:, 4:].view(np.int8)).reshape(-1, n)
 
@@ -370,10 +373,12 @@ def test_whole_expert_against_float64():
     basalt reference): the whole expert (gate/up, SwiGLU, the q8_1 of the product, down) against a float64 expert on
     the fp32 activations, built as native_expert_parity.cpp builds it (:46-78, :387-402): 3 tokens of N(0, 1) values,
     2560 x 640, row r's weights 0.02 (0.5 + (r % 7) / 7) N(0, 1) quantized to Q2_0 (tools/gguf_writer.py's
-    quantize_q2_0; basalt's test calls ggml's quantizer, and has no Q2_0 pair) and dequantized by ggml's
-    dequantize_row_q2_0; h = (float) (g / (1 + exp(-g)) * u) in double; out = D h in double. Criterion, quoted: ``const
-    bool ok = ec < 3e-2 && eg < 3e-2 && std::isfinite(ec) && std::isfinite(eg);`` (native_expert_parity.cpp:368), eg the
-    GPU's relative L1 error (:38-42); ec, the CPU tier's, belongs to the CPU expert's port."""
+    quantize_q2_0; basalt's test calls ggml's quantizer, and has no Q2_0 pair) and dequantized on the host by ggml's
+    dequantize_row_q2_0 (tests/contract/gguf_reference.py; tools/gguf_writer.py's dequantize_q2_0 mirrors it), as
+    basalt's reference takes ggml's to_float (:56-61); h = (float) (g / (1 + exp(-g)) * u) in double; out = D h in
+    double. Criterion, quoted: ``const bool ok = ec < 3e-2 && eg < 3e-2 && std::isfinite(ec) && std::isfinite(eg);``
+    (native_expert_parity.cpp:368), eg the GPU's relative L1 error (:38-42); ec, the CPU tier's, belongs to the CPU
+    expert's port."""
     n_embd, n_ff, nt = 2560, 640, 3
     rng = np.random.default_rng(11)
 
@@ -383,9 +388,9 @@ def test_whole_expert_against_float64():
 
     blob = np.concatenate([quant(n_ff, n_embd), quant(n_ff, n_embd), quant(n_embd, n_ff)])
     lay = kernels.basalt_expert_layout(n_embd, n_ff)
-    G, U, D = (gpu.dequant(42, blob[o: o + n], rows * cols).reshape(rows, cols).astype(np.float64)
-               for o, n, rows, cols in ((0, lay["up_off"], n_ff, n_embd), (lay["up_off"], lay["up_off"], n_ff, n_embd),
-                                        (lay["down_off"], n_embd * lay["d_row"], n_embd, n_ff)))
+    G, U, D = (gguf_reference.dequantize(42, blob[o: o + rows * row].reshape(rows, row)).astype(np.float64)
+               for o, rows, row in ((0, n_ff, lay["gu_row"]), (lay["up_off"], n_ff, lay["gu_row"]),
+                                    (lay["down_off"], n_embd, lay["d_row"])))
     x = rng.standard_normal((nt, n_embd)).astype(F32)
     g, u = x.astype(np.float64) @ G.T, x.astype(np.float64) @ U.T
     h = (g / (1.0 + np.exp(-g)) * u).astype(F32)
@@ -396,5 +401,3 @@ def test_whole_expert_against_float64():
     print(f"\nwhole expert Q2_0/Q2_0 {n_embd} x {n_ff}, {nt} tokens: gpu rel {eg:.2e}")
     # basalt: const bool ok = ec < 3e-2 && eg < 3e-2 && std::isfinite(ec) && std::isfinite(eg);
     assert np.isfinite(eg) and eg < 3e-2 and np.isfinite(got).all(), eg
-    raw = blob[: 64 * lay["gu_row"]].reshape(64, -1)
-    assert np.array_equal(G[:64].astype(F32), gguf_reference.dequantize(42, raw))

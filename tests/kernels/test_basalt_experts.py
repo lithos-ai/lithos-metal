@@ -194,7 +194,8 @@ def test_native_grouped_parity(n_embd, n_ff):
     2, 3, 5, 8 and 24 groups of 1..T entries from entry 0 and from entry 7, scattered destinations over the cap rows;
     each call with grid_groups 0, 1, 2, 3, 4 and cap + 3 and stale scratch (0x00 or 0x7F alternately) against the same
     kernels one entry a call (basalt: against v1). 512 x 256 is the registered test's shape (gate/up one row a
-    SIMD-group); 2560 x 640 is its ``--gu2`` run (the kernels decode runs). Criteria, quoted: ``for (size_t i = 0; i <
+    SIMD-group); 2560 x 640 is its ``--gu2`` run (the kernels decode runs), where the per-entry comparand takes the
+    one-row gate/up kernel as basalt's v1 does, against gu2 in the grouped call. Criteria, quoted: ``for (size_t i = 0; i <
     ref.size(); ++i) diff += ref[i] != got[i];`` (:234) and ``if (written == 0) { std::printf("  nothing was written:
     the check checked nothing  FAIL\\n"); ++bad; }`` (:246). Every stage of each call's first run is also checked
     against the emulation."""
@@ -212,7 +213,8 @@ def test_native_grouped_parity(n_embd, n_ff):
                 sizes.append(m)
                 used += m
             c = Call(rng, n_embd, n_ff, sizes, T, base=base, cap=cap, n_blobs=n_blobs, cap_groups=cap)
-            ref = c.per_entry()
+            # basalt's --gu2 run compares gu2 against v1's gate/up kernel (the one-row kernel): so does the comparand
+            ref = c.per_entry(gu2=False if n_embd == 2560 else None)
             written += np.count_nonzero(ref != 0xFFFFFFFF)
             for gy in (0, 1, 2, 3, 4, cap + 3):
                 r = c.run(grid_groups=gy, scratch_fill=0x7F if calls & 1 else 0x00)
@@ -311,10 +313,11 @@ def test_stages_against_float64():
     c = grouped_case()
     r = c.run()
     blk = kernels.Q8_1_BLOCK_BYTES
-    rel = {}
+    rel, worst = {}, {}
     for part, n_in, n_out in (("gate", c.n_embd, c.n_ff), ("up", c.n_embd, c.n_ff), ("down", c.n_ff, c.n_embd)):
         num = den = 0.0
         finite = True
+        per_entry = []
         for g in range(len(c.grp_off)):
             ents = range(c.grp_start[g], c.grp_start[g + 1])
             if not ents:
@@ -330,10 +333,12 @@ def test_stages_against_float64():
             finite = finite and np.isfinite(y).all()
             num += np.abs(y - ref).sum()
             den += np.abs(ref).sum()
-        rel[part] = num / (den + 1e-30)
-        # basalt: if (diff != 0 || !finite || !(rel < 1e-2)) {
-        assert finite and rel[part] < 1e-2, (part, rel[part])
-    print("\nstages against float64: " + ", ".join(f"{k} rel {v:.2e}" for k, v in rel.items()))
+            per_entry += list(np.abs(y - ref).sum(axis=1) / (np.abs(ref).sum(axis=1) + 1e-30))
+        rel[part], worst[part] = num / (den + 1e-30), max(per_entry)
+        # basalt: if (diff != 0 || !finite || !(rel < 1e-2)) {  -- over the call, and here per entry as well
+        assert finite and rel[part] < 1e-2 and worst[part] < 1e-2, (part, rel[part], worst[part])
+    print("\nstages against float64: " + ", ".join(f"{k} rel {v:.2e} (worst entry {worst[k]:.2e})"
+                                                    for k, v in rel.items()))
     raw = c.blob(0, "gate")[: 64 * c.lay["gu_row"]].reshape(64, -1)
     assert np.array_equal(gpu.dequant(42, raw, 64 * c.n_embd).reshape(64, -1), gguf_reference.dequantize(42, raw))
 

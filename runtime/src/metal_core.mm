@@ -710,6 +710,7 @@ static RunnerStats run_host_steps(RunnerImpl& r, uint32_t max_steps, bool reenco
   }
   r.step_base = begun;
   drain_ring(r);
+  { std::lock_guard<std::mutex> lk(r.mu); st.tokens.swap(r.tokens); }   // this run's tokens, taken under its own hold
   st.done = *(volatile uint32_t*)((char*)r.state.contents + r.done_off) != 0;
   st.steps_submitted = begun - S0;
   st.wall_ms = now_ms() - t0;
@@ -775,6 +776,7 @@ RunnerStats Runner::run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_f
   }
   while (!pending.empty()) { observe(pending.front()); pending.pop_front(); }
   r.step_base += st.steps_submitted;   // HostCall.step counts the steps of either pump
+  { std::lock_guard<std::mutex> lk(r.mu); st.tokens.swap(r.tokens); }   // this run's tokens, taken under its own hold
   st.wall_ms = now_ms() - t0;
   st.host_busy_ms = cpu_ms_now() - c0;
   return st;

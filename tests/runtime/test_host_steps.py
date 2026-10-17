@@ -677,20 +677,21 @@ def test_a_second_concurrent_run_fails_at_once():
             assert release.wait(5.0)
 
     eng = Engine(_program(_base_buffers(10), [_tick()], [HostPoint("hold", 1, 1)]), host_tasks={"hold": hold})
-    first = threading.Thread(target=eng.run, args=(3,))
+    report = []
+    first = threading.Thread(target=lambda: report.append(eng.run(3)))
     first.start()
     try:
         assert entered.wait(5.0)                                          # the first run holds the runner
-        with pytest.raises(RuntimeError, match="Engine.run: already running on another thread"):
-            eng.run(1)
-        with pytest.raises(RuntimeError, match="Runner.run: already running on another thread"):
-            eng.runner.run(1, 1, 1, False, 0)
+        for call in (lambda: eng.run(1), lambda: eng.runner.run(1, 1, 1, False, 0)):
+            with pytest.raises(RuntimeError, match="Runner.run: already running on another thread"):
+                call()
         with pytest.raises(RuntimeError, match="set_host_points: already running on another thread"):
             eng.runner.set_host_points([], LAYOUT.offset("error"), 1000)
     finally:
         release.set()
         first.join(10.0)
     assert not first.is_alive() and eng.state()["step"] == 3
+    assert report[0].tokens == list(range(3))                             # the refused run took none of them
 
 
 def test_a_task_that_calls_its_own_runner_is_refused():
@@ -704,69 +705,23 @@ def test_a_task_that_calls_its_own_runner_is_refused():
                     call()
                 errors.append(str(refused.value))
 
+
     eng = Engine(_program(_base_buffers(5), [_tick()], [HostPoint("reenter", 1, 1)]), host_tasks={"reenter": reenter})
     rep = eng.run(5)
     assert rep.steps == 5 and rep.tokens == list(range(5))
-    assert errors == ["Engine.run: called from one of the engine's own host tasks",
+    assert errors == ["Runner.run: called from one of the runner's own host tasks",
                       "Runner.run: called from one of the runner's own host tasks",
                       "set_host_points: called from one of the runner's own host tasks"]
 
 
-def test_a_real_interrupt_during_a_run_leaves_the_engine_usable():
-    """Ctrl-C sets a flag the interpreter turns into a KeyboardInterrupt at its next check, which is after the call
-    it arrives in returns. One arriving in the claim, and one arriving in the run itself, must each leave the engine
-    claimable, so no interrupt leaves later runs refused or blocked."""
-    import signal
-    import threading
-
+def test_a_run_reports_the_tokens_it_took():
+    """The run takes the ring's tokens while it still owns the runner, so a drain() afterwards finds none left and no
+    other caller can take them first."""
     eng = Engine(_program(_base_buffers(1000), [_tick()]))
-    outer = signal.signal(signal.SIGINT, signal.default_int_handler)  # a detached or nohup'd run ignores SIGINT
-
-    try:
-        for name in ("_claim", "_run"):
-            inner = getattr(eng, name, None) or getattr(Engine, name).__get__(eng)
-
-            def interrupt_after(*args, _inner=inner, **kw):
-                out = _inner(*args, **kw)
-                signal.raise_signal(signal.SIGINT)                    # the interpreter raises it at its next check
-                return out
-
-            setattr(eng, name, interrupt_after)
-            try:
-                with pytest.raises(KeyboardInterrupt):
-                    eng.run(1)
-            finally:
-                delattr(eng, name)
-
-            steps = []
-            after = threading.Thread(target=lambda: steps.append(eng.run(1).steps))
-            after.start()
-            after.join(10.0)
-            assert not after.is_alive(), f"a run after an interrupt in {name} blocked"
-            assert steps == [1], f"a run after an interrupt in {name} failed"
-    finally:
-        signal.signal(signal.SIGINT, outer)
-
-
-def test_an_interrupt_cannot_strand_the_claim():
-    """CPython raises a pending signal after a call returns, at a RESUME and at a backward jump. The claim therefore
-    holds no lock across such a point, because a ``with`` arms its release only after ``__enter__`` returns on Python
-    3.14 and later, and run()'s finally releases the claim without calling anything."""
-    import dis
-
-    WITH = ("BEFORE_WITH", "LOAD_SPECIAL")                            # the context-manager protocol, 3.13 and 3.14
-    for fn in (Engine.run, getattr(Engine, "_claim", None)):
-        if fn is None:
-            continue
-        held = [i.opname for i in dis.get_instructions(fn) if i.opname in WITH]
-        assert not held, f"{fn.__name__} holds a context manager across its claim: {held}"
-
-    ins = list(dis.get_instructions(Engine.run))
-    release = [i for i in ins if i.opname in ("CONTAINS_OP", "IS_OP", "DELETE_SUBSCR")]
-    assert release, "run() no longer releases the claim by subscript"
-    lo, hi = min(i.offset for i in release), max(i.offset for i in release)
-    inside = [i.opname for i in ins if lo <= i.offset <= hi]
-    assert not [n for n in inside if n.startswith("CALL") or n in ("RESUME", "JUMP_BACKWARD") or n in WITH], inside
+    st = eng.runner.run(4, 8, 3, False, 0)                                # the pump's own stats, not Engine's report
+    assert list(st.tokens) == list(range(4))
+    assert eng.runner.drain() == []                                       # the run left none behind to be taken later
+    assert eng.run(2).tokens == [4, 5]
 
 
 def test_plain_runs_between_host_step_runs_keep_the_step_count():

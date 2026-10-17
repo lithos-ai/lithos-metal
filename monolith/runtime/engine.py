@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Union
 
 from . import _native as nt
 from .program import Program
-
-_RUNNING = "running"                                     # the key Engine._run_owner keeps a run's token under
 
 
 @dataclass
@@ -61,7 +58,6 @@ class Engine:
         ``fn(step, point)``. ``host_timeout_ms``: the longest a run waits for the GPU to reach a host point or finish a
         command buffer."""
         self.program = program
-        self._run_owner: Dict[str, tuple] = {}               # the token of the run() in progress, its results included
         self.fast_math = fast_math
         self.dev = device or nt.Device()
         self.buffers: Dict[str, nt.Buffer] = {}
@@ -144,26 +140,9 @@ class Engine:
         queued buffers still complete, so a few more steps may run). A failed run raises RuntimeError with the run's
         StepReport, its tokens included, as ``report``; the exception a Python task raised is its cause, except that a
         task's KeyboardInterrupt or SystemExit is raised as it was."""
-        token = (threading.get_ident(), object())
-        try:
-            self._claim(token)
-            return self._run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)
-        finally:
-            if _RUNNING in self._run_owner and self._run_owner[_RUNNING] is token:   # subscripts, no call: an
-                del self._run_owner[_RUNNING]                                        # interrupt lands at neither
-
-    def _claim(self, token: tuple) -> None:
-        """Claims the engine for one run(); a second run() fails at once. The claim is one dict.setdefault, which
-        tests and takes the claim in a single call, and run() makes it inside its try: an interrupt lands only after
-        a call returns, so a claim the call took is released by run()'s finally."""
-        owner = self._run_owner.setdefault(_RUNNING, token)
-        if owner is not token:
-            raise RuntimeError("Engine.run: called from one of the engine's own host tasks" if owner[0] == token[0]
-                               else "Engine.run: already running on another thread")
-
-    def _run(self, max_steps: int, steps_per_cb: int, in_flight: int, reencode: bool, max_tokens: int) -> StepReport:
-        st = self.runner.run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)
-        report = StepReport(st.steps_submitted, st.command_buffers, st.gpu_ms, st.wall_ms, st.host_busy_ms, st.done, self.runner.drain(),
+        tasks = self.runner.host_tasks()                     # read before the run: a reconfiguration cannot shift the
+        st = self.runner.run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)   # index of the failing task
+        report = StepReport(st.steps_submitted, st.command_buffers, st.gpu_ms, st.wall_ms, st.host_busy_ms, st.done, list(st.tokens),
                             st.encode_ms, st.commit_ms, st.wait_ms, list(st.handoff_gaps_ms))
         code = int(self.state()["error"]) if st.done or st.steps_submitted == 0 else 0
         message = st.error or {3: "Megakernel: bounded worker barrier timed out",
@@ -171,8 +150,8 @@ class Engine:
         if not message:
             return report
         cause = None
-        if st.failed_task >= 0:                               # the failing task's own: an older one left elsewhere stays out
-            task = self.runner.host_tasks()[st.failed_task]
+        if 0 <= st.failed_task < len(tasks):                  # the failing task's own: an older one left elsewhere stays out
+            task = tasks[st.failed_task]
             cause = task.take_exception() if isinstance(task, nt.CallableTask) else None
         if cause is not None and not isinstance(cause, Exception):
             raise cause                                       # KeyboardInterrupt, SystemExit

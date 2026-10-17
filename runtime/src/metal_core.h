@@ -167,6 +167,8 @@ struct RunnerStats {
   int32_t failed_task = -1;   // the host point whose task failed the run (-1: none did)
   std::vector<double> handoff_gaps_ms;   // per command buffer committed once a host point's task returned: its GPU start
                                          // minus the GPU end of the one before it, the GPU's idle time at that handoff
+  std::vector<int32_t> tokens;           // the tokens the ring still held when the run ended, taken while the run still
+                                         // owned the runner: a run on another thread cannot take them first
 };
 
 class Runner {

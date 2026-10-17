@@ -610,3 +610,10 @@ Both acceptance runs pin it off, and with every expert resident no swap would ha
    available memory decides the RAM tier and when serving stops a request. Measure what macOS and other processes
    take at the first load and while serving: above 7,410,173,047 bytes the largest session's RAM tier is 0, and above
    8,926,534,395 bytes (8.31 GiB) its requests stop with "RAM low".
+5. **The GPU never waits on the host.** Basalt's decode window parks a one-thread kernel on a mapped host flag
+   (`wait_flag_ge_kernel`, `src/kernels/cuda/verify_kernels.cu:919-922`) while the host serves the layer's CPU expert
+   misses (`src/core/verify.cpp:2541-2613`). A running Metal dispatch has no documented view of CPU writes, and on the
+   M3 Max the GPU watchdog kills a command buffer that waits on an event for 5 s, while 4.5 s survives
+   (`probes/p16_host_handoff`) [M]. The port runs that work at host points: the pass before each handoff signals a
+   shared event, the host serves the misses, and the host then commits the command buffer that continues the layer.
+   Each handoff idles the GPU for a median of 136 to 137 µs as built, against 0.5 µs at a plain pass boundary [M].

@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,10 @@ from tools.ci import mac_gpu
 
 ROOT = Path(monolith.__file__).resolve().parents[1]     # the checkout whose runtime this process imported
 CASES = "tests/runtime/shader_validation_cases.py"
+# How each out-of-bounds case fails: the runtime raises the report where the command buffer completes, or
+# tests/conftest.py fails the phase whose report nothing raised (caught, skipped, raised on a thread).
+REASONS = {"queue": "RuntimeError", "engine": "RuntimeError", "host_steps": "RuntimeError", "profile": "RuntimeError",
+           "caught": "Failed", "skipped": "Failed", "thread": "Failed"}
 
 
 def _pytest(args, env):
@@ -28,16 +33,16 @@ def _pytest(args, env):
 @pytest.mark.parametrize("args,to_stderr", [((), True), (("-s",), True), ((), False)],
                          ids=["captured", "no-capture", "report-in-unified-log"])
 def test_validation_report_fails_the_test(args, to_stderr):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("MTL_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("MTL_") and k != "PYTEST_ADDOPTS"}   # its summary line
     env["MTL_SHADER_VALIDATION"] = "1"
+    env["COLUMNS"] = "1000"                                 # the short summary keeps each failure's exception type
     if to_stderr:
         env["MTL_SHADER_VALIDATION_REPORT_TO_STDERR"] = "1"
     p = _pytest(args, env)
     out = p.stdout + p.stderr
-    assert p.returncode == 1 and re.search(r"\b6 failed, 7 passed, (\d+ warnings?, )?1 error\b", out), out   # the thread's warning
-    failed = re.findall(r"^FAILED \S+::test_store\[(\w+)-(\w+)\]", out, re.M)
-    paths = ("caught", "engine", "profile", "queue", "skipped", "thread")
-    assert sorted(failed) == [(path, "out_of_bounds") for path in paths], out
+    assert p.returncode == 1 and re.search(r"\b7 failed, 8 passed, (\d+ warnings?, )?1 error\b", out), out   # the thread's warning
+    reasons = dict(re.findall(r"^FAILED \S+::test_store\[(\w+)-out_of_bounds\] - (\w+)", out, re.M))
+    assert reasons == REASONS, out
     assert re.findall(r"^ERROR \S+::(\w+)", out, re.M) == ["test_outside_the_test_body"], out
     assert out.count("shader validation: Invalid store") >= 4, out
     assert out.count("in this call phase that nothing raised") >= 3, out     # caught, skipped, thread: tests/conftest.py
@@ -48,5 +53,8 @@ def test_ci_lane_fails_the_tier(tmp_path):
     junit = tmp_path / "runtime.xml"
     p = _pytest(["-rs", f"--junitxml={junit}"], mac_gpu.tier_env(tmp_path, {}, shader_validation=True))
     counts = mac_gpu.parse_junit(junit)
-    assert counts["tests"] == 13 and mac_gpu.judge("runtime", counts, p.returncode) == ["6 failed, 1 errors"], p.stdout
+    assert counts["tests"] == 15 and mac_gpu.judge("runtime", counts, p.returncode) == ["7 failed, 1 errors"], p.stdout
     assert junit.read_text().count("shader validation: Invalid store") >= 4
+    reasons = {re.search(r"\[(\w+)-out_of_bounds\]", case.get("name")).group(1): failure.get("message").split(":")[0]
+               for case in ET.parse(junit).iter("testcase") if (failure := case.find("failure")) is not None}
+    assert reasons == REASONS, junit.read_text()

@@ -1,0 +1,21 @@
+# chip: Apple M3 Max   gpu-cores: 40   ram: 48 GB
+# os: macOS 27.0.1 (26A434)   date: 2026-10-16T16:22:42Z   on-battery: 0
+
+################ p16_host_handoff ################
+gpu cores: 40
+1. visibility over 1000 steps, 2 in flight: GPU->CPU misses 0, CPU->GPU misses 0, host timeouts 0
+2. round 1, plain pass boundary (fence only)          : GPU gap end of pass A -> start of pass B: min 0.4  p10 0.4  median 0.5  p90 0.5  max 0.8 us
+2. round 1, host round trip, spinning host            : GPU gap end of pass A -> start of pass B: min 53.6  p10 64.2  median 81.2  p90 160.7  max 349.6 us
+2. round 1, host round trip, waitUntilSignaledValue   : GPU gap end of pass A -> start of pass B: min 68.8  p10 83.0  median 97.5  p90 159.4  max 1810.5 us
+2. round 2, plain pass boundary (fence only)          : GPU gap end of pass A -> start of pass B: min 0.4  p10 0.4  median 0.5  p90 0.5  max 0.8 us
+2. round 2, host round trip, spinning host            : GPU gap end of pass A -> start of pass B: min 54.0  p10 61.7  median 79.1  p90 126.1  max 360.9 us
+2. round 2, host round trip, waitUntilSignaledValue   : GPU gap end of pass A -> start of pass B: min 91.0  p10 111.3  median 146.0  p90 1498.3  max 14012.2 us
+3. parked    2 s after a pass: publish seen yes; status while parked 2; finished 0.20 ms after the host signal; error: none; other queue: 38 command buffers completed (0 errors), worst latency 0.73 ms
+3. parked    3 s after a pass: publish seen yes; status while parked 2; finished 0.23 ms after the host signal; error: none; other queue: 57 command buffers completed (0 errors), worst latency 1.10 ms
+3. parked    4 s after a pass: publish seen yes; status while parked 2; finished 0.25 ms after the host signal; error: none; other queue: 75 command buffers completed (0 errors), worst latency 3.89 ms
+3. parked    5 s after a pass: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); other queue: 93 command buffers completed (0 errors), worst latency 8.30 ms
+3. parked    6 s after a pass: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); other queue: 112 command buffers completed (0 errors), worst latency 3.15 ms
+3. parked    8 s after a pass: publish seen NO; status while parked 5; finished 0.01 ms after the host signal; error: Ignored (for causing prior/excessive GPU errors) (00000004:kIOGPUCommandBufferCallbackErrorSubmissionsIgnored); other queue: 148 command buffers completed (0 errors), worst latency 11.71 ms
+3. parked   10 s after a pass: publish seen NO; status while parked 5; finished 0.01 ms after the host signal; error: Ignored (for causing prior/excessive GPU errors) (00000004:kIOGPUCommandBufferCallbackErrorSubmissionsIgnored); other queue: 184 command buffers completed (0 errors), worst latency 13.49 ms
+4. parked    3 s at the start: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Ignored (for causing prior/excessive GPU errors) (00000004:kIOGPUCommandBufferCallbackErrorSubmissionsIgnored); other queue: 56 command buffers completed (0 errors), worst latency 3.30 ms
+4. parked   10 s at the start: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Ignored (for causing prior/excessive GPU errors) (00000004:kIOGPUCommandBufferCallbackErrorSubmissionsIgnored); other queue: 186 command buffers completed (0 errors), worst latency 8.10 ms

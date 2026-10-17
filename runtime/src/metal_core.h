@@ -67,6 +67,7 @@ class Pipeline {
 
 struct BufferBinding { uint32_t index; const Buffer* buffer; uint64_t offset; };
 struct BytesBinding { uint32_t index; std::vector<uint8_t> bytes; };
+struct BufferUse { const Buffer* buffer; bool write; };
 
 struct Dispatch {
   const Pipeline* pipeline = nullptr;
@@ -76,8 +77,8 @@ struct Dispatch {
   uint32_t grid[3] = {1, 1, 1};        // threadgroups
   uint32_t threadgroup[3] = {1, 1, 1}; // threads per threadgroup
   bool barrier_before = false;         // this dispatch waits for every dispatch before it (ICBs, concurrent encoders)
-  std::vector<const Buffer*> uses;     // buffers the kernel reaches only through GPU addresses: Queue.run and
-                                       // Queue.profile make them resident for its dispatch (useResource, read)
+  std::vector<BufferUse> uses;         // buffers the kernel reaches only through GPU addresses: Queue.run and
+                                       // Queue.profile make them resident for its dispatch (useResource)
 };
 
 // `error`: the command buffer's error (empty = clean). A Metal shader-validation report leaves the command buffer
@@ -125,6 +126,33 @@ class Icb {
   std::shared_ptr<IcbImpl> impl;
 };
 
+// Host steps: a step pauses for CPU work between two of its GPU passes. A running dispatch has no documented view of
+// CPU writes, and the GPU watchdog kills a command buffer parked at an event wait for 5 s (probes/p16_host_handoff:
+// 4.5 s survives), so the GPU never waits for the host: the pass that ends at a point's publish boundary signals an
+// MTLSharedEvent, the host waits for the signal and runs the point's task, and only then commits the command buffer
+// that starts at the point's wait boundary. A slow task idles the GPU; it cannot trip the watchdog.
+struct HostCall {
+  uint64_t step;        // the runner's absolute step index (it counts every step the runner has begun)
+  uint32_t point;       // the host point's index in the program
+  void* step_state;     // StepState. A task that reads it declares reads=["step_state"] on its point, so that no op
+                        // running beside the task writes it (Program.check_host_points)
+};
+
+class HostTask {
+ public:
+  virtual ~HostTask() = default;
+  // Runs on the pump thread once the GPU completed the ops before the point's publish boundary; the ops from its wait
+  // boundary on are committed after it returns. Returns false with `error` set to stop the run. A task bounds its own
+  // duration (its I/O carries timeouts): the runner cannot interrupt it.
+  virtual bool run(const HostCall& call, std::string& error) = 0;
+};
+
+struct HostPoint {
+  uint32_t publish = 0;   // boundary 0..n: the task starts once ops [0, publish) of the step completed (0: the previous step)
+  uint32_t wait = 0;      // boundary publish..n: ops [wait, n) of the step need the task (n: the next step needs it)
+  std::shared_ptr<HostTask> task;
+};
+
 struct RunnerStats {
   uint64_t steps_submitted = 0;
   uint64_t command_buffers = 0;
@@ -136,6 +164,9 @@ struct RunnerStats {
   double wait_ms = 0;         // host wall time waiting for completion (overlaps GPU time)
   bool done = false;          // StepState.done was observed
   std::string error;          // the first failed command buffer's error and validation reports; stops the pump (Engine.run raises it)
+  int32_t failed_task = -1;   // the host point whose task failed the run (-1: none did)
+  std::vector<double> handoff_gaps_ms;   // per command buffer committed once a host point's task returned: its GPU start
+                                         // minus the GPU end of the one before it, the GPU's idle time at that handoff
 };
 
 class Runner {
@@ -154,7 +185,20 @@ class Runner {
   // same ops) instead of ICB replay. Blocks until done / max_steps; tokens are collected as buffers complete.
   // `max_tokens` > 0 stops submitting once that many tokens have been drained during this call (a speculative
   // program commits several tokens per step, so a step count over-runs); the buffers already queued still complete.
+  // With host points the command buffers are cut at the steps' boundaries and at the points' wait boundaries instead,
+  // so steps_per_cb and in_flight do not apply; a run always submits whole steps. A run drops the tokens an earlier run
+  // left undrained. One run() or set_host_points() at a time: a call while another runs, on another thread or from
+  // one of the runner's own host tasks, throws.
   RunnerStats run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_flight, bool reencode, uint64_t max_tokens = 0);
+  // Switches run() to host steps. Points are in program order: 0 <= publish <= wait <= op count, publish boundaries
+  // never decrease. `error_offset`: StepState.error, set to 4 when a host step fails. `timeout_ms`: the longest run()
+  // waits for the GPU to reach a publish boundary or finish a command buffer; `spin_us`: how long such a wait spins
+  // before it blocks.
+  void set_host_points(std::vector<HostPoint> points, uint32_t error_offset, uint32_t timeout_ms, uint32_t spin_us = 20000);
+  // The installed tasks, and their release: the bindings' garbage-collector support (a Python task's callable usually
+  // reaches the object that owns this runner).
+  std::vector<std::shared_ptr<HostTask>> host_tasks() const;
+  void release_host_tasks();
   // Tokens drained so far (in ring order); cleared by the call.
   std::vector<int32_t> drain();
   std::shared_ptr<RunnerImpl> impl;

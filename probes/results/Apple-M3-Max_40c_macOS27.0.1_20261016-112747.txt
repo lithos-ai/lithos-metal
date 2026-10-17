@@ -1,0 +1,21 @@
+# chip: Apple M3 Max   gpu-cores: 40   ram: 48 GB
+# os: macOS 27.0.1 (26A434)   date: 2026-10-16T16:27:47Z   on-battery: 0
+
+################ p16_host_handoff ################
+gpu cores: 40
+1a. in-buffer wait, 1000 steps, 2 in flight: GPU->CPU misses 0, CPU->GPU misses 0, host timeouts 0
+1b. second command buffer, 1000 steps: GPU->CPU misses 0, CPU->GPU misses 0, host timeouts 0
+2. round 1, plain pass boundary (fence only)        : GPU gap end of pass A -> start of pass B: min 0.4  p10 0.4  median 0.5  p90 0.5  max 0.7 us
+2. round 1, in-buffer wait, spinning CPU            : GPU gap end of pass A -> start of pass B: min 57.3  p10 69.2  median 79.8  p90 289.5  max 905.4 us
+2. round 1, in-buffer wait, waitUntilSignaledValue  : GPU gap end of pass A -> start of pass B: min 78.9  p10 87.2  median 127.8  p90 466.8  max 852.1 us
+2. round 1, second buffer committed after the signal: GPU gap end of pass A -> start of pass B: min 66.4  p10 83.9  median 90.3  p90 479.2  max 1290.3 us
+2. round 2, plain pass boundary (fence only)        : GPU gap end of pass A -> start of pass B: min 0.3  p10 0.4  median 0.5  p90 0.5  max 1.5 us
+2. round 2, in-buffer wait, spinning CPU            : GPU gap end of pass A -> start of pass B: min 57.0  p10 71.6  median 79.5  p90 397.3  max 1006.3 us
+2. round 2, in-buffer wait, waitUntilSignaledValue  : GPU gap end of pass A -> start of pass B: min 87.2  p10 121.7  median 126.8  p90 371.5  max 1008.5 us
+2. round 2, second buffer committed after the signal: GPU gap end of pass A -> start of pass B: min 61.4  p10 82.5  median 86.4  p90 347.3  max 930.4 us
+3. parked  2.0 s after a pass: publish seen yes; status while parked 2; finished 0.25 ms after the host signal; error: none; GPU time 2001 ms; other queue: 37 command buffers completed (0 errors), worst latency 1.72 ms
+3. parked  4.0 s after a pass: publish seen yes; status while parked 2; finished 0.64 ms after the host signal; error: none; GPU time 4009 ms; other queue: 74 command buffers completed (0 errors), worst latency 2.24 ms
+3. parked  4.5 s after a pass: publish seen yes; status while parked 2; finished 0.65 ms after the host signal; error: none; GPU time 4532 ms; other queue: 84 command buffers completed (0 errors), worst latency 2.35 ms
+3. parked  6.0 s after a pass: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); GPU time 0 ms; other queue: 111 command buffers completed (0 errors), worst latency 2.46 ms
+4. parked  4.0 s at the start: publish seen yes; status while parked 2; finished 0.33 ms after the host signal; error: none; GPU time 0 ms; other queue: 75 command buffers completed (0 errors), worst latency 2.94 ms
+4. parked  6.0 s at the start: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); GPU time 0 ms; other queue: 112 command buffers completed (0 errors), worst latency 2.35 ms

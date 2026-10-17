@@ -256,6 +256,26 @@ def moe_combine_params(hidden: int, top_k: int, t_active: int) -> bytes:
     return struct.pack("<IIII", hidden, top_k, t_active, 0)
 
 
+# ---- basalt's q8_1 quantizers and native_mmvq (kernels/common/basalt_*.metal; docs/research/basalt-nvcc/matvec.md) ----
+
+Q8_1_BLOCK_BYTES = 36       # fp16 d, fp16 sum, 32 int8 codes
+Q8_1_THREADS = 256          # basalt's QUANT_THREADS: one thread per value
+
+
+def basalt_q8_1_source() -> str:
+    """The native, SwiGLU and IEEE q8_1 quantizers (``native_quantize_q8_1``, ``native_swiglu_quantize_q8_1``,
+    ``quantize_q8_1``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_q8_1.metal")
+
+
+def basalt_q8_1_params(n_values: int) -> bytes:
+    """``Q81Params`` for ``n_values`` = ncols * n_in values (n_in a multiple of 32); the grid is
+    ceil(n_values / 256) threadgroups of 256 threads."""
+    if n_values <= 0 or n_values % 32:
+        raise ValueError(f"q8_1: the value count must be a positive multiple of 32, got {n_values}")
+    return struct.pack("<IIII", n_values, 0, 0, 0)
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

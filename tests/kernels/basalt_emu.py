@@ -64,3 +64,56 @@ def half_bits(x):
 
 def h2f(bits):
     return np.asarray(bits, np.uint16).view(np.float16).astype(F32)
+
+
+# ---- the q8_1 quantizers (matvec.md sections 1 and 3) -------------------------------------------------------------
+
+RCP127 = np.uint32(0x3C010204).view(F32)      # fl(1/127): ptxas's multiply for the native amax / 127
+
+
+def butterfly(v, op):
+    """basalt's XOR butterfly over the 32 lanes of each row of ``v`` (offsets 16, 8, 4, 2, 1); every lane ends equal."""
+    for o in (16, 8, 4, 2, 1):
+        v = op(v, v[:, np.arange(32) ^ o])
+    return v[:, 0]
+
+
+def q8_1_finite(v):
+    v = np.asarray(v, F32)
+    return np.where(np.abs(v) > F32(65504.0), np.copysign(F32(65504.0), v), v).astype(F32)
+
+
+def q8_1_codes(q, amax):
+    with np.errstate(invalid="ignore"):
+        c = np.where(np.isnan(q), 0, np.clip(q, -127, 127)).astype(np.int8)
+    return np.where((amax == 0)[:, None], np.int8(0), c)
+
+
+def q8_1_pack(d, s, codes):
+    out = np.zeros((len(d), 36), np.uint8)
+    out[:, 0:2] = half_bits(q8_1_finite(d)).view(np.uint8).reshape(-1, 2)
+    out[:, 2:4] = half_bits(q8_1_finite(s)).view(np.uint8).reshape(-1, 2)
+    out[:, 4:] = codes.view(np.uint8)
+    return out.reshape(-1)
+
+
+def q8_1_native(x):
+    """native_quantize_q8_1 as nvcc compiles it, with the correctly rounded reciprocal in place of MUFU.RCP."""
+    v = np.asarray(x, F32).reshape(-1, 32)
+    amax = butterfly(ftz(np.abs(v)), lambda p, q: np.fmax(ftz(p), ftz(q)))
+    s = butterfly(v, add_ftz)
+    d = q8_1_finite(mul_ftz(amax, RCP127))
+    with np.errstate(invalid="ignore"):
+        q = roundf(mul_ftz(v, rcp_ftz(d)[:, None]))
+    return q8_1_pack(d, s, q8_1_codes(q, amax))
+
+
+def q8_1_ieee(x):
+    """quantize_q8_1_kernel (IEEE: correctly rounded divisions, subnormals kept), the host formula numpy computes."""
+    v = np.asarray(x, F32).reshape(-1, 32)
+    amax = np.fmax.reduce(np.abs(v), axis=1)                  # fmaxf drops a NaN operand
+    s = butterfly(v, np.add)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
+        d = q8_1_finite(amax / F32(127.0))
+        q = roundf(v / d[:, None])
+    return q8_1_pack(d, s, q8_1_codes(q, amax))

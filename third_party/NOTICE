@@ -87,6 +87,8 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `ggml/src/ggml-cuda/{quantize.cu,vecdotq.cuh,mmvq.cu,common.cuh}` and `ggml/src/ggml-common.h` (MIT): the warp sum
   and max butterflies, the two-16-bit-load word read and the `__dp4a`, `__byte_perm` and `__vsubss4` semantics.
   License: `third_party/GGML-LICENSE`.
+- `kernels/common/basalt_q8_1.metal` — through basalt's `native_mmvq.cu` and `iq_kernels.cu` (below), which adapt
+  `ggml/src/ggml-cuda/quantize.cu` (MIT): the q8_1 block and its quantization rule. License: `third_party/GGML-LICENSE`.
 
 ## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
 
@@ -100,6 +102,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   and `include/basalt/kernels/q8_1_finite.hpp` (MIT): `warp_sum`, `warp_max`, `load_int_b2` and the `DP4A` helper,
   with the flush-to-zero and reciprocal helpers that write out the arithmetic nvcc compiles for them
   (`docs/research/basalt-nvcc/matvec.md`). License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_q8_1.metal` — adapted from `src/kernels/cuda/native_mmvq.cu:146-177` (the native and SwiGLU
+  quantizers), `src/kernels/cuda/iq_kernels.cu:1880-1900` (the IEEE quantizer) and `include/basalt/kernels/q8_1_finite.hpp`
+  (MIT), written in the rounding sequence nvcc compiles for them. License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

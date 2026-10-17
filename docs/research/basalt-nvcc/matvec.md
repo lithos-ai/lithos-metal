@@ -154,11 +154,11 @@ Built with nvcc's defaults. `q8_1_store` runs the two butterflies in one loop (`
 Nothing flushes here. Metal's add and division do, and its `fmax` compares a subnormal as zero (Notation), so a
 literal port would differ from CUDA on subnormal values: in a block of subnormals every comparison of the amax
 butterfly is a tie and `fmax` returns its second operand, not the larger; a subnormal activation would drop out of the
-block sum; and a subnormal d would become 0. The port emulates IEEE behaviour where a subnormal can occur, from integer operations on the bits: amax as the
-largest bit pattern of the absolute values, an add that rescales two small operands by 2^64 and rebuilds a subnormal
-sum from its integer significand, d = amax / 127 rounded on the subnormal grid with integer division when it falls
-below 2^-126, and the codes' quotient taken on rescaled operands. Above the subnormal range each of these is the
-plain IEEE operation, so the emulation changes no result on normal data.
+block sum; and a subnormal d would become 0. The port emulates IEEE behaviour where a subnormal can occur, from
+integer operations on the bits: amax as the largest bit pattern of the absolute values, an add that rescales two small
+operands by 2^64 and rebuilds a subnormal sum from its integer significand, d = amax / 127 rounded on the subnormal
+grid with integer division when it falls below 2^-126, and the codes' quotient taken on rescaled operands. Above the
+subnormal range each of these is the plain IEEE operation, so the emulation changes no result on normal data.
 
 ## 4. The reduction every `native_mmvq` kernel shares
 

@@ -13,6 +13,8 @@ using namespace monolith;
 NB_MODULE(_native, m) {
   m.doc() = "Metal runtime core (v0): device, buffers, runtime-compiled libraries, pipelines, timed dispatches";
 
+  m.def("validation_reports", &validation_reports, "shader-validation reports read from completed command buffers so far");
+
   nb::class_<DeviceInfo>(m, "DeviceInfo")
       .def_ro("name", &DeviceInfo::name).def_ro("gpu_cores", &DeviceInfo::gpu_cores)
       .def_ro("apple_family", &DeviceInfo::apple_family).def_ro("max_buffer_length", &DeviceInfo::max_buffer_length)

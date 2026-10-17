@@ -184,7 +184,9 @@ class Harness:
             ch = _pick_chunk(ctx, c.kv, c.rep, c.rb, self.n_sg, c.n_chunks_max, c.chunk)
             n_blocks = c.kv * (-(-ctx // ch)) * (-(-(c.rep * t_act) // c.rb))
             cursors = nt.Buffer(self.dev, max(4 * self.n_sg, 16)); cursors.fill(0)
-            self.hits = nt.Buffer(self.dev, max(4 * n_blocks, 16)); self.hits.fill(0)
+            # a counter for every block any chunk rule can make (a chunk holds at least one key): a count that drifts
+            # from the kernel's fails the read-back instead of storing past the buffer
+            self.hits = nt.Buffer(self.dev, 4 * c.kv * c.ctx_max * -(-c.rows_max // c.rb)); self.hits.fill(0)
             self.n_blocks = n_blocks
             d0 = nt.Dispatch().pipeline(self.p_reset).buffer(0, cursors).bytes(1, kernels.steal_reset_params(self.n_sg)).grid(-(-self.n_sg // 64)).threadgroup(64).barrier()
             d1.buffer(10, cursors).buffer(12, self.hits)
@@ -194,7 +196,7 @@ class Harness:
         return bf16_to_f32(np.frombuffer(out.read(0, t * c.heads * c.d * 2), dtype=np.uint16).reshape(t, c.heads * c.d))
 
     def block_hits(self):
-        return np.frombuffer(self.hits.read(0, 4 * self.n_blocks), dtype=np.uint32)
+        return np.frombuffer(self.hits.read(0, self.hits.nbytes), dtype=np.uint32)
 
 
 # ---- the kernel's contract in numpy -----------------------------------------------------------------------------
@@ -461,8 +463,8 @@ def test_steal_variant_is_exactly_once_and_identical(dev):
     for name, disp in (("nominal", None), ("missing a third", plain.n_sg * 2 // 3), ("surplus", plain.n_sg * 2)):
         steal.set_caches(k, v)
         out = steal.step(proj, position, dispatch_sg=disp)
-        hits = steal.block_hits()
-        assert np.all(hits == 1), (name, steal.n_blocks, hits.min(), hits.max())   # every block's counter
+        hits, n = steal.block_hits(), steal.n_blocks                    # each block's counter is 1, every counter past them 0
+        assert n <= hits.size and np.all(hits[:n] == 1) and not hits[n:].any(), (name, n, hits[:n].min(), hits[:n].max(), np.count_nonzero(hits[n:]))
         assert np.array_equal(out, ref), name
         kk, vv = steal.caches()
         rk, rv = plain.caches()

@@ -68,9 +68,9 @@ def experts(blobs, grp_off, grp_start, ent_tok, ent_dst, xq, n_embd, n_ff, n_out
     """basalt's ``native_expert_grouped`` for Q2_0 / Q2_0: the gate/up, SwiGLU + q8_1 and down dispatches in order, in
     one command buffer. ``blobs``: the expert blobs' bytes, or a list of them (one buffer each); group g's blob starts
     ``grp_off[g]`` bytes into buffer ``grp_buf[g]`` (default 0), and the kernels get basalt's grp_ptr, that buffer's GPU
-    address plus the offset; ``grp_start`` (n_groups + 1 entries), ``ent_tok``, ``ent_dst`` and ``xq`` (q8_1 rows) as basalt's. The
-    output (``n_out_rows`` rows of n_embd floats) starts as ``out_fill`` bytes, the scratch as ``scratch_fill``.
-    Returns the gate, up, q8_1 and output buffers' contents."""
+    address plus the offset; ``grp_start`` (n_groups + 1 entries), ``ent_tok``, ``ent_dst`` and ``xq`` (q8_1 rows) as
+    basalt's. The output (``n_out_rows`` rows of n_embd floats) starts as ``out_fill`` bytes, the scratch as
+    ``scratch_fill``. Returns the gate, up, q8_1 and output buffers' contents."""
     n_groups = len(grp_off) if n_groups is None else n_groups
     cap_groups = max(n_groups, 1) if cap_groups is None else cap_groups
     cap_entries = max(len(ent_tok), 1) if cap_entries is None else cap_entries

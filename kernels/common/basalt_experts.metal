@@ -10,9 +10,10 @@
 //
 // The plan (basalt's, read on the device): n_groups[0] groups; group g's expert blob starts at grp_ptr[g] (basalt's
 // grp_ptr: a table of 64-bit GPU addresses, one a group, each 2-byte aligned and inside a resident buffer, so the
-// blobs may sit in several buffers) and owns the entries [grp_start[g], grp_start[g + 1]); entry e reads token ent_tok[e]'s q8_1 row (n_embd / 32 blocks) and writes row
-// ent_dst[e] of `out` (n_embd floats). A blob is basalt's native_expert_layout(42, 42, n_embd, n_ff): n_ff gate rows,
-// n_ff up rows (n_embd / 64 Q2_0 blocks each, up at up_off) and n_embd down rows (n_ff / 64 blocks each, at down_off).
+// blobs may sit in several buffers) and owns the entries [grp_start[g], grp_start[g + 1]); entry e reads token
+// ent_tok[e]'s q8_1 row (n_embd / 32 blocks) and writes row ent_dst[e] of `out` (n_embd floats). A blob is basalt's
+// native_expert_layout(42, 42, n_embd, n_ff): n_ff gate rows, n_ff up rows (n_embd / 64 Q2_0 blocks each, up at
+// up_off) and n_embd down rows (n_ff / 64 blocks each, at down_off).
 // Scratch, basalt's: gate and up (entry e's n_ff floats at e * n_ff) and hq (entry e's n_ff / 32 q8_1 blocks).
 //
 // Threadgroup row y takes groups y, y + gy, ... (gy = threadgroups in y; basalt's group stride: the result does not

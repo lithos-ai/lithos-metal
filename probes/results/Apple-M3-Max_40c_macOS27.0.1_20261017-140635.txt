@@ -1,0 +1,26 @@
+# chip: Apple M3 Max   gpu-cores: 40   ram: 48 GB
+# os: macOS 27.0.1 (26A434)   date: 2026-10-17T19:06:35Z   on-battery: 0
+
+################ p16_host_handoff ################
+gpu cores: 40
+1a. in-buffer wait, 1000 steps, 2 in flight: GPU->CPU misses 0, CPU->GPU misses 0, host timeouts 0
+1b. second command buffer, 1000 steps: GPU->CPU misses 0, CPU->GPU misses 0, host timeouts 0
+2. round 1, plain pass boundary (fence only)        : GPU gap end of pass A -> start of pass B: min 0.3  p10 0.4  median 0.5  p90 0.5  max 0.8 us
+2. round 1, in-buffer wait, spinning CPU            : GPU gap end of pass A -> start of pass B: min 44.3  p10 75.8  median 80.0  p90 241.2  max 988.5 us
+2. round 1, in-buffer wait, waitUntilSignaledValue  : GPU gap end of pass A -> start of pass B: min 66.9  p10 88.5  median 127.5  p90 365.4  max 1069.3 us
+2. round 1, second buffer encoded before the signal : GPU gap end of pass A -> start of pass B: min 70.9  p10 84.2  median 89.3  p90 424.6  max 1224.5 us
+2. round 1, second buffer encoded after the signal  : GPU gap end of pass A -> start of pass B: min 82.6  p10 87.0  median 147.4  p90 919.8  max 7069.1 us
+2. round 2, plain pass boundary (fence only)        : GPU gap end of pass A -> start of pass B: min 0.3  p10 0.4  median 0.5  p90 0.5  max 428.2 us
+2. round 2, in-buffer wait, spinning CPU            : GPU gap end of pass A -> start of pass B: min 60.5  p10 79.2  median 125.8  p90 630.3  max 3548.0 us
+2. round 2, in-buffer wait, waitUntilSignaledValue  : GPU gap end of pass A -> start of pass B: min 87.5  p10 122.4  median 139.0  p90 464.6  max 5152.5 us
+2. round 2, second buffer encoded before the signal : GPU gap end of pass A -> start of pass B: min 59.1  p10 84.1  median 91.8  p90 435.4  max 1283.7 us
+2. round 2, second buffer encoded after the signal  : GPU gap end of pass A -> start of pass B: min 77.9  p10 85.8  median 93.9  p90 465.0  max 5624.9 us
+5. 2000 command buffers ending in a signal: the signal visible after the status reads Completed: min 0.00  median 0.04  p99 0.37  max 2.42 us; not within 100 ms: 0
+3. parked  2.0 s after a pass: publish seen yes; status while parked 2; finished 0.29 ms after the host signal; error: none; GPU time 2008 ms; other queue: 37 command buffers completed (0 errors), worst latency 1.43 ms
+3. parked  4.0 s after a pass: publish seen yes; status while parked 2; finished 0.57 ms after the host signal; error: none; GPU time 4032 ms; other queue: 73 command buffers completed (0 errors), worst latency 11.52 ms
+3. parked  4.5 s after a pass: publish seen yes; status while parked 2; finished 0.72 ms after the host signal; error: none; GPU time 4514 ms; other queue: 84 command buffers completed (0 errors), worst latency 4.99 ms
+3. parked  5.0 s after a pass: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); GPU time 0 ms; other queue: 93 command buffers completed (0 errors), worst latency 12.46 ms
+3. parked  5.5 s after a pass: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); GPU time 0 ms; other queue: 101 command buffers completed (0 errors), worst latency 20.36 ms
+3. parked  6.0 s after a pass: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); GPU time 0 ms; other queue: 111 command buffers completed (0 errors), worst latency 6.50 ms
+4. parked  4.0 s at the start: publish seen yes; status while parked 2; finished 1.51 ms after the host signal; error: none; GPU time 0 ms; other queue: 74 command buffers completed (0 errors), worst latency 3.63 ms
+4. parked  6.0 s at the start: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); GPU time 0 ms; other queue: 110 command buffers completed (0 errors), worst latency 5.09 ms

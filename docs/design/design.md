@@ -65,6 +65,7 @@ for the extension interface.
 | `KernelSpec` | Metal source, entry point, specialization macros, and language version |
 | `BufferSpec` | Size, initial data or mapped file range, and lifetime role |
 | `OpSpec` | Kernel, bindings, launch geometry, threadgroup storage, and dependency boundary |
+| `HostPoint` | Host task inside a step: the boundary after which it starts, the boundary from which later operations wait for it, and the buffers it reads and writes |
 | `StepStateLayout` | Shared binary layout for GPU-resident generation control |
 | Backend identity | Backend ID and configuration digest associated with the compiled program |
 | Context capacity | Bound enforced before a step accesses persistent caches |
@@ -72,6 +73,13 @@ for the extension interface.
 The runtime replays a static operation sequence. Kernels use active-row counts and stop state to select
 work within their compiled bounds. A later replay can return without doing work after the sequence has
 finished. The host submits bounded batches of work and reads output tokens.
+
+A step can pause at a host point for CPU work. The pass before the point signals a shared event; the host
+waits for the signal, runs the point's task, and then commits the command buffer that continues the step.
+A committed command buffer therefore never waits on the host, so a slow task idles the GPU and cannot trip
+the watchdog. A step's tasks run only when the program was live at the start of the step. A failed task, a
+command-buffer error, or a timeout ends the run after every committed command buffer finishes, and sets
+StepState error 4.
 
 An ICB barrier orders dependent dispatches. The compiler may omit a boundary only after establishing that
 the relevant operations can run independently. Inside a megakernel, threadgroup barriers protect local
@@ -91,6 +99,9 @@ Buffers have distinct ownership:
 - **Scratch:** temporary activations and partial results; storage may be reused after the last consumer.
 - **Parameters:** records owned by a particular program, including its shapes and binding offsets.
 - **Output ring:** tokens published by GPU control operations and consumed by the host.
+- **Host buffers:** allocated by the session and bound by name (the expert cache, its slot table, staging rows);
+  they stay resident for every program that names them, because kernels can reach them through GPU addresses held
+  in other buffers.
 
 Programs within a session can share persistent buffers by name. Parameter records are program-specific.
 Scratch allocation must never alias live persistent state, acceptance logs, or output buffers.

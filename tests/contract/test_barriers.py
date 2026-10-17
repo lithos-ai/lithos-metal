@@ -58,6 +58,18 @@ def test_pass_on_a_hand_built_program():
     prog2 = Program(kernels={"k": KernelSpec("", "k")}, buffers={}, ops=[_op("g", ["x", "o1"], writes=[1]), _op("h", ["x2", "x"], writes=[1])])
     place_barriers(prog2)
     assert prog2.ops[0].barrier_before and prog2.ops[1].barrier_before
+
+
+def test_access_through_gpu_addresses_orders_like_a_binding():
+    """An op that writes a buffer through a GPU address (meta indirect_writes) makes the buffer's reader wait, and an op
+    that reads one through a GPU address (indirect_reads) waits for the group's writer of it."""
+    ops = [_op("a", ["t", "o1"], writes=[1]), _op("b", ["h", "o2"], writes=[1]),
+           _op("c", ["x", "h2"], writes=[1]), _op("d", ["t2", "o3"], writes=[1])]
+    ops[0].meta["indirect_writes"] = ["h"]
+    ops[3].meta["indirect_reads"] = ["h2"]
+    prog = Program(kernels={"k": KernelSpec("", "k")}, buffers={}, ops=ops)
+    place_barriers(prog)
+    assert [o.barrier_before for o in prog.ops] == [True, True, False, True]
     # states updated in place: the same buffer read and written by consecutive ops
     prog3 = Program(kernels={"k": KernelSpec("", "k")}, buffers={}, ops=[_op("g", ["s"], writes=[0]), _op("h", ["s", "o"], writes=[1])])
     place_barriers(prog3)

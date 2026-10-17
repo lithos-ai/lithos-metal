@@ -1,0 +1,15 @@
+# chip: Apple M3 Max   gpu-cores: 40   ram: 48 GB
+# os: macOS 27.0.1 (26A434)   date: 2026-10-16T16:21:12Z   on-battery: 0
+
+################ p16_host_handoff ################
+gpu cores: 40
+1. visibility over 1000 steps, 2 in flight: GPU->CPU misses 0, CPU->GPU misses 0, host timeouts 0
+2. round 1, plain pass boundary (fence only)          : GPU gap end of pass A -> start of pass B: min 0.4  p10 0.4  median 0.5  p90 0.5  max 0.8 us
+2. round 1, host round trip, spinning host            : GPU gap end of pass A -> start of pass B: min 58.8  p10 72.9  median 83.2  p90 141.5  max 402.1 us
+2. round 1, host round trip, waitUntilSignaledValue   : GPU gap end of pass A -> start of pass B: min 63.6  p10 87.6  median 104.8  p90 140.1  max 713.1 us
+2. round 2, plain pass boundary (fence only)          : GPU gap end of pass A -> start of pass B: min 0.4  p10 0.4  median 0.5  p90 0.5  max 32.8 us
+2. round 2, host round trip, spinning host            : GPU gap end of pass A -> start of pass B: min 45.1  p10 63.2  median 81.4  p90 146.5  max 492.5 us
+2. round 2, host round trip, waitUntilSignaledValue   : GPU gap end of pass A -> start of pass B: min 82.7  p10 104.0  median 125.0  p90 233.7  max 5909.5 us
+3. parked    2 s: publish seen yes; status while parked 2; finished 0.30 ms after the host signal; error: none; other queue: 38 command buffers completed (0 errors), worst latency 0.61 ms
+3. parked   10 s: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); other queue: 187 command buffers completed (0 errors), worst latency 1.95 ms
+3. parked   25 s: publish seen yes; status while parked 5; finished 0.01 ms after the host signal; error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout); other queue: 459 command buffers completed (0 errors), worst latency 18.88 ms

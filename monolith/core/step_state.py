@@ -54,7 +54,7 @@ class StepStateLayout:
             Field("checkpoint_index", DType.U32, doc="GDN/conv checkpoint slot to keep"),
             Field("drafter_ctx_len", DType.U32, doc="positions appended to the drafter's injected-context KV"),
             Field("done", DType.U32, doc="stop condition met; queued steps return at their first instruction"),
-            Field("error", DType.U32, doc="non-zero: 1 token ring overflow, 2 context capacity reached, 3 bounded mixer barrier timeout"),
+            Field("error", DType.U32, doc="non-zero: 1 token ring overflow, 2 context capacity reached, 3 bounded mixer barrier timeout, 4 a host step failed"),
             Field("ring_head", DType.U32, doc="token ring: next slot the GPU writes"),
             Field("ring_tail", DType.U32, doc="token ring: next slot the host reads (host-written)"),
             Field("prefill_left", DType.U32, doc="prompt chunks still to feed after this step; the advance emits a token only at 0"),

@@ -56,13 +56,17 @@ and a bare `:N` is a line of the file named last.
   FP_CONTRACT OFF`, so only an explicit `fma()` fuses.
 - **This GPU flushes its arithmetic, not its comparisons.** Measured on the M3 Max (Apple family 9) in
   `MTLMathModeSafe`, the repository default: `x + y`, `x * y`, `fma` and `x / y` flush subnormal inputs and subnormal
-  results to sign-preserving zero, as MSL section 8.1 permits. `fmax` and `fmin` do not flush: their comparison treats
-  a subnormal as zero, and the chosen operand comes back unflushed, the second one on a tie (`fmax(s, 0)` is +0,
-  `fmax(0, s)` is s, and of two subnormals `fmax` returns the second, even the smaller). `fabs`, moves and loads keep
-  the bits (`tests/kernels/test_basalt_platform.py`). So the hardware does what SASS does at the `.FTZ` adds,
-  multiplies and fmas, but not at the `.FTZ` absolute value and maximum (`abs.ftz` and the amax butterfly's
-  `FMNMX.FTZ`, section 1): the helpers flush explicitly, which makes every site independent of the GPU. At basalt's
-  IEEE sites (no `.ftz`) the arithmetic's flushing is a difference, treated in section 3.
+  results to sign-preserving zero, as MSL section 8.1 permits. `x * y` and `fma` decide on the exact value, before
+  rounding: an exact result in [2^-126 − 2^-150, 2^-126), which rounds to 2^-126, comes back as zero too. `fmax` and
+  `fmin` do not flush: their comparison treats a subnormal as zero, and the chosen operand comes back unflushed, the
+  second one on a tie (`fmax(s, 0)` is +0, `fmax(0, s)` is s, and of two subnormals `fmax` returns the second, even
+  the smaller). `fabs`, moves and loads keep the bits (`tests/kernels/test_basalt_platform.py`). So the hardware does
+  what SASS does at the `.FTZ` adds (an exact sum below 2^-126 needs no rounding), but not at a `.FTZ` multiply or fma
+  whose exact result rounds up to 2^-126 (PTX: the result "rounded to single precision", then a subnormal result
+  flushed), nor at the `.FTZ` absolute value and maximum (`abs.ftz` and the amax butterfly's `FMNMX.FTZ`, section 1):
+  the helpers flush explicitly, and `fma_ftz` (with `mul_ftz` = `fma_ftz(a, b, -0)`) returns ±2^-126 there from the
+  exact value, which makes every site independent of the GPU. At basalt's IEEE sites (no `.ftz`) the arithmetic's
+  flushing is a difference, treated in section 3.
 
 ## Summary
 

@@ -715,13 +715,13 @@ def test_a_task_that_calls_its_own_runner_is_refused():
 
 
 def test_a_run_reports_the_tokens_it_took():
-    """The run takes the ring's tokens while it still owns the runner, so a drain() afterwards finds none left and no
-    other caller can take them first."""
+    """The run reads the ring's tokens while it still owns the runner, so its own stats carry them whatever another
+    thread does next; drain() still hands the same tokens to a caller that takes them that way."""
     eng = Engine(_program(_base_buffers(1000), [_tick()]))
     st = eng.runner.run(4, 8, 3, False, 0)                                # the pump's own stats, not Engine's report
     assert list(st.tokens) == list(range(4))
-    assert eng.runner.drain() == []                                       # the run left none behind to be taken later
-    assert eng.run(2).tokens == [4, 5]
+    assert eng.runner.drain() == list(range(4))                           # the ring's own view, for the callers of it
+    assert eng.run(2).tokens == [4, 5]                                    # the next run starts from an empty list
 
 
 def test_plain_runs_between_host_step_runs_keep_the_step_count():

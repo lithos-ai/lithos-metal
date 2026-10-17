@@ -174,7 +174,7 @@ NB_MODULE(_native, m) {
       .def_ro("gpu_ms", &RunnerStats::gpu_ms).def_ro("wall_ms", &RunnerStats::wall_ms).def_ro("host_busy_ms", &RunnerStats::host_busy_ms)
       .def_ro("encode_ms", &RunnerStats::encode_ms).def_ro("commit_ms", &RunnerStats::commit_ms).def_ro("wait_ms", &RunnerStats::wait_ms)
       .def_ro("done", &RunnerStats::done).def_ro("error", &RunnerStats::error)
-      .def_ro("failed_task", &RunnerStats::failed_task).def_ro("handoff_gaps_ms", &RunnerStats::handoff_gaps_ms)
+      .def_ro("failed_task", &RunnerStats::failed_task).def_ro("failed", &RunnerStats::failed).def_ro("handoff_gaps_ms", &RunnerStats::handoff_gaps_ms)
       .def_ro("tokens", &RunnerStats::tokens);
 
   nb::class_<Runner>(m, "Runner", nb::type_slots(runner_slots))

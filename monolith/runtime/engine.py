@@ -140,8 +140,7 @@ class Engine:
         queued buffers still complete, so a few more steps may run). A failed run raises RuntimeError with the run's
         StepReport, its tokens included, as ``report``; the exception a Python task raised is its cause, except that a
         task's KeyboardInterrupt or SystemExit is raised as it was."""
-        tasks = self.runner.host_tasks()                     # read before the run: a reconfiguration cannot shift the
-        st = self.runner.run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)   # index of the failing task
+        st = self.runner.run(max_steps, steps_per_cb, in_flight, reencode, max_tokens)
         report = StepReport(st.steps_submitted, st.command_buffers, st.gpu_ms, st.wall_ms, st.host_busy_ms, st.done, list(st.tokens),
                             st.encode_ms, st.commit_ms, st.wait_ms, list(st.handoff_gaps_ms))
         code = int(self.state()["error"]) if st.done or st.steps_submitted == 0 else 0
@@ -150,9 +149,9 @@ class Engine:
         if not message:
             return report
         cause = None
-        if 0 <= st.failed_task < len(tasks):                  # the failing task's own: an older one left elsewhere stays out
-            task = tasks[st.failed_task]
-            cause = task.take_exception() if isinstance(task, nt.CallableTask) else None
+        task = st.failed                                      # the failing task itself: an older one left elsewhere stays out
+        if isinstance(task, nt.CallableTask):
+            cause = task.take_exception()
         if cause is not None and not isinstance(cause, Exception):
             raise cause                                       # KeyboardInterrupt, SystemExit
         error = RuntimeError(message)

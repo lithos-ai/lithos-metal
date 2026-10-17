@@ -11,6 +11,7 @@ These documents describe the current architecture, implementation contracts, and
 | [Serving](design/serving.md) | Startup, request execution, protocol adapters, prefix caching, and streaming |
 | [Model adapters](design/models.md) | Checkpoint interpretation, supported model structures, and numerical conventions |
 | [Extension contracts](design/extensions.md) | Interfaces for models, formats, operations, drafters, and chip backends |
+| [Flash-Next port contract](design/flash-next.md) | Numerics, acceptance setup, and 48 GiB memory budget for the Metal 4 port of basalt's Qwen3.8-Flash-Next Q2_0 pack |
 
 For installation and examples, see the [project README](../README.md).
 For development setup and test tiers, see [CONTRIBUTING.md](../CONTRIBUTING.md).

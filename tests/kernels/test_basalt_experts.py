@@ -16,8 +16,10 @@ import numpy as np
 import pytest
 
 from monolith import kernels
+from tests.contract import gguf_reference
 from tests.kernels import basalt_emu as emu
 from tests.kernels import basalt_gpu as gpu
+from tests.kernels.test_basalt_iq_parity import quantize_q2_0
 
 F32 = np.float32
 
@@ -289,3 +291,83 @@ def test_swiglu_q8_1_edges():
     sub = np.count_nonzero((h != 0) & (np.abs(h) < F32(2.0 ** -126)))
     assert sub > 50, sub                                                # ieee_mul's subnormal path ran
     print(f"\nSwiGLU + q8_1 edges: {g.size} values bit for bit, {sub} subnormal products")
+
+
+# ---- float64 references ------------------------------------------------------------------------------------------
+
+def dequant_q8_1(xq, n):
+    """q8_1 rows back to float64: d * code (iq_multi_parity.cpp:100-110)."""
+    b = np.asarray(xq, np.uint8).reshape(-1, 36)
+    return (b[:, :2].copy().view(np.float16).astype(np.float64) * b[:, 4:].view(np.int8)).reshape(-1, n)
+
+
+def test_stages_against_float64():
+    """Each stage of check_grouped's call against a float64 product over the GPU dequantizer's weights (iq_parity
+    checks it against gguf-py; basalt_dequant.metal) and the dequantized q8_1 rows each stage reads: gate and up on the
+    tokens' rows, down on the GPU's q8_1 of the SwiGLU product. iq_multi_parity's check_mmvq bound for these Q2_0 rows
+    (the nearest basalt has for the expert's call arithmetic), quoted: ``if (diff != 0 || !finite || !(rel < 1e-2))
+    {`` (iq_multi_parity.cpp:162), rel = sum |y - ref| / sum |ref| over the stage's outputs (:150-160); diff, the
+    bitwise check against the other kernels, is test_check_grouped's."""
+    c = grouped_case()
+    r = c.run()
+    blk = kernels.Q8_1_BLOCK_BYTES
+    rel = {}
+    for part, n_in, n_out in (("gate", c.n_embd, c.n_ff), ("up", c.n_embd, c.n_ff), ("down", c.n_ff, c.n_embd)):
+        num = den = 0.0
+        finite = True
+        for g in range(len(c.grp_off)):
+            ents = range(c.grp_start[g], c.grp_start[g + 1])
+            if not ents:
+                continue
+            w = gpu.dequant(42, c.blob(ents[0], part), n_in * n_out).reshape(n_out, n_in).astype(np.float64)
+            if part == "down":
+                x = dequant_q8_1(q8_rows(r["hq"], list(ents), n_in), n_in)
+                y = r["out"][c.ent_dst[list(ents)]]
+            else:
+                x = dequant_q8_1(q8_rows(c.xq, c.ent_tok[list(ents)], n_in), n_in)
+                y = r[part][list(ents)]
+            ref = x @ w.T
+            finite = finite and np.isfinite(y).all()
+            num += np.abs(y - ref).sum()
+            den += np.abs(ref).sum()
+        rel[part] = num / (den + 1e-30)
+        # basalt: if (diff != 0 || !finite || !(rel < 1e-2)) {
+        assert finite and rel[part] < 1e-2, (part, rel[part])
+    print("\nstages against float64: " + ", ".join(f"{k} rel {v:.2e}" for k, v in rel.items()))
+    raw = c.blob(0, "gate")[: 64 * c.lay["gu_row"]].reshape(64, -1)
+    assert np.array_equal(gpu.dequant(42, raw, 64 * c.n_embd).reshape(64, -1), gguf_reference.dequantize(42, raw))
+
+
+def test_whole_expert_against_float64():
+    """The contract's reference for native_expert_grouped (docs/design/flash-next.md, the table of kernels without a
+    basalt reference): the whole expert (gate/up, SwiGLU, the q8_1 of the product, down) against a float64 expert on
+    the fp32 activations, built as native_expert_parity.cpp builds it (:46-78, :387-402): 3 tokens of N(0, 1) values,
+    2560 x 640, row r's weights 0.02 (0.5 + (r % 7) / 7) N(0, 1) quantized to Q2_0 (tools/gguf_writer.py's
+    quantize_q2_0; basalt's test calls ggml's quantizer, and has no Q2_0 pair) and dequantized by ggml's
+    dequantize_row_q2_0; h = (float) (g / (1 + exp(-g)) * u) in double; out = D h in double. Criterion, quoted: ``const
+    bool ok = ec < 3e-2 && eg < 3e-2 && std::isfinite(ec) && std::isfinite(eg);`` (native_expert_parity.cpp:368), eg the
+    GPU's relative L1 error (:38-42); ec, the CPU tier's, belongs to the CPU expert's port."""
+    n_embd, n_ff, nt = 2560, 640, 3
+    rng = np.random.default_rng(11)
+
+    def quant(rows, cols):
+        scale = (0.02 * (0.5 + (np.arange(rows) % 7) / 7.0)).astype(F32)[:, None]
+        return quantize_q2_0(scale * rng.standard_normal((rows, cols)).astype(F32))
+
+    blob = np.concatenate([quant(n_ff, n_embd), quant(n_ff, n_embd), quant(n_embd, n_ff)])
+    lay = kernels.basalt_expert_layout(n_embd, n_ff)
+    G, U, D = (gpu.dequant(42, blob[o: o + n], rows * cols).reshape(rows, cols).astype(np.float64)
+               for o, n, rows, cols in ((0, lay["up_off"], n_ff, n_embd), (lay["up_off"], lay["up_off"], n_ff, n_embd),
+                                        (lay["down_off"], n_embd * lay["d_row"], n_embd, n_ff)))
+    x = rng.standard_normal((nt, n_embd)).astype(F32)
+    g, u = x.astype(np.float64) @ G.T, x.astype(np.float64) @ U.T
+    h = (g / (1.0 + np.exp(-g)) * u).astype(F32)
+    ref = (h.astype(np.float64) @ D.T).astype(F32)
+    got = gpu.experts(blob, [0], [0, nt], np.arange(nt), np.arange(nt), gpu.q8_1(x.reshape(-1), "ieee"), n_embd, n_ff,
+                      nt)["out"]
+    eg = np.abs(got.astype(np.float64) - ref).sum() / (np.abs(ref.astype(np.float64)).sum() + 1e-30)
+    print(f"\nwhole expert Q2_0/Q2_0 {n_embd} x {n_ff}, {nt} tokens: gpu rel {eg:.2e}")
+    # basalt: const bool ok = ec < 3e-2 && eg < 3e-2 && std::isfinite(ec) && std::isfinite(eg);
+    assert np.isfinite(eg) and eg < 3e-2 and np.isfinite(got).all(), eg
+    raw = blob[: 64 * lay["gu_row"]].reshape(64, -1)
+    assert np.array_equal(G[:64].astype(F32), gguf_reference.dequantize(42, raw))

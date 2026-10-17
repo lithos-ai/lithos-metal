@@ -256,6 +256,79 @@ def moe_combine_params(hidden: int, top_k: int, t_active: int) -> bytes:
     return struct.pack("<IIII", hidden, top_k, t_active, 0)
 
 
+# ---- basalt's q8_1 quantizers and native_mmvq (kernels/common/basalt_*.metal; docs/research/basalt-nvcc/matvec.md) ----
+
+Q8_1_BLOCK_BYTES = 36       # fp16 d, fp16 sum, 32 int8 codes
+Q8_1_THREADS = 256          # basalt's QUANT_THREADS: one thread per value
+
+
+def basalt_q8_1_source() -> str:
+    """The native, SwiGLU and IEEE q8_1 quantizers (``native_quantize_q8_1``, ``native_swiglu_quantize_q8_1``,
+    ``quantize_q8_1``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_q8_1.metal")
+
+
+def basalt_q8_1_params(n_values: int) -> bytes:
+    """``Q81Params`` for ``n_values`` = ncols * n_in values (n_in a multiple of 32); the grid is
+    ceil(n_values / 256) threadgroups of 256 threads."""
+    if n_values <= 0 or n_values % 32:
+        raise ValueError(f"q8_1: the value count must be a positive multiple of 32, got {n_values}")
+    return struct.pack("<IIII", n_values, 0, 0, 0)
+
+
+# basalt's iteration traits per ggml type (native_mmvq.cu:897-1098): values per block (DIV), threads per block (T),
+# blocks per iteration with four SIMD-groups (BPI)
+MMVQ_TRAITS = {2: (32, 2, 64), 6: (32, 2, 64), 8: (32, 4, 32), 20: (32, 2, 64), 11: (256, 16, 8), 12: (256, 16, 8),
+               13: (256, 16, 8), 14: (256, 32, 4), 23: (256, 8, 16), 42: (64, 2, 64)}
+
+
+def basalt_mmvq_source() -> str:
+    """basalt's ``native_mmvq`` for the ten GGUF types of ``MMVQ_TRAITS`` (``basalt_mmvq``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_mmvq.metal")
+
+
+def basalt_mmvq_macros(type_id: int, n_in: int, ncols: int, *, upstream: bool = False) -> Dict[str, str]:
+    """basalt's launch for ``ncols`` columns: one column, 4 SIMD-groups and 1 row per threadgroup (4 rows for small
+    K: fewer blocks per row than BPI); several, the exact layout (basalt's default) with 1 row (2 for small K);
+    ``upstream``: llama.cpp's table that mmvq_multi_parity's negative control runs (4 SIMD-groups up to 4 columns,
+    else 2; always 2 rows). One column is always the one-column launch, as in basalt (native_mmvq.cu:1585-1599)."""
+    if type_id not in MMVQ_TRAITS:
+        raise ValueError(f"basalt_mmvq: unsupported ggml type {type_id}")
+    div, _, bpi = MMVQ_TRAITS[type_id]
+    if n_in <= 0 or n_in % div or not 1 <= ncols <= 8:
+        raise ValueError(f"basalt_mmvq: n_in must be a positive multiple of {div} and ncols in 1..8")
+    small = n_in // div < bpi
+    if upstream and ncols > 1:
+        nw, rows = (4 if ncols <= 4 else 2), 2
+    else:
+        nw, rows = 4, ((4 if small else 1) if ncols == 1 else (2 if small else 1))
+    return {"MMVQ_TYPE": str(type_id), "NCOLS": str(ncols), "ROWS": str(rows), "NW": str(nw)}
+
+
+def basalt_mmvq_grid(macros: Mapping[str, str], n_out: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup) for a ``basalt_mmvq_macros`` launch."""
+    return -(-n_out // int(macros["ROWS"])), 32 * int(macros["NW"])
+
+
+def basalt_mmvq_params(n_in: int, n_out: int) -> bytes:
+    return struct.pack("<IIII", n_in, n_out, 0, 0)
+
+
+DEQUANT_TYPES = (11, 20, 23, 42)   # Q3_K, IQ4_NL, IQ4_XS, Q2_0: basalt's dequantizers for the types iq_parity checks
+
+
+def basalt_dequant_source() -> str:
+    """basalt's ``dequant_flat_kernel<float>`` for ``DEQUANT_TYPES`` (``basalt_dequant_f32``): n / 256 threadgroups of
+    32 threads, one 256-value superblock each."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_dequant.metal")
+
+
+def basalt_dequant_macros(type_id: int) -> Dict[str, str]:
+    if type_id not in DEQUANT_TYPES:
+        raise ValueError(f"basalt_dequant: unsupported ggml type {type_id}")
+    return {"DQ_TYPE": str(type_id)}
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

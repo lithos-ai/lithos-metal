@@ -712,6 +712,23 @@ def test_a_task_that_calls_its_own_runner_is_refused():
                       "set_host_points: called from one of the runner's own host tasks"]
 
 
+def test_an_interrupt_just_after_run_claims_the_engine_releases_it():
+    """A KeyboardInterrupt can land after any call; one that lands as run() has just claimed the engine must not leave
+    every later run refused."""
+    eng = Engine(_program(_base_buffers(10), [_tick()]))
+    claim = eng._claim
+
+    def claim_then_interrupt(token):
+        claim(token)
+        raise KeyboardInterrupt
+
+    eng._claim = claim_then_interrupt
+    with pytest.raises(KeyboardInterrupt):
+        eng.run(1)
+    del eng._claim
+    assert eng.run(1).steps == 1
+
+
 def test_plain_runs_between_host_step_runs_keep_the_step_count():
     """HostCall.step counts every step the runner began, on either pump."""
     steps = []

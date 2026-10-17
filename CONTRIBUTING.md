@@ -55,7 +55,8 @@ each report where the command buffer completes (`Queue.run`, `Queue.profile`, `E
 `RuntimeError: shader validation: <report>`. Under pytest, `tests/conftest.py` also fails the test phase (setup, call or
 teardown) in which a command buffer with a report completed, when nothing raised it: a harness caught the error, or a
 thread raised it. So the test that ran the kernel fails whatever it checks, in any capture mode (`-s` included), and a
-report in a fixture fails the run as an error; outside pytest only the raise applies.
+report in a fixture fails the run as an error. A test marked `xfail` reports xfailed instead, and outside pytest only
+the raise applies.
 `MTL_SHADER_VALIDATION=1` alone is enough; `MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1` adds each full report on
 stderr (otherwise it goes to the unified log). Command buffers the runtime does not commit, such as MLX's in the
 mlx-lm comparisons, are not checked.

@@ -5,6 +5,7 @@
 #pragma once
 #include <cstdint>
 #include <map>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -145,6 +146,9 @@ class HostTask {
   // boundary on are committed after it returns. Returns false with `error` set to stop the run. A task bounds its own
   // duration (its I/O carries timeouts): the runner cannot interrupt it.
   virtual bool run(const HostCall& call, std::string& error) = 0;
+  // The runner the task is installed on. A task serves one runner, because what it carries out of a failed run (a
+  // Python task's exception) is one slot; set_host_points refuses a task another runner holds.
+  std::atomic<const void*> owner{nullptr};
 };
 
 struct HostPoint {

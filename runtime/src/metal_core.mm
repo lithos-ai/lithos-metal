@@ -314,7 +314,10 @@ struct RunnerImpl {
   bool drop = false;                       // test support: encode_segment leaves out the signal of (drop_step, drop_point)
   uint64_t drop_step = 0;
   uint32_t drop_point = 0;
-  ~RunnerImpl() { if (resident) [q removeResidencySet:residency_set]; }
+  ~RunnerImpl() {
+    for (auto& p : points) if (p.task) p.task->owner.store(nullptr);   // its tasks serve another runner again
+    if (resident) [q removeResidencySet:residency_set];
+  }
 };
 
 // Holds the runner for one call of run() or set_host_points(). A second call fails at once instead of waiting: run()
@@ -452,12 +455,30 @@ void Runner::set_host_points(std::vector<HostPoint> points, uint32_t error_offse
   if (!r.fence) r.fence = [r.dev newFence];
   if (!r.done_log) r.done_log = [r.dev newBufferWithLength:kDoneLog * 4 options:MTLResourceStorageModeShared];
   if (!gpu_ev || !r.fence || !r.done_log) throw std::runtime_error("host points: newSharedEvent, newFence or newBuffer failed");
+  std::vector<HostTask*> claimed;                        // taken for this runner; given back if a later point refuses
+  try {
+    for (auto& p : points) {
+      const void* free_task = nullptr;
+      if (!p.task->owner.compare_exchange_strong(free_task, &r) && free_task != &r)
+        throw std::runtime_error("host points: this task is installed on another runner (a task serves one runner)");
+      if (free_task == nullptr) claimed.push_back(p.task.get());
+    }
+  } catch (...) {
+    for (auto* t : claimed) t->owner.store(nullptr);
+    throw;
+  }
   old.swap(r.points);                                    // from here on nothing allocates or throws
   r.points = std::move(points);
   r.pub_at.swap(pub_at); r.wait_at.swap(wait_at); r.pass_cuts.swap(pass_cuts); r.cb_cuts.swap(cb_cuts); r.pub_seg.swap(pub_seg);
   r.gpu_ev = gpu_ev; r.event_base = r.step_base;
   r.error_off = error_offset; r.timeout_ms = timeout_ms; r.spin_us = spin_us;
   r.drop = drop; r.drop_step = drop_step; r.drop_point = drop_point;
+  for (auto& p : old) {                                  // a task this runner no longer holds serves another again
+    if (!p.task) continue;
+    bool kept = false;
+    for (auto& q : r.points) kept = kept || q.task == p.task;
+    if (!kept) p.task->owner.store(nullptr);
+  }
 }
 
 std::vector<std::shared_ptr<HostTask>> Runner::host_tasks() const {
@@ -468,7 +489,10 @@ std::vector<std::shared_ptr<HostTask>> Runner::host_tasks() const {
 
 void Runner::release_host_tasks() {
   std::vector<std::shared_ptr<HostTask>> dying;   // the points hold null tasks before any task's destructor runs Python
-  for (auto& p : impl->points) dying.push_back(std::move(p.task));
+  for (auto& p : impl->points) {
+    if (p.task) p.task->owner.store(nullptr);     // released: the task serves another runner again
+    dying.push_back(std::move(p.task));
+  }
 }
 
 static uint64_t event_value(const RunnerImpl& r, uint64_t step, uint32_t point) {

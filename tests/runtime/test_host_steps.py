@@ -714,6 +714,39 @@ def test_a_task_that_calls_its_own_runner_is_refused():
                       "set_host_points: called from one of the runner's own host tasks"]
 
 
+def test_a_task_serves_one_runner():
+    """A task carries one exception slot, so a second runner may not install it: the two runs would overwrite each
+    other's cause. The task is free again once the runner that held it is gone."""
+    import gc
+
+    task = nt.CallableTask(lambda step, point: None)
+    first = Engine(_program(_base_buffers(10), [_tick()]))
+    second = Engine(_program(_base_buffers(10), [_tick()]))
+    points = [(1, 1, task)]
+    first.runner.set_host_points(points, LAYOUT.offset("error"), 1000)
+    with pytest.raises(RuntimeError, match="this task is installed on another runner"):
+        second.runner.set_host_points(points, LAYOUT.offset("error"), 1000)
+    first.runner.set_host_points(points, LAYOUT.offset("error"), 1000)   # the runner that holds it may reinstall it
+    del first
+    gc.collect()                                                         # the runner that held it is gone
+    second.runner.set_host_points(points, LAYOUT.offset("error"), 1000)  # so the next runner takes it
+    assert second.run(3).steps == 3
+
+
+def test_a_refused_task_leaves_the_runner_as_it_was():
+    """The refusal comes before the schedule is swapped in, and the points of the same call that were free before it
+    are free again."""
+    free, held = nt.CallableTask(lambda step, point: None), nt.CallableTask(lambda step, point: None)
+    first = Engine(_program(_base_buffers(10), [_tick()]))
+    second = Engine(_program(_base_buffers(10), [_tick()]))
+    first.runner.set_host_points([(1, 1, held)], LAYOUT.offset("error"), 1000)
+    with pytest.raises(RuntimeError, match="this task is installed on another runner"):
+        second.runner.set_host_points([(1, 1, free), (1, 1, held)], LAYOUT.offset("error"), 1000)
+    assert second.runner.host_tasks() == []                             # nothing was installed
+    second.runner.set_host_points([(1, 1, free)], LAYOUT.offset("error"), 1000)   # and `free` was given back
+    assert second.run(2).steps == 2
+
+
 def test_a_run_reports_the_tokens_it_took():
     """The run reads the ring's tokens while it still owns the runner, so its own stats carry them whatever another
     thread does next; drain() still hands the same tokens to a caller that takes them that way."""

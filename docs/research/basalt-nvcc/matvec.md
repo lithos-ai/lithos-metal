@@ -75,6 +75,7 @@ and a bare `:N` is a line of the file named last.
 | Q4_0, Q5_0 | inner = fma(f(sumi), d8, fl(−k·s8)), k = 4 or 8; tmp = fma(d, inner, tmp) | the same |
 | Q8_0 | tmp = fma(fl(d0·d1), f(sumi), tmp) | the same |
 | every type | cross-warp: ((tmp + p0) + p1) + p2; butterfly 16, 8, 4, 2, 1; all `FADD.FTZ` | `add_ftz`, `simd_shuffle_xor` |
+| `native_mmvq_multi_kernel`, 2 to 8 columns | per (column, row) the one-column kernel's sequence above, site for site (section 6) | the same `apply_acc`, one source |
 
 Every `[H]` of the scoping report (`a·b − c·d` in Q4_K and Q5_K, `sumi·d8 − k·s8` in Q4_0 and Q5_0) is settled by the
 SASS above, identically in the three compiler versions.
@@ -259,3 +260,81 @@ Q4_0's forms with −8: `mul.ftz.f32 %r, %r, 0fC1000000`, `fma.rn.ftz.f32` at `:
 The first `NPRE = 3` iterations load their weights before `pdl_wait` (`:816-836`); that is scheduling, and both paths
 compute the same expression. The port has no programmatic dependent launch (ICB barriers order dispatches) and runs
 every iteration through the second form.
+
+## 6. The multi-column kernel (`native_mmvq_multi_kernel`, `native_mmvq.cu:1106-1150`)
+
+Two to eight columns go through one template, `native_mmvq_multi_kernel<F, NCOLS, NW, ROWS>`, whose format traits
+split each one-column dot into `load` (the weight block: codes, unpacked scales, the fp16 block scale) and `apply`
+(the activation loads and the dot's float expression), and accumulate `tmp[j][i] += F::apply(...)` per column
+(`:1117-1130`). The units for this section (NVCC 13.0 and 13.3, the flags of Method, one unit per type and
+instantiation) emit, per type: `<F, 2, 4, 1>` and `<F, 2, 4, 2>` (two columns, the exact layout, regular and
+small-K), `<F, 8, 4, 1>`, `<F, 8, 4, 2>` (eight columns) and `<F, 8, 2, 2>` (the upstream layout at eight columns,
+`:1157-1160`, which only `mmvq_multi_parity`'s negative control runs). NVCC 13.2's multi-column responses were not
+used: an earlier run set them aside without recording why, and two versions satisfy the version check.
+
+**Result: per (column, row) the multi-column kernel computes the one-column kernel's sequence, in both versions, for
+every type and instantiation.** For each instantiation, the tracer's set of dot templates (those with no
+shared-memory or shuffle leaves) equals the one-column kernel's. Q4_0 and Q5_0 are the one exception, treated below.
+Two differences are only how the tracer reads the code:
+
+- some instantiations show the first iteration's add of +0 as the zero register;
+- in Q8_0's one-column kernel, the prefetched scales cross a label (`pdl_wait`) and appear as `in`.
+
+No float add, multiply or FMA in any instantiation lacks `.FTZ`. The raw lines at each site, from `<F, 2, 4, 1>`,
+column 0:
+
+| Type | SASS 13.0 | SASS 13.3 | Sequence |
+|---|---|---|---|
+| Q2_0 | `FMUL.FTZ R0, R10.reuse, R3`; `FFMA.FTZ R0, R27, R31, R0` | `FMUL.FTZ R0, R10.reuse, R27`; `FFMA.FTZ R0, R35, R36, R0` | tmp = fma(fl(d2·d8), f(sumi), tmp) |
+| Q3_K | `FFMA.FTZ R0, R0, R41, RZ`; `FFMA.FTZ R0, R39, R40, R0`; `FFMA.FTZ R15, R43, R36, R0`; `FFMA.FTZ R14, R18, R14, R15`; `FFMA.FTZ R34, R19.reuse, R14, R34` | `FFMA.FTZ R49, R49, R48, RZ`; `FFMA.FTZ R43, R50, R43, R49`; `FFMA.FTZ R14, R14, R47, R43`; `FFMA.FTZ R14, R17, R38, R14`; `FFMA.FTZ R15, R16.reuse, R14, R15` | sumf = fma(d8_i, f(dot_i·sc_i), sumf) from 0, i = 0..3; tmp = fma(d3, sumf, tmp) |
+| Q4_K | `FFMA.FTZ R30, R0.reuse, R31, RZ`; `FFMA.FTZ R16, R41.reuse, R18, R16`; `FMUL.FTZ R16, R16, R3`; `FFMA.FTZ R17, R17, R2, -R16`; `FADD.FTZ R28, R28, R17` | `FFMA.FTZ R19, R45.reuse, R36, RZ`; `FFMA.FTZ R23, R20, R23, R45`; `FMUL.FTZ R20, R23, R18`; `FFMA.FTZ R19, R19, R16, -R20`; `FADD.FTZ R32, R32, R19` | sumf_d, sumf_m as one column; v = fma(dm.x, sumf_d, −fl(dm.y·sumf_m)); tmp = tmp + v |
+| Q5_K | `FFMA.FTZ R44, R39, R44, RZ`; `FFMA.FTZ R32, R15, R32, R44`; `FMUL.FTZ R15, R32, R13`; `FFMA.FTZ R15, R36, R5, -R15`; `FADD.FTZ R12, R12, R15` | `FFMA.FTZ R40, R0.reuse, R39, RZ`; `FFMA.FTZ R25, R43, R35, R40`; `FMUL.FTZ R38, R38, R3`; `FFMA.FTZ R25, R25, R2, -R38`; `FADD.FTZ R34, R34, R25` | Q4_K's |
+| Q6_K | `FFMA.FTZ R24, R24, R31, RZ`; `FFMA.FTZ R24, R25, R29, R24`; `FFMA.FTZ R12, R13.reuse, R24, R12` | `FFMA.FTZ R16, R0, R17, RZ`; `FFMA.FTZ R16, R19, R21, R16`; `FFMA.FTZ R35, R0.reuse, R16, R35` | sumf = fma(d8_i, f(dot_i·sc_i), sumf) from 0, i = 0, 1; tmp = fma(d, sumf, tmp) |
+| IQ4_XS | `FMUL.FTZ R39, R38.reuse, R39`; `FFMA.FTZ R22, R39, R24, R22` | `FMUL.FTZ R38, R37, R38`; `FFMA.FTZ R21, R38, R40, R21` | tmp = fma(fl(h(d)·d8), f(sumi), tmp) |
+| IQ4_NL | `FMUL.FTZ R31, R30.reuse, R31`; `FFMA.FTZ R18, R31, R32, R18` | the same lines | tmp = fma(fl(h(d)·d8), f(sumi), tmp) |
+| Q4_0 | `FMUL.FTZ R12, R12, 4`; `FFMA.FTZ R12, R31, R28, -R12`; `FFMA.FTZ R18, R35.reuse, R12, R18` | the same lines | inner = fma(d8, f(sumi), −fl(4·s8)); tmp = fma(d, inner, tmp) |
+| Q5_0 | `FMUL.FTZ R17, R13, 8`; `FFMA.FTZ R15, R30, R15, -R17`; `FFMA.FTZ R18, R13.reuse, R15, R18` | the same lines | inner = fma(d8, f(sumi), −fl(8·s8)); tmp = fma(d, inner, tmp) |
+| Q8_0 | `FMUL.FTZ R2, R0.reuse, R17`; `FFMA.FTZ R0, R27, R29, R0` | the same lines | tmp = fma(fl(d0·d1), f(sumi), tmp) |
+
+The operands' origins, traced back to their `HADD2.F32` conversions: in Q4_K the rounded product takes the `.H1_H1`
+half of the `dm` word (dmin) and the fused one the `.H0_H0` half (d): `HADD2.F32 R3, -RZ, R2.reuse.H1_H1` and
+`HADD2.F32 R2, -RZ, R2.H0_H0` (13.0; Q5_K and 13.3 likewise), as in the one-column kernel. In Q4_0 and Q5_0 the
+multiply by 4 or 8 takes the q8_1 sum s8 (`HADD2.F32 R12, -RZ, R31.H1_H1`), the FFMA multiplies d8
+(`R31.H0_H0`) by the converted sumi (`I2FP.F32.S32 R28, R28`), and the outer FFMA takes the weight's d.
+
+**Q4_0 and Q5_0: the same bits, the negation placed differently.** For the same `small_q8_dot` source (`:709`,
+`:734`), the one-column kernel's front end forms `mul.ftz.f32` by −4 (`0fC0800000`) and fuses the d8 product into
+`fma.rn.ftz.f32` (section 5). In the multi-column kernel it emits `mul.ftz.f32 %f19, %f13, %f18`; `mul.ftz.f32 %f20,
+%f14, 0f40800000`; `sub.ftz.f32 %f21, %f19, %f20`; `fma.rn.ftz.f32 %f59, %f15, %f21, %f59` (13.0; 13.3 the same with
+`%r` registers). Then `ptxas` fuses the d8 product with the subtraction, giving the SASS above. So one kernel adds
+fl(−4·s8) and the other subtracts fl(4·s8). These are the same value: rounding to nearest even is symmetric in sign,
+and s8 is an fp16 value, so 4·s8 and 8·s8 are exact normal fp32 numbers. In both kernels the d8 product is the fused
+one. The port's `fma_ftz(float(sumi), d8, mul_ftz(s8, -k))` gives either kernel's bits.
+
+**The reduction.** Per (column, row), warps 1..NW − 1 store their partials, warp 0 adds them in warp order, then
+`warp_sum` (`:1131-1148`): `FADD.FTZ` and `SHFL.BFLY` only. The compiler interleaves the independent butterflies of
+the NCOLS · ROWS values, so a function's `SHFL.BFLY` offsets read, for example, 16 16 8 8 4 4 2 2 1 1 at two
+values. Each value still takes offsets 16, 8, 4, 2 and 1 in that order: the tracer's chains are
+`FADD.FTZ(FADD.FTZ(FADD.FTZ(in, shm), shm), shm)` followed by five `shfl` adds. The counts match NCOLS · ROWS ·
+(NW − 1 + 5) adds and NCOLS · ROWS · 5 shuffles (Q4_K and Q5_K add one `FADD.FTZ` per column for `tmp +=`):
+
+| Instantiation | `FADD.FTZ` (Q3_K, Q8_0 / Q4_K) | `SHFL.BFLY` |
+|---|---|---|
+| `<F, 2, 4, 1>` | 16 / 18 | 10 |
+| `<F, 8, 4, 1>` | 64 / 72 | 40 |
+| `<F, 8, 4, 2>` | 128 / 144 | 80 |
+| `<F, 8, 2, 2>` (upstream) | 96 / 112 | 80 |
+
+The same counts hold in 13.0 and 13.3. At eight columns the tracer prints extra templates of the form
+`FADD.FTZ(in, shfl)`. They are prefixes of the same chains: the per-column store branches end a basic block, and
+the tracer stops tracing at a label.
+
+**The upstream layout.** It has the same per-block arithmetic (its dot templates equal the one-column kernel's) but
+runs two warps at five to eight columns. Each thread therefore accumulates twice as many blocks (BPI halves), and
+warp 0 adds one partial instead of three. The partial sums are grouped differently, which is the difference the
+negative control must see.
+
+**Metal.** `kernels/common/basalt_mmvq.metal` is one source for both kernels. Its `wload` / `apply_acc` are the
+traits' `load` / `apply` with section 5's float forms, and the macros `NCOLS`, `ROWS` and `NW` select the
+instantiation, so the per-column sequence is the same code. `tests/kernels/test_basalt_mmvq.py` checks every column of
+a T-column call bitwise against the one-column launch, for T = 1..8 and every type.

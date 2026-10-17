@@ -187,8 +187,9 @@ by n_embd as basalt's launcher does), `basalt_expert_swiglu_q8_1` and `basalt_ex
 writes `fma()` exactly at the `FFMA` sites above, plain `*` and `+` at the `FMUL` and `FADD` sites; nothing flushes,
 because no subnormal reaches them, except the SwiGLU product (`ieee_mul`) and the quantizer, which emulate IEEE
 subnormals. The Q2_0 decode, the q8_1 word readers and `dp4a` are the device functions `native_mmvq` uses
-(`basalt_fp.metal`). Basalt's plan pointers (`grp_ptr`, one blob address a group) become byte offsets into one
-buffer of blobs; the plan's other arrays, the scratch and the output keep basalt's layout.
+(`basalt_fp.metal`). Basalt's plan pointers (`grp_ptr`, one blob address a group) stay pointers: a table of 64-bit
+GPU addresses, each 2-byte aligned and inside a resident buffer, so the blobs may sit in several buffers; the plan's
+other arrays, the scratch and the output keep basalt's layout.
 
 `tests/kernels/test_basalt_experts.py` checks every stage bit for bit against the numpy emulation of this page
 (`tests/kernels/basalt_emu.py`: `q2_0_dots`, `swiglu_q8_1`, with the exponential taken from the GPU's `expf_neg`),

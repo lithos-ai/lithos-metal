@@ -322,7 +322,8 @@ EXPERT_GROUP_ROWS = 24      # basalt's g_dec_gy: the most threadgroup rows a cal
 
 def basalt_experts_source() -> str:
     """basalt's ``native_expert_grouped`` for Q2_0 gate/up and down: ``basalt_expert_gu``, ``basalt_expert_swiglu_q8_1``
-    and ``basalt_expert_down``, dispatched in that order."""
+    and ``basalt_expert_down``, dispatched in that order. The gate/up and down kernels take basalt's ``grp_ptr`` at
+    buffer(1): one 64-bit GPU address a group (each 2-byte aligned, inside a buffer the dispatch makes resident)."""
     return PRELUDE + template("basalt_fp.metal") + template("basalt_q8_1.metal") + template("basalt_experts.metal")
 
 

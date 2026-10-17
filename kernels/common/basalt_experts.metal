@@ -8,9 +8,9 @@
 // basalt's native_expert_grouped for Q2_0 gate/up and Q2_0 down (iq_kernels.cu:2553-2603): three dispatches in order,
 // gate/up -> SwiGLU + q8_1 -> down. Needs basalt_fp.metal and basalt_q8_1.metal ahead of it.
 //
-// The plan (basalt's, read on the device): n_groups[0] groups; group g's expert blob starts grp_off[g] bytes into
-// `blobs` (basalt's grp_ptr[g], a pointer, here an offset into one buffer of blobs) and owns the entries
-// [grp_start[g], grp_start[g + 1]); entry e reads token ent_tok[e]'s q8_1 row (n_embd / 32 blocks) and writes row
+// The plan (basalt's, read on the device): n_groups[0] groups; group g's expert blob starts at grp_ptr[g] (basalt's
+// grp_ptr: a table of 64-bit GPU addresses, one a group, each 2-byte aligned and inside a resident buffer, so the
+// blobs may sit in several buffers) and owns the entries [grp_start[g], grp_start[g + 1]); entry e reads token ent_tok[e]'s q8_1 row (n_embd / 32 blocks) and writes row
 // ent_dst[e] of `out` (n_embd floats). A blob is basalt's native_expert_layout(42, 42, n_embd, n_ff): n_ff gate rows,
 // n_ff up rows (n_embd / 64 Q2_0 blocks each, up at up_off) and n_embd down rows (n_ff / 64 blocks each, at down_off).
 // Scratch, basalt's: gate and up (entry e's n_ff floats at e * n_ff) and hq (entry e's n_ff / 32 q8_1 blocks).
@@ -38,6 +38,8 @@
 #define SUB16 0
 #endif
 #define GRP_NC 6   // entries a pass (iq_kernels.cu:1123)
+
+struct GrpPtr { device const ushort* p; };   // one grp_ptr entry: a blob's 64-bit GPU address
 
 struct ExpertParams { uint n_embd; uint n_ff; uint gu_row; uint d_row; uint up_off; uint down_off; uint pad0; uint pad1; };
 
@@ -107,7 +109,7 @@ static inline void rows2(device const ushort* rowA, uint row_halves, int r, int 
 }
 #endif
 
-kernel void basalt_expert_gu(device const ushort* blobs [[buffer(0)]], device const ulong* grp_off [[buffer(1)]],
+kernel void basalt_expert_gu(device const GrpPtr* grp_ptr [[buffer(1)]],
                              device const int* grp_start [[buffer(2)]], device const int* n_groups [[buffer(3)]],
                              device const int* ent_tok [[buffer(4)]], device const uint* xq [[buffer(5)]],
                              device float* gate [[buffer(6)]], device float* up [[buffer(7)]],
@@ -125,7 +127,7 @@ kernel void basalt_expert_gu(device const ushort* blobs [[buffer(0)]], device co
     const ulong w_off = ulong(is_up ? p.up_off : 0u) + ulong(r) * p.gu_row;
     device float* dst = is_up ? up : gate;
     for (int g = int(tg.y); g < ng; g += int(ntg.y)) {
-        device const ushort* wr = blobs + (grp_off[g] + w_off) / 2;
+        device const ushort* wr = grp_ptr[g].p + w_off / 2;
         const int e1 = grp_start[g + 1];
         for (int e = grp_start[g]; e < e1;) {                     // gu2::pair (gu2.cuh:303-330)
             const int n = e1 - e;
@@ -154,7 +156,7 @@ kernel void basalt_expert_gu(device const ushort* blobs [[buffer(0)]], device co
     const int nb = int(p.n_embd) / 64, xb = int(p.n_embd) / 32;
     device float* dst = is_up ? up : gate;
     for (int g = int(tg.y); g < ng; g += int(ntg.y)) {
-        device const ushort* wr = blobs + (grp_off[g] + w_off) / 2;
+        device const ushort* wr = grp_ptr[g].p + w_off / 2;
         const int e0 = grp_start[g], e1 = grp_start[g + 1];
         for (int e = e0; e < e1; e += GRP_NC) {
             const int n = min(GRP_NC, e1 - e);
@@ -230,7 +232,7 @@ static inline void row_dot_20_sub16(device const ushort* row, threadgroup const 
 }
 #endif
 
-kernel void basalt_expert_down(device const ushort* blobs [[buffer(0)]], device const ulong* grp_off [[buffer(1)]],
+kernel void basalt_expert_down(device const GrpPtr* grp_ptr [[buffer(1)]],
                                device const int* grp_start [[buffer(2)]], device const int* n_groups [[buffer(3)]],
                                device const int* ent_dst [[buffer(4)]], device const uint* hq [[buffer(5)]],
                                device float* out [[buffer(6)]], constant ExpertParams& p [[buffer(7)]],
@@ -246,7 +248,7 @@ kernel void basalt_expert_down(device const ushort* blobs [[buffer(0)]], device 
     const bool valid_r = r < n_embd;
     const ulong w_off = ulong(p.down_off) + ulong(valid_r ? r : 0) * p.d_row;
     for (int g = int(tg.y); g < ng; g += int(ntg.y)) {
-        device const ushort* wr = blobs + (grp_off[g] + w_off) / 2;
+        device const ushort* wr = grp_ptr[g].p + w_off / 2;
         const int e0 = grp_start[g], e1 = grp_start[g + 1];
         for (int e = e0; e < e1; e += GRP_NC) {
             const int n = min(GRP_NC, e1 - e);
@@ -283,7 +285,7 @@ kernel void basalt_expert_down(device const ushort* blobs [[buffer(0)]], device 
     const ulong w_off = ulong(p.down_off) + ulong(valid_r ? r : 0) * p.d_row;
     const int nb = int(p.n_ff) / 64;
     for (int g = int(tg.y); g < ng; g += int(ntg.y)) {
-        device const ushort* wr = blobs + (grp_off[g] + w_off) / 2;
+        device const ushort* wr = grp_ptr[g].p + w_off / 2;
         const int e0 = grp_start[g], e1 = grp_start[g + 1];
         if (valid_r) {
             for (int e = e0; e < e1; e += GRP_NC) {

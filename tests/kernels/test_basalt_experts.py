@@ -233,6 +233,31 @@ def test_native_grouped_parity(n_embd, n_ff):
 
 # ---- IEEE subnormals in the SwiGLU product ------------------------------------------------------------------------
 
+@pytest.mark.parametrize("n_embd, n_ff", [(512, 256), (2560, 640)])
+def test_groups_read_their_blobs_across_buffers(n_embd, n_ff):
+    """basalt's grp_ptr is an address a group: the same call with its blobs moved into two separate buffers, at offsets
+    other than the arena's, writes the same bits (gate, up, the q8_1 of H and the output)."""
+    rng = np.random.default_rng(7)
+    c = Call(rng, n_embd, n_ff, [3, 1, 2, 6], 4, n_blobs=4)
+    ref = c.run()
+    blob = c.lay["bytes"]
+    pad = 512                                              # each blob 512 bytes past the previous one's end
+    arenas = [np.zeros(pad + 2 * (blob + pad), np.uint8), np.zeros(pad + 2 * (blob + pad), np.uint8)]
+    grp_buf, grp_off, used = [], [], [0, 0]
+    for g, o in enumerate(c.grp_off):
+        b = g % 2
+        at = pad + used[b] * (blob + pad)
+        arenas[b][at: at + blob] = c.arena[o: o + blob]
+        grp_buf.append(b)
+        grp_off.append(at)
+        used[b] += 1
+    got = gpu.experts(arenas, grp_off, c.grp_start, c.ent_tok, c.ent_dst, c.xq, n_embd, n_ff, c.cap,
+                      cap_groups=c.cap_groups, cap_entries=c.cap, grp_buf=grp_buf)
+    assert sorted(set(grp_buf)) == [0, 1] and grp_off != c.grp_off
+    for k in ("gate", "up", "hq", "out"):
+        assert np.array_equal(np.asarray(got[k]).view(np.uint8), np.asarray(ref[k]).view(np.uint8)), k
+
+
 def test_ieee_mul_keeps_subnormals():
     """ieee_mul (basalt_q8_1.metal), CUDA's mul.rn.f32 without .ftz, bit for bit against numpy's IEEE float32 product
     on planted pairs: products across the subnormal range, at the 2^-126 boundary (rounding up into it), at ties of

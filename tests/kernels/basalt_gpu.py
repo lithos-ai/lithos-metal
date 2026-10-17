@@ -63,10 +63,12 @@ def mmvq(type_id, w, xq, n_in, n_out, ncols, upstream=False, fill=None):
 
 
 def experts(blobs, grp_off, grp_start, ent_tok, ent_dst, xq, n_embd, n_ff, n_out_rows, *, n_groups=None,
-            cap_groups=None, cap_entries=None, grid_groups=0, gu2=None, sub16=None, out_fill=0xFF, scratch_fill=0x00):
+            cap_groups=None, cap_entries=None, grid_groups=0, gu2=None, sub16=None, out_fill=0xFF, scratch_fill=0x00,
+            grp_buf=None):
     """basalt's ``native_expert_grouped`` for Q2_0 / Q2_0: the gate/up, SwiGLU + q8_1 and down dispatches in order, in
-    one command buffer. ``blobs``: the expert blobs' bytes, ``grp_off`` each group's byte offset into them (basalt's
-    grp_ptr); ``grp_start`` (n_groups + 1 entries), ``ent_tok``, ``ent_dst`` and ``xq`` (q8_1 rows) as basalt's. The
+    one command buffer. ``blobs``: the expert blobs' bytes, or a list of them (one buffer each); group g's blob starts
+    ``grp_off[g]`` bytes into buffer ``grp_buf[g]`` (default 0), and the kernels get basalt's grp_ptr, that buffer's GPU
+    address plus the offset; ``grp_start`` (n_groups + 1 entries), ``ent_tok``, ``ent_dst`` and ``xq`` (q8_1 rows) as basalt's. The
     output (``n_out_rows`` rows of n_embd floats) starts as ``out_fill`` bytes, the scratch as ``scratch_fill``.
     Returns the gate, up, q8_1 and output buffers' contents."""
     n_groups = len(grp_off) if n_groups is None else n_groups
@@ -85,8 +87,10 @@ def experts(blobs, grp_off, grp_start, ent_tok, ent_dst, xq, n_embd, n_ff, n_out
         v[: len(a)] = a
         return nt.Buffer(dev, v.tobytes())
 
-    b_blobs = nt.Buffer(dev, np.ascontiguousarray(blobs, np.uint8).tobytes())
-    b_off = arr(grp_off, np.uint64, cap_groups)
+    arenas = blobs if isinstance(blobs, (list, tuple)) else [blobs]
+    b_blobs = [nt.Buffer(dev, np.ascontiguousarray(a, np.uint8).tobytes()) for a in arenas]
+    grp_buf = [0] * len(grp_off) if grp_buf is None else grp_buf
+    b_ptr = arr([b_blobs[i].gpu_address + int(o) for i, o in zip(grp_buf, grp_off)], np.uint64, cap_groups)
     b_start = arr(grp_start, np.int32, cap_groups + 1)
     b_ng = nt.Buffer(dev, np.int32(n_groups).tobytes())
     b_tok, b_dst = arr(ent_tok, np.int32, cap_entries), arr(ent_dst, np.int32, cap_entries)
@@ -100,16 +104,20 @@ def experts(blobs, grp_off, grp_start, ent_tok, ent_dst, xq, n_embd, n_ff, n_out
     b_out.fill(out_fill)
     params = kernels.basalt_expert_params(n_embd, n_ff)
     d1 = nt.Dispatch().pipeline(pgu)
-    for k, b in enumerate((b_blobs, b_off, b_start, b_ng, b_tok, b_xq, b_gate, b_up)):
+    for k, b in enumerate((b_ptr, b_start, b_ng, b_tok, b_xq, b_gate, b_up), start=1):
         d1 = d1.buffer(k, b)
+    for b in b_blobs:
+        d1 = d1.use(b)
     d1 = d1.bytes(8, params).grid(*ggu).threadgroup(kernels.EXPERT_THREADS)
     d2 = nt.Dispatch().pipeline(psw)
     for k, b in enumerate((b_gate, b_up, b_start, b_ng, b_hq)):
         d2 = d2.buffer(k, b)
     d2 = d2.bytes(5, params).grid(gsw).threadgroup(kernels.EXPERT_THREADS)
     d3 = nt.Dispatch().pipeline(pdn)
-    for k, b in enumerate((b_blobs, b_off, b_start, b_ng, b_dst, b_hq, b_out)):
+    for k, b in enumerate((b_ptr, b_start, b_ng, b_dst, b_hq, b_out), start=1):
         d3 = d3.buffer(k, b)
+    for b in b_blobs:
+        d3 = d3.use(b)
     d3 = d3.bytes(7, params).grid(*gdn).threadgroup(kernels.EXPERT_THREADS)
     r = nt.Queue(dev).run([d1, d2, d3])
     assert not r.error, r.error

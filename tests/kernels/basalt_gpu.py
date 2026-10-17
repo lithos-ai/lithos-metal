@@ -166,3 +166,50 @@ def dequant(type_id, raw, n):
                    tuple(sorted(kernels.basalt_dequant_macros(type_id).items())))
     out = run(pso, [np.ascontiguousarray(raw, np.uint8).tobytes(), 4 * n], None, 0, n // 256, 32)
     return np.frombuffer(out[1], np.float32)
+
+
+def dense_tc(type_id, w, xq, n_in, n_out, widths, variant=None, fill=0xFF):
+    """``basalt_dense_tc`` in ``variant`` (default: the rule's at 170 multiprocessors), one call per column count T in
+    ``widths``, in one command buffer with the weights bound once: call T reads the first T columns of ``xq`` (its
+    buffer holds only those) and writes an output of 8 columns whose bytes start as ``fill``. Returns {T: (8, n_out)}."""
+    macros = kernels.basalt_dense_tc_macros(type_id, n_in, n_out, variant)
+    pso = pipeline(kernels.basalt_dense_tc_source(), "basalt_dense_tc", tuple(sorted(macros.items())))
+    grid, threads = kernels.basalt_dense_tc_grid(macros, n_out)
+    dev, qcol = device(), n_in // 32 * kernels.Q8_1_BLOCK_BYTES
+    xq = np.ascontiguousarray(xq, np.uint8)
+    b_w = nt.Buffer(dev, np.ascontiguousarray(w, np.uint8).tobytes())
+    ds, outs = [], {}
+    for t in widths:
+        b_x, b_y = nt.Buffer(dev, xq[: t * qcol].tobytes()), nt.Buffer(dev, 4 * 8 * n_out)
+        b_y.fill(fill)
+        d = nt.Dispatch().pipeline(pso).buffer(0, b_w).buffer(1, b_x).buffer(2, b_y)
+        ds.append(d.bytes(3, kernels.basalt_dense_tc_params(n_in, n_out, t)).grid(grid).threadgroup(threads))
+        outs[t] = (b_x, b_y)
+    r = nt.Queue(dev).run(ds)
+    assert not r.error, r.error
+    return {t: np.frombuffer(b_y.read(0, 4 * 8 * n_out), np.float32).reshape(8, n_out) for t, (_, b_y) in outs.items()}
+
+
+def dense_tc_pair(type0, w0, n_out0, type1, w1, n_out1, xq, n_in, widths, fill=0xFF):
+    """``basalt_dense_tc_pair`` as ``dense_tc``: {T: ((8, n_out0), (8, n_out1))}."""
+    pso = pipeline(kernels.basalt_dense_tc_source(), "basalt_dense_tc_pair",
+                   tuple(sorted(kernels.basalt_dense_tc_pair_macros(type0, type1, n_in).items())))
+    grid, threads = kernels.basalt_dense_tc_pair_grid(n_out0, n_out1)
+    dev, qcol = device(), n_in // 32 * kernels.Q8_1_BLOCK_BYTES
+    xq = np.ascontiguousarray(xq, np.uint8)
+    b_w0 = nt.Buffer(dev, np.ascontiguousarray(w0, np.uint8).tobytes())
+    b_w1 = nt.Buffer(dev, np.ascontiguousarray(w1, np.uint8).tobytes())
+    ds, outs = [], {}
+    for t in widths:
+        b_x, b_y0, b_y1 = nt.Buffer(dev, xq[: t * qcol].tobytes()), nt.Buffer(dev, 32 * n_out0), nt.Buffer(dev, 32 * n_out1)
+        b_y0.fill(fill)
+        b_y1.fill(fill)
+        d = nt.Dispatch().pipeline(pso)
+        for k, b in enumerate((b_w0, b_w1, b_x, b_y0, b_y1)):
+            d = d.buffer(k, b)
+        ds.append(d.bytes(5, kernels.basalt_dense_tc_params(n_in, n_out0, t, n_out1)).grid(grid).threadgroup(threads))
+        outs[t] = (b_x, b_y0, b_y1)
+    r = nt.Queue(dev).run(ds)
+    assert not r.error, r.error
+    f = lambda b, n: np.frombuffer(b.read(0, 32 * n), np.float32).reshape(8, n)
+    return {t: (f(b0, n_out0), f(b1, n_out1)) for t, (_, b0, b1) in outs.items()}

@@ -2,7 +2,7 @@
 # Copyright (c) 2023-2026 The ggml authors
 # Copyright (c) 2026 Jesús Gulfo
 # adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
-# src/kernels/cuda/native_bf16.cu and include/basalt/kernels/q8_1_finite.hpp @
+# src/kernels/cuda/native_bf16.cu, src/kernels/cuda/dense_tc.cu and include/basalt/kernels/q8_1_finite.hpp @
 # b4c63b55754637f4c72ad53a0f791d425f71eb36, which adapt ggml-org/llama.cpp ggml/src/ggml-common.h (kvalues_iq4nl),
 # ggml/src/ggml-quants.c (get_scale_min_k4), ggml/src/ggml-cuda/quantize.cu and ggml/src/ggml-cuda/mmvf.cu @
 # 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
@@ -370,3 +370,130 @@ def mmvf(w, x, block, flush=True):
         slots[..., : block // 32] = s
         s = butterfly(slots.reshape(-1, 32), add).reshape(x.shape[0], n_out, 1)
     return s[..., 0]
+
+
+# ---- dense_tc and dense_tc_pair (docs/research/basalt-nvcc/dense_tc.md) ----------------------------------------------
+# dense_tc.cu builds with nvcc's IEEE defaults: no flush. The integer dots come from the decoded codes (each value's
+# code and its block's scales as ggml defines the format), independently of basalt's byte tricks; the float steps
+# follow dense_tc.md section 1 per (row, column) and section 2's warp chunks and trees.
+
+DTC_SB = {11: 110, 12: 144, 13: 176, 14: 210, 23: 136, 42: 72}
+DTC_WARPS = {"one": 24, "tile": 8, "pair": 8, "s1": 4, "s2": 8}
+
+
+def _u16(b, off):
+    return b[..., off].astype(np.int64) | (b[..., off + 1].astype(np.int64) << 8)
+
+
+def dtc_decode(type_id, w, n_in, n_out):
+    """The codes (n_out, n_in / 32, 32) of every 32-value block and its scale terms, as ggml's formats define them:
+    Q4_K / Q5_K {"sc", "m"} per block and {"d", "dmin"} per super-block; Q6_K / Q3_K {"s16"} per 16 values and {"d"}
+    per super-block; IQ4_XS {"ls"} (the scale minus 32) per block and {"d"} per super-block; Q2_0 {"d"} per 64-value
+    block."""
+    nk = n_in // 32
+    if type_id == 42:
+        blk = np.asarray(w, np.uint8).reshape(n_out, n_in // 64, 18)
+        v = np.arange(64)
+        codes = ((blk[..., 2 + v // 4].astype(np.int64) >> (2 * (v % 4))) & 3) - 1
+        return codes.reshape(n_out, nk, 32), {"d": _h(blk, 0)}
+    blk = np.asarray(w, np.uint8).reshape(n_out, n_in // 256, DTC_SB[type_id])
+    v = np.arange(256)
+    if type_id in (12, 13):
+        qs = blk[..., 48:176] if type_id == 13 else blk[..., 16:144]
+        q = (qs[..., 32 * (v // 64) + v % 32].astype(np.int64) >> (4 * ((v // 32) % 2))) & 15
+        if type_id == 13:
+            q = q | (((blk[..., 16 + v % 32].astype(np.int64) >> (v // 32)) & 1) << 4)
+        sc = np.broadcast_to(blk[..., None, 4:16], blk.shape[:-1] + (8, 12))
+        s, m = _scale_min_k4(sc, np.arange(8)[:, None])
+        terms = {"sc": s[..., 0].reshape(n_out, nk), "m": m[..., 0].reshape(n_out, nk), "d": _h(blk, 0),
+                 "dmin": _h(blk, 2)}
+    elif type_id == 14:
+        hh, l = v // 128, v % 128
+        ql = (blk[..., 64 * hh + l % 64].astype(np.int64) >> (4 * (l // 64))) & 15
+        qh = (blk[..., 128 + 32 * hh + l % 32].astype(np.int64) >> (2 * (l // 32))) & 3
+        q = (ql | (qh << 4)) - 32
+        terms = {"s16": blk[..., 192:208].view(np.int8).astype(np.int64).reshape(n_out, 2 * nk), "d": _h(blk, 208)}
+    elif type_id == 11:
+        hh, j, pos = v // 128, (v % 128) // 32, v % 32
+        q = (blk[..., 32 + 32 * hh + pos].astype(np.int64) >> (2 * j)) & 3
+        hm = (blk[..., pos].astype(np.int64) >> (4 * hh + j)) & 1
+        q = q - np.where(hm == 1, 0, 4)
+        sc = blk[..., 96:108].astype(np.int64)
+        isc = np.arange(16)
+        s16 = (((sc[..., isc % 8] >> (4 * (isc // 8))) & 15) | (((sc[..., 8 + isc % 4] >> (2 * (isc // 4))) & 3) << 4)) - 32
+        terms = {"s16": s16.reshape(n_out, 2 * nk), "d": _h(blk, 108)}
+    elif type_id == 23:
+        b, pos = v // 32, v % 32
+        q = KVALUES[(blk[..., 8 + 16 * b + pos % 16].astype(np.int64) >> (4 * (pos // 16))) & 15]
+        ib = np.arange(8)
+        sl = (blk[..., 4 + ib // 2].astype(np.int64) >> (4 * (ib % 2))) & 15
+        sh = (_u16(blk, 2)[..., None] >> (2 * ib)) & 3
+        terms = {"ls": ((sl | (sh << 4)) - 32).reshape(n_out, nk), "d": _h(blk, 0)}
+    else:
+        raise ValueError(type_id)
+    return q.reshape(n_out, nk, 32), terms
+
+
+def dense_tc(type_id, w, xq, n_in, n_out, ncols, order):
+    """dense_tc's output (ncols, n_out) in summation order ``order`` ("one", "tile", "pair", "s1", "s2") for GGUF rows
+    ``w`` and q8_1 bytes ``xq`` (at least ncols columns)."""
+    codes, terms = dtc_decode(type_id, w, n_in, n_out)
+    nk, nchunk = n_in // 32, n_in // 512
+    xb = np.asarray(xq, np.uint8).reshape(-1, nk, 36)[:ncols]
+    d8, a = _h(xb, 0), xb[..., 4:].view(np.int8).astype(np.int64)                     # (C, K), (C, K, 32)
+    if type_id in (14, 11):                                                           # the 16-value halves' dots
+        dots = [np.einsum("rkv,ckv->rck", codes[..., 16 * e: 16 * e + 16], a[..., 16 * e: 16 * e + 16]) for e in (0, 1)]
+    else:
+        dot = np.einsum("rkv,ckv->rck", codes, a)
+    isum = a.sum(axis=-1)                                                             # (C, K): the code sums
+    col = lambda v: np.asarray(v, F32)[:, None]                                      # a row term over the columns
+    f32 = lambda n: np.asarray(n).astype(F32)
+    zero = np.zeros((n_out, ncols), F32)
+
+    def half_sb(acc, c, hb):
+        sb, ks = 2 * c + (hb >> 1), [16 * c + 4 * hb + i for i in range(4)]
+        if type_id in (12, 13):
+            for k in ks:
+                f1 = terms["d"][:, sb] * f32(terms["sc"][:, k])
+                f2 = terms["dmin"][:, sb] * f32(terms["m"][:, k])
+                inner = fma32(col(f1), f32(dot[:, :, k]), -(col(f2) * f32(isum[None, :, k])))
+                acc = fma32(inner, d8[None, :, k], acc)
+            return acc
+        if type_id == 42:
+            for b in (0, 1):
+                part = zero
+                for k in ks[2 * b: 2 * b + 2]:
+                    part = fma32(f32(dot[:, :, k]), d8[None, :, k], part)
+                acc = fma32(col(terms["d"][:, ks[2 * b] // 2]), part, acc)
+            return acc
+        part = zero
+        for k in ks:
+            if type_id == 23:
+                ival = dot[:, :, k] * terms["ls"][:, k, None]
+            else:
+                ival = terms["s16"][:, 2 * k, None] * dots[0][:, :, k] + terms["s16"][:, 2 * k + 1, None] * dots[1][:, :, k]
+            part = fma32(f32(ival), d8[None, :, k], part)
+        return fma32(col(terms["d"][:, sb]), part, acc)
+
+    nw = DTC_WARPS[order]
+    ws = []
+    for wp in range(nw):
+        acc = zero
+        for c in range(wp >> 2, nchunk, nw // 4):
+            acc = half_sb(acc, c, wp & 3)
+        ws.append(acc)
+    if order == "one":
+        h = []
+        for q in range(4):
+            v = ws[q]
+            for j in range(1, 6):
+                v = v + ws[4 * j + q]
+            h.append(v)
+        out = (h[0] + h[1]) + (h[2] + h[3])
+    elif order in ("tile", "pair"):
+        out = ((ws[0] + ws[4]) + (ws[1] + ws[5])) + ((ws[2] + ws[6]) + (ws[3] + ws[7]))
+    elif order == "s1":
+        out = ((ws[0] + ws[1]) + ws[2]) + ws[3]
+    else:
+        out = (((ws[0] + ws[1]) + ws[2]) + ws[3]) + (((ws[4] + ws[5]) + ws[6]) + ws[7])
+    return out.T.copy()

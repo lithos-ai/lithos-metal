@@ -39,21 +39,7 @@
 
 struct MmvqParams { uint n_in; uint n_out; uint pad0; uint pad1; };
 
-// q8_d, q8_s, q8_w (a q8_1 block's scale, sum and code words) are basalt_fp.metal's.
-
-// native_mmvq.cu:441-457: the IQ4 codebook as four words and its two-stage byte lookup
-static inline int2 iq4_table_lookup(int q4) {
-    const int t0 = int(0xbfad9881u), t1 = int(0xf6eaddcfu), t2 = int(0x26190d01u), t3 = int(0x71594535u);
-    const int sel = int(0x32103210u | ((uint(q4) & 0x88888888u) >> 1));
-    int tmp[2];
-    for (int i = 0; i < 2; ++i) {
-        const int shift = 16 * i;
-        const int low = byte_perm(t0, t1, q4 >> shift);
-        const int high = byte_perm(t2, t3, q4 >> shift);
-        tmp[i] = byte_perm(low, high, int(uint(sel) >> shift));
-    }
-    return int2(byte_perm(tmp[0], tmp[1], 0x6420), byte_perm(tmp[0], tmp[1], 0x7531));
-}
+// q8_d, q8_s, q8_w (a q8_1 block's scale, sum and code words) and iq4_table_lookup are basalt_fp.metal's.
 
 #if MMVQ_TYPE == 13 || MMVQ_TYPE == 12
 // Q5_K (176-byte blocks: dm, scales[12], qh[32], qs[128]) and Q4_K (144: dm, scales[12], qs[128]);

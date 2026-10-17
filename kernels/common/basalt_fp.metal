@@ -29,8 +29,9 @@
 //   16, 8, 4, 2, 1 on the value's bits (simd_sum documents no order and is never used); warp_sum: the IEEE-built
 //   files' butterfly (iq_kernels.cu:545-549), plain adds.
 // - expf_neg: __expf(-g) as an IEEE-built file compiles it (docs/research/basalt-nvcc/experts.md).
-// - load_int_b2, dp4a, byte_perm, vsubss4: CUDA's two 16-bit loads, __dp4a, __byte_perm (3-bit selectors) and
-//   __vsubss4 as exact integer arithmetic.
+// - load_int_b2, dp4a, byte_perm, vsubss4, vsub4: CUDA's two 16-bit loads, __dp4a, __byte_perm (3-bit selectors),
+//   __vsubss4 and __vsub4 as exact integer arithmetic; iq4_table_lookup: the IQ4 codebook's two-stage byte lookup
+//   (native_mmvq.cu:441-457; dense_tc.cu:79-84 computes the same bytes).
 // - q8_d, q8_s, q8_w: a q8_1 block's scale, sum and code words; q2_0_load, q2_0_sumi: the Q2_0 decode and its exact
 //   integer dot, shared by native_mmvq and the routed experts.
 #pragma STDC FP_CONTRACT OFF
@@ -129,6 +130,24 @@ static inline int byte_perm(int x, int y, int s) {
 static inline int vsubss4(int a, int b) {
     const int4 d = clamp(int4(as_type<char4>(a)) - int4(as_type<char4>(b)), int4(-128), int4(127));
     return as_type<int>(char4(d));
+}
+
+// __vsub4(a, b): per byte a - b, modulo 256.
+static inline int vsub4(int a, int b) { return as_type<int>(as_type<uchar4>(a) - as_type<uchar4>(b)); }
+
+// The IQ4 codebook as four words and its two-stage byte lookup: eight 4-bit codes q4 to their int8 values, .x the low
+// nibbles', .y the high nibbles' (native_mmvq.cu:441-457; dense_tc.cu:56-57, 79-84 with the same table).
+static inline int2 iq4_table_lookup(int q4) {
+    const int t0 = int(0xbfad9881u), t1 = int(0xf6eaddcfu), t2 = int(0x26190d01u), t3 = int(0x71594535u);
+    const int sel = int(0x32103210u | ((uint(q4) & 0x88888888u) >> 1));
+    int tmp[2];
+    for (int i = 0; i < 2; ++i) {
+        const int shift = 16 * i;
+        const int low = byte_perm(t0, t1, q4 >> shift);
+        const int high = byte_perm(t2, t3, q4 >> shift);
+        tmp[i] = byte_perm(low, high, int(uint(sel) >> shift));
+    }
+    return int2(byte_perm(tmp[0], tmp[1], 0x6420), byte_perm(tmp[0], tmp[1], 0x7531));
 }
 
 // q8_1 block b of an activation row (basalt_q8_1.metal's layout): 9 words, word 0 the fp16 pair (d, s), words 1..8

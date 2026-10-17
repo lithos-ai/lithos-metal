@@ -256,6 +256,274 @@ def moe_combine_params(hidden: int, top_k: int, t_active: int) -> bytes:
     return struct.pack("<IIII", hidden, top_k, t_active, 0)
 
 
+# ---- basalt's q8_1 quantizers and native_mmvq (kernels/common/basalt_*.metal; docs/research/basalt-nvcc/matvec.md) ----
+
+Q8_1_BLOCK_BYTES = 36       # fp16 d, fp16 sum, 32 int8 codes
+Q8_1_THREADS = 256          # basalt's QUANT_THREADS: one thread per value
+
+
+def basalt_q8_1_source() -> str:
+    """The native, SwiGLU and IEEE q8_1 quantizers (``native_quantize_q8_1``, ``native_swiglu_quantize_q8_1``,
+    ``quantize_q8_1``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_q8_1.metal")
+
+
+def basalt_q8_1_params(n_values: int) -> bytes:
+    """``Q81Params`` for ``n_values`` = ncols * n_in values (n_in a multiple of 32); the grid is
+    ceil(n_values / 256) threadgroups of 256 threads."""
+    if n_values <= 0 or n_values % 32:
+        raise ValueError(f"q8_1: the value count must be a positive multiple of 32, got {n_values}")
+    return struct.pack("<IIII", n_values, 0, 0, 0)
+
+
+# basalt's iteration traits per ggml type (native_mmvq.cu:897-1098): values per block (DIV), threads per block (T),
+# blocks per iteration with four SIMD-groups (BPI)
+MMVQ_TRAITS = {2: (32, 2, 64), 6: (32, 2, 64), 8: (32, 4, 32), 20: (32, 2, 64), 11: (256, 16, 8), 12: (256, 16, 8),
+               13: (256, 16, 8), 14: (256, 32, 4), 23: (256, 8, 16), 42: (64, 2, 64)}
+
+
+def basalt_mmvq_source() -> str:
+    """basalt's ``native_mmvq`` for the ten GGUF types of ``MMVQ_TRAITS`` (``basalt_mmvq``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_mmvq.metal")
+
+
+def basalt_mmvq_macros(type_id: int, n_in: int, ncols: int, *, upstream: bool = False) -> Dict[str, str]:
+    """basalt's launch for ``ncols`` columns: one column, 4 SIMD-groups and 1 row per threadgroup (4 rows for small
+    K: fewer blocks per row than BPI); several, the exact layout (basalt's default) with 1 row (2 for small K);
+    ``upstream``: llama.cpp's table that mmvq_multi_parity's negative control runs (4 SIMD-groups up to 4 columns,
+    else 2; always 2 rows). One column is always the one-column launch, as in basalt (native_mmvq.cu:1585-1599)."""
+    if type_id not in MMVQ_TRAITS:
+        raise ValueError(f"basalt_mmvq: unsupported ggml type {type_id}")
+    div, _, bpi = MMVQ_TRAITS[type_id]
+    if n_in <= 0 or n_in % div or not 1 <= ncols <= 8:
+        raise ValueError(f"basalt_mmvq: n_in must be a positive multiple of {div} and ncols in 1..8")
+    small = n_in // div < bpi
+    if upstream and ncols > 1:
+        nw, rows = (4 if ncols <= 4 else 2), 2
+    else:
+        nw, rows = 4, ((4 if small else 1) if ncols == 1 else (2 if small else 1))
+    return {"MMVQ_TYPE": str(type_id), "NCOLS": str(ncols), "ROWS": str(rows), "NW": str(nw)}
+
+
+def basalt_mmvq_grid(macros: Mapping[str, str], n_out: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup) for a ``basalt_mmvq_macros`` launch."""
+    return -(-n_out // int(macros["ROWS"])), 32 * int(macros["NW"])
+
+
+def basalt_mmvq_params(n_in: int, n_out: int) -> bytes:
+    return struct.pack("<IIII", n_in, n_out, 0, 0)
+
+
+# ---- basalt's routed experts for Q2_0 / Q2_0 (kernels/common/basalt_experts.metal; docs/research/basalt-nvcc/experts.md)
+
+EXPERT_THREADS = 256        # every expert dispatch: 256-thread threadgroups
+EXPERT_GROUP_ROWS = 24      # basalt's g_dec_gy: the most threadgroup rows a call takes when its caller leaves gy at 0
+
+
+def basalt_experts_source() -> str:
+    """basalt's ``native_expert_grouped`` for Q2_0 gate/up and down: ``basalt_expert_gu``, ``basalt_expert_swiglu_q8_1``
+    and ``basalt_expert_down``, dispatched in that order. The gate/up and down kernels take basalt's ``grp_ptr`` at
+    buffer(1): one 64-bit GPU address a group (each 2-byte aligned, inside a buffer the dispatch makes resident)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_q8_1.metal") + template("basalt_experts.metal")
+
+
+def basalt_expert_layout(n_embd: int, n_ff: int) -> Dict[str, int]:
+    """basalt's ``native_expert_layout(42, 42, n_embd, n_ff)`` (iq_kernels.cu:2517-2529): row bytes, the up and down
+    offsets and the bytes of one blob (n_ff gate rows, n_ff up rows, n_embd down rows), after its checks
+    (``native_expert_supported``, iq_kernels.cu:2511-2515)."""
+    if n_embd <= 0 or n_ff <= 0 or n_embd % 256 or n_ff % 64:
+        raise ValueError(f"basalt_experts: n_embd must be a multiple of 256 and n_ff of 64, got {n_embd}, {n_ff}")
+    gu_row, d_row = n_embd // 64 * 18, n_ff // 64 * 18
+    up_off = n_ff * gu_row
+    return {"n_embd": n_embd, "n_ff": n_ff, "gu_row": gu_row, "d_row": d_row, "up_off": up_off,
+            "down_off": 2 * up_off, "bytes": 2 * up_off + n_embd * d_row}
+
+
+def basalt_expert_macros(n_embd: int, n_ff: int, *, gu2: Optional[bool] = None,
+                         sub16: Optional[bool] = None) -> Dict[str, str]:
+    """basalt's kernel choice (iq_kernels.cu:2376-2382, 2594): gate/up on the two-rows-a-SIMD-group kernel where
+    ``gu2_usable`` holds (n_embd 2560, even n_ff, 4-byte aligned rows), the down kernel's 16-lane rows at n_ff 640.
+    ``gu2`` / ``sub16`` force a choice (tests compare the paths); gu2 needs n_embd 2560, sub16 n_ff 640."""
+    lay = basalt_expert_layout(n_embd, n_ff)
+    usable = n_embd == 2560 and n_ff % 2 == 0 and lay["gu_row"] % 4 == 0 and lay["up_off"] % 4 == 0
+    gu2 = usable if gu2 is None else gu2
+    sub16 = n_ff == 640 if sub16 is None else sub16
+    if (gu2 and not usable) or (sub16 and n_ff != 640):
+        raise ValueError("basalt_experts: the gu2 kernel needs n_embd 2560, the 16-lane down kernel n_ff 640")
+    return {"GU2": str(int(gu2)), "SUB16": str(int(sub16))}
+
+
+def basalt_expert_group_rows(cap_groups: int, grid_groups: int = 0) -> int:
+    """Threadgroup rows of the gate/up and down dispatches: basalt's gy (iq_kernels.cu:2566-2569), cap_groups when the
+    caller passes 0 or more than cap, capped at ``EXPERT_GROUP_ROWS`` when it passes 0. The result does not depend on
+    it."""
+    gy = cap_groups if grid_groups <= 0 or grid_groups > cap_groups else grid_groups
+    return min(gy, EXPERT_GROUP_ROWS) if grid_groups <= 0 else gy
+
+
+def basalt_expert_grids(macros: Mapping[str, str], n_embd: int, n_ff: int, cap_groups: int, cap_entries: int,
+                        grid_groups: int = 0) -> Tuple[Tuple[int, int], int, Tuple[int, int]]:
+    """Threadgroup grids of the gate/up, SwiGLU and down dispatches (each of ``EXPERT_THREADS`` threads)."""
+    gy = basalt_expert_group_rows(cap_groups, grid_groups)
+    gu_rows = 16 if macros["GU2"] == "1" else 8
+    d_rows = 16 if macros["SUB16"] == "1" else 8
+    return ((-(-2 * n_ff // gu_rows), gy), -(-cap_entries * n_ff // EXPERT_THREADS), (-(-n_embd // d_rows), gy))
+
+
+def basalt_expert_params(n_embd: int, n_ff: int) -> bytes:
+    """``ExpertParams``: the layout's n_embd, n_ff, row bytes and offsets."""
+    lay = basalt_expert_layout(n_embd, n_ff)
+    return struct.pack("<8I", n_embd, n_ff, lay["gu_row"], lay["d_row"], lay["up_off"], lay["down_off"], 0, 0)
+
+
+DEQUANT_TYPES = (11, 20, 23, 42)   # Q3_K, IQ4_NL, IQ4_XS, Q2_0: basalt's dequantizers for the types iq_parity checks
+
+
+def basalt_dequant_source() -> str:
+    """basalt's ``dequant_flat_kernel<float>`` for ``DEQUANT_TYPES`` (``basalt_dequant_f32``): n / 256 threadgroups of
+    32 threads, one 256-value superblock each."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_dequant.metal")
+
+
+def basalt_dequant_macros(type_id: int) -> Dict[str, str]:
+    if type_id not in DEQUANT_TYPES:
+        raise ValueError(f"basalt_dequant: unsupported ggml type {type_id}")
+    return {"DQ_TYPE": str(type_id)}
+
+
+# ---- basalt's BF16 GEMVs on fp32 activations (kernels/common/basalt_mmvf.metal; docs/research/basalt-nvcc/bf16.md) --
+# The launch rules below are adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_bf16.cu:124-203 @
+# b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE), whose block-size rule is ggml-org/llama.cpp's
+# ggml/src/ggml-cuda/mmvf.cu @ 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
+
+def basalt_mmvf_source() -> str:
+    """basalt's ``bf16_gemv_fp32_mmvf`` and ``bf16_gemv_fp32_mmvf_multi`` (``basalt_mmvf``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_mmvf.metal")
+
+
+def basalt_mmvf_block(n_in: int) -> int:
+    """basalt's ``mmvf_block_size`` (native_bf16.cu:124-135): 32 threads, unless a block of 64, 96, ..., 256 takes
+    strictly fewer iterations over the n_in / 2 pairs (the first such, then the next that improves on it)."""
+    best, best_it = 32, (n_in + 63) // 64
+    for c in range(64, 257, 32):
+        it = (n_in + 2 * c - 1) // (2 * c)
+        if it < best_it:
+            best, best_it = c, it
+    return best
+
+
+def basalt_mmvf_macros(n_in: int, n_out: int, n_tok: int = 1, ldx: Optional[int] = None,
+                       ldy: Optional[int] = None) -> Dict[str, str]:
+    """basalt's launch for ``n_tok`` activation rows (x row k at k * ldx floats, y row k at k * ldy) after its checks
+    (native_bf16.cu:139-189): one row with ldy >= n_out takes the one-row kernel (NT 1); otherwise the multi kernel,
+    NT 4 up to 4 rows, else 8. BLOCK is ``basalt_mmvf_block(n_in)``; the grid n_out threadgroups of BLOCK threads.
+    ldx and ldy default to n_in and n_out."""
+    ldx = n_in if ldx is None else ldx
+    ldy = n_out if ldy is None else ldy
+    if not (0 < n_in < 2 ** 31 and n_in % 2 == 0 and 0 < n_out < 2 ** 31):
+        raise ValueError("basalt_mmvf: require positive even n_in and positive n_out <= INT_MAX")
+    one_row = n_tok == 1 and ldy >= n_out
+    if not one_row and not (1 <= n_tok <= 8 and ldx % 2 == 0):
+        raise ValueError("basalt_mmvf: 1..8 rows, even n_in/ldx")
+    nt = 1 if one_row else (4 if n_tok <= 4 else 8)
+    return {"BLOCK": str(basalt_mmvf_block(n_in)), "NT": str(nt)}
+
+
+def basalt_mmvf_params(n_in: int, n_out: int, n_tok: int = 1, ldx: Optional[int] = None,
+                       ldy: Optional[int] = None) -> bytes:
+    """``MmvfParams``: n_in, n_out, n_tok, ldx and ldy (defaults n_in and n_out)."""
+    return struct.pack("<8I", n_in, n_out, n_tok, n_in if ldx is None else ldx, n_out if ldy is None else ldy, 0, 0, 0)
+
+
+def basalt_mmvf_cols(ncols: int) -> List[Tuple[int, int]]:
+    """basalt's ``bf16_gemv_fp32_mmvf_cols`` (native_bf16.cu:193-203): (first column, columns) of each launch over
+    ``ncols`` contiguous columns (ldx = n_in, ldy = n_out), chunks of 8; a chunk of one is the one-row kernel's."""
+    return [(c0, min(8, ncols - c0)) for c0 in range(0, ncols, 8)]
+
+
+# ---- basalt's dense_tc and dense_tc_pair (kernels/common/basalt_dense_tc.metal; docs/research/basalt-nvcc/dense_tc.md)
+# adapted from basalt (jesdga95/basalt) src/kernels/cuda/dense_tc.cu:35-42, :52-54, :698-702, :1017-1105 @
+# b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE)
+
+DENSE_TC_SB = {11: 110, 12: 144, 13: 176, 14: 210, 23: 136, 42: 72}   # Fmt<TYPE>::SB: bytes of 256 values
+DENSE_TC_ORDERS = {"one": 0, "tile": 1, "s1": 2, "s2": 3}             # DTC_ORDER; s1 / s2: dense_tc_kernel at KS 1 / 2
+DENSE_TC_SM_COUNT = 170   # the multiprocessors of basalt's measured GPU (an RTX 5090), which its variant rule reads
+
+
+def basalt_dense_tc_source() -> str:
+    """basalt's ``dense_tc`` (``basalt_dense_tc``) and ``dense_tc_pair`` (``basalt_dense_tc_pair``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_dense_tc.metal")
+
+
+def _dense_tc_check(type_id: int, n_in: int) -> int:
+    """dense_tc_supported (dense_tc.cu:1063-1065) for the pack's types: n_in a positive multiple of 512. Returns SB."""
+    if type_id not in DENSE_TC_SB:
+        raise ValueError(f"basalt_dense_tc: unsupported ggml type {type_id}")
+    if n_in <= 0 or n_in % 512:
+        raise ValueError(f"basalt_dense_tc: n_in must be a positive multiple of 512, got {n_in}")
+    return DENSE_TC_SB[type_id]
+
+
+def basalt_dense_tc_variant(type_id: int, n_in: int, n_out: int, *, sm_count: int = DENSE_TC_SM_COUNT,
+                            aligned: bool = True) -> str:
+    """basalt's summation order for a shape (``launch<TYPE>``, dense_tc.cu:1017-1059; never the column count): "one"
+    where the weights are 16-byte aligned, a row is whole 16-byte units, the 16-row tiles number at most ``sm_count``
+    and ``one_smem_bytes<TYPE, 24>`` fits 99 KiB; else "tile" where aligned and two tiles fit 90 KiB; else "s2" (KS 2)
+    where n_in % 1024 == 0 and the tiles number fewer than ``sm_count``; else "s1". ``aligned``: the weights' base
+    is 16-byte aligned (every Metal buffer is)."""
+    sb = _dense_tc_check(type_id, n_in)
+    if n_out < 1:
+        raise ValueError(f"basalt_dense_tc: n_out must be positive, got {n_out}")
+    row_bytes, tiles = n_in // 256 * sb, -(-n_out // 16)
+    one_stride = row_bytes if (row_bytes // 16) % 2 else row_bytes + 16          # one_row_stride, :52-54
+    one_smem = 128 + max(24 * 16 * 8 * 4, 16 * one_stride)                       # one_smem_bytes<TYPE, 24>, :698-702
+    if aligned and row_bytes % 16 == 0 and tiles <= sm_count and one_smem <= 99 * 1024:
+        return "one"
+    if aligned and 2 * 16 * row_bytes <= 90 * 1024:
+        return "tile"
+    return "s2" if n_in % 1024 == 0 and tiles < sm_count else "s1"
+
+
+def basalt_dense_tc_macros(type_id: int, n_in: int, n_out: int, variant: Optional[str] = None, *,
+                           sm_count: int = DENSE_TC_SM_COUNT) -> Dict[str, str]:
+    """``variant`` (default: ``basalt_dense_tc_variant``'s at ``sm_count``) of a dense_tc launch; KS 2 needs
+    n_in % 1024 == 0."""
+    variant = variant or basalt_dense_tc_variant(type_id, n_in, n_out, sm_count=sm_count)
+    _dense_tc_check(type_id, n_in)
+    if variant not in DENSE_TC_ORDERS:
+        raise ValueError(f"basalt_dense_tc: unknown variant {variant!r}")
+    if variant == "s2" and n_in % 1024:
+        raise ValueError(f"basalt_dense_tc: KS 2 needs n_in % 1024 == 0, got {n_in}")
+    return {"DTC_TYPE": str(type_id), "DTC_ORDER": str(DENSE_TC_ORDERS[variant])}
+
+
+def basalt_dense_tc_grid(macros: Mapping[str, str], n_out: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup): one threadgroup per 16-row tile, basalt's warps run by up to 8
+    SIMD-groups (the kernel takes any count from 4)."""
+    warps = (24, 8, 4, 8)[int(macros["DTC_ORDER"])]                             # basalt's warps per tile
+    return -(-n_out // 16), 32 * min(warps, 8)
+
+
+def basalt_dense_tc_params(n_in: int, n_out: int, ncols: int, n_out1: int = 0) -> bytes:
+    """``DtcParams``: n_in, n_out (the pair: the first matrix's), ncols 1..8 and the pair's second n_out."""
+    if not 1 <= ncols <= 8:
+        raise ValueError(f"basalt_dense_tc: ncols must be in 1..8, got {ncols}")
+    return struct.pack("<IIII", n_in, n_out, ncols, n_out1)
+
+
+def basalt_dense_tc_pair_macros(type0: int, type1: int, n_in: int) -> Dict[str, str]:
+    """dense_tc_pair's two types, after ``dense_tc_pair_supported`` (dense_tc.cu:1100-1105): two staged tiles of the
+    larger format fit basalt's 99 KiB."""
+    sb = max(_dense_tc_check(type0, n_in), _dense_tc_check(type1, n_in))
+    if 128 + 8 * 16 * 8 * 4 + 2048 + 2 * 16 * (n_in // 256) * sb > 99 * 1024:
+        raise ValueError(f"basalt_dense_tc_pair: types {type0}/{type1} at n_in {n_in} not supported")
+    return {"DTC_TYPE0": str(type0), "DTC_TYPE1": str(type1)}
+
+
+def basalt_dense_tc_pair_grid(n_out0: int, n_out1: int) -> Tuple[int, int]:
+    return -(-n_out0 // 16) + -(-n_out1 // 16), 256
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

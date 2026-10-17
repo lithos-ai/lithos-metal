@@ -56,6 +56,8 @@ def test_check_q8_1_finite():
             codes = g[4:].view(np.int8).astype(int)
             if finite_before:
                 want = np.concatenate([np.array([od, os], np.uint16).view(np.uint8), want_q.view(np.uint8)])
+                # basalt: ``bool near = path == 1 && gs == os && std::abs((int) gd - (int) od) <= 1;`` (:465), and
+                # every code within one (:466)
                 near = path == 1 and gs == os and abs(gd - int(od)) <= 1 and np.all(np.abs(codes - want_q) <= 1)
                 if np.array_equal(want, g) or near:
                     same += 1
@@ -68,6 +70,7 @@ def test_check_q8_1_finite():
                 ok = ok and codes.min() >= -127 and codes.max() <= 127
                 clamped += ok
                 bad += not ok
+        # basalt: ``g_fail += bad + (clamped != 3);`` (:480)
         assert bad == 0 and clamped == 3, (kind, same, clamped, bad)
         assert same == len(got) - 3
 

@@ -59,8 +59,10 @@ def multi_vs_single(type_id, n_in, n_out, t, upstream, seed):
     rng = np.random.default_rng(seed)
     w = weights(type_id, n_in, n_out, rng)
     _, xq = activations(n_in, t, rng)
-    multi = gpu.mmvq(type_id, w, xq, n_in, n_out, t, upstream=upstream)
-    single = np.stack([gpu.mmvq(type_id, w, columns(xq, n_in, j), n_in, n_out, 1)[0] for j in range(t)])
+    # outputs pre-filled apart, so a row neither call writes differs; the multi side's 0xff is NaN, so an unwritten
+    # row of the control's layout is non-finite and cannot pass for its power
+    multi = gpu.mmvq(type_id, w, xq, n_in, n_out, t, upstream=upstream, fill=0xFF)
+    single = np.stack([gpu.mmvq(type_id, w, columns(xq, n_in, j), n_in, n_out, 1, fill=0xFE)[0] for j in range(t)])
     return multi, single
 
 
@@ -109,8 +111,8 @@ def test_q8_0_one_column(geom):
     w = weights(8, n_in, n_out, rng)
     x = rng.standard_normal(n_in).astype(F32)
     xq = gpu.q8_1(np.concatenate([x, x]), "ieee")
-    a = gpu.mmvq(8, w, columns(xq, n_in, 0), n_in, n_out, 1)[0]
-    b = gpu.mmvq(8, w, xq, n_in, n_out, 2)[0]
+    a = gpu.mmvq(8, w, columns(xq, n_in, 0), n_in, n_out, 1, fill=0xFF)[0]    # basalt's pre-fills (:426-427)
+    b = gpu.mmvq(8, w, xq, n_in, n_out, 2, fill=0xFE)[0]
     ref = reference(8, w, columns(xq, n_in, 0), n_in, n_out)
     diff = np.count_nonzero(a.view(np.uint32) != b.view(np.uint32))
     worst, scale = np.max(np.abs(a.astype(np.float64) - ref)), np.max(np.abs(ref))
@@ -199,14 +201,14 @@ def test_column_invariance(type_id):
     """Every column of a T-column call equals basalt's one-column call (its own launch: 4 rows per threadgroup for
     small K) bit for bit, T = 1 to 8."""
     for n_in in SHAPES[type_id]:
-        n_out = 70                                                       # a row tail for every ROWS
+        n_out = 71                                                       # odd: a row tail for ROWS 2 and 4
         rng = np.random.default_rng(type_id + n_in)
         w = weights(type_id, n_in, n_out, rng)
         _, xq = activations(n_in, 8, rng, "native")
-        single = np.stack([gpu.mmvq(type_id, w, columns(xq, n_in, j), n_in, n_out, 1)[0] for j in range(8)])
+        single = np.stack([gpu.mmvq(type_id, w, columns(xq, n_in, j), n_in, n_out, 1, fill=0xFE)[0] for j in range(8)])
         assert np.all(np.isfinite(single))
         for t in range(1, 9):
-            multi = gpu.mmvq(type_id, w, xq[: t * (n_in // 32) * 36], n_in, n_out, t)
+            multi = gpu.mmvq(type_id, w, xq[: t * (n_in // 32) * 36], n_in, n_out, t, fill=0xFF)
             assert np.array_equal(multi.view(np.uint32), single[:t].view(np.uint32)), (n_in, t)
 
 

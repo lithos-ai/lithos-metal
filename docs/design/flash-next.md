@@ -100,26 +100,39 @@ ones this pack runs.
 4. **Per-step values are data.** Tokens, positions, step records and commit counts live in buffers, never in baked
    kernel arguments (`include/basalt/core/graph.hpp:14-17`).
 5. **Basalt's rounding sequence, Metal's arithmetic.** The default arithmetic is the forced `native_*` set
-   (`src/program/generate.cpp:1889-1893`), including its rounding sequence. The Metal kernels build in
-   `MTLMathModeSafe`, this repository's default (`runtime/src/metal_core.mm:99`), where `+`, `-`, `*`, `/`, `sqrt` and
-   `fma` round correctly (MSL 4.1, section 8.4, Table 8.1): an operation CUDA also rounds correctly gives CUDA's bits
-   on the same inputs. An FMA appears where the basalt source writes one, and a multiply basalt rounds on its own
-   (`__fmul_rn`, as in `src/kernels/cuda/native_ple_postops.cu:41-50` and the routed experts' SwiGLU product,
-   `src/kernels/cuda/iq_kernels.cu:1902-1918`) is never contracted into one. NVIDIA's approximate instructions have no
-   Metal counterpart. Each approximate operation basalt computes, whether a `--use_fast_math` file produces it or an
-   IEEE-built kernel writes it (the list above), maps to the `metal::fast::` function of the same operation:
-   `fast::exp2` of the product with log2(e) that `__expf` or basalt's PTX forms, `fast::divide` for an approximate
-   division or reciprocal (MSL has no `fast::recip`), `fast::rsqrt` for `rsqrtf` (Table 8.2). MSL has no `log1p`, so
-   `log1pf` gets a helper of its own, and the library `expf` maps to `metal::precise::exp`. One helper
-   serves each operation at every site, so kernels that basalt checks bitwise against each other
-   (`qsa_dec_attn_parity`, `dec_gdn_parity`, and `hc_fused_parity`'s window checks) stay bitwise equal on
-   Metal. MSL leaves subnormals and the rounding mode to the GPU: subnormal inputs and results "may be flushed to
-   zero" (section 8.1), and round to nearest even or toward zero "may be supported" (section 8.2). Whether Apple family
-   9 flushes subnormals under `MTLMathModeSafe`, as basalt's `.ftz` instructions do, and rounds to nearest even, as
-   CUDA does, is [H], for a probe to measure. Where nvcc contracts implicitly, where basalt approximates or calls
-   `log1pf` or the library `expf`, and on subnormal values, the Metal result can therefore differ from CUDA's last
-   bits. Basalt's tolerances accept that, and invariant 1 still holds, because each Metal kernel rounds the same way at
-   every window width.
+   (`src/program/generate.cpp:1889-1893`), including its rounding sequence. The authority for that sequence is what
+   nvcc compiles, read from basalt's sm_120 PTX and SASS and recorded per kernel and site in
+   `docs/research/basalt-nvcc/` (`matvec.md` for the q8_1 quantizers and `native_mmvq`): which multiply-adds fuse and
+   with which operands, the operand order of each `a * b - c * d`, where `.FTZ` flushes subnormals, and each
+   approximate instruction. The source alone does not settle it: nvcc's default `--fmad=true` fuses where the source
+   writes no FMA, `ptxas` fuses further than the PTX (the Q4_K and Q5_K returns, `matvec.md` section 5) and replaces an
+   approximate division by a constant with a multiply by its correctly rounded reciprocal (`amax / 127.0f`). The Metal
+   kernels build in `MTLMathModeSafe`, this repository's default (`runtime/src/metal_core.mm:99`), where `+`, `-`,
+   `*`, `/`, `sqrt` and `fma` round correctly (MSL 4.1, section 8.4, Table 8.1), and on this GPU to nearest even, as
+   CUDA does (measured: `tests/kernels/test_basalt_platform.py`). Each Metal source starts with
+   `#pragma STDC FP_CONTRACT OFF` and writes nvcc's sequence explicitly: `fma()` exactly where SASS has an `FFMA`,
+   with the same operands, and a separate multiply and add everywhere else, so implicit contraction no longer differs
+   from CUDA's (measured: with the pragma a runtime-compiled `a * b + c` is never fused; without it safe mode fuses
+   it). A multiply basalt rounds on its own (`__fmul_rn`, as in `src/kernels/cuda/native_ple_postops.cu:41-50` and
+   the routed experts' SwiGLU product, `src/kernels/cuda/iq_kernels.cu:1902-1918`) is never contracted. Where SASS
+   flushes (`.FTZ`), the Metal kernel flushes the inputs and the result to the zero of their sign explicitly, with
+   integer operations on the bits, so the result does not depend on what the GPU does with subnormals. Where basalt's
+   SASS keeps subnormals (the IEEE-built kernels' unflagged operations), the Metal kernel emulates IEEE behaviour
+   wherever a subnormal can occur: this GPU flushes subnormal inputs and results of add, multiply, fma, division and
+   `fmax` in `MTLMathModeSafe` (measured; MSL section 8.1 permits it). An approximate division or reciprocal
+   (`MUFU.RCP`, then `FMUL` for a division) becomes the correctly rounded reciprocal `1.0f / x` and the same multiply:
+   it gives CUDA's bits wherever `MUFU.RCP` returns the correctly rounded reciprocal, which NVIDIA does not specify,
+   and it needs no undocumented Metal behaviour. The tests count how often a quotient through the correctly rounded
+   reciprocal differs from the correctly rounded quotient. For the other approximate operations basalt computes,
+   whether a `--use_fast_math` file produces them or an IEEE-built kernel writes them (the list above), the mapping
+   is the `metal::fast::` function of the same operation: `fast::exp2` of the product with log2(e) that `__expf` or
+   basalt's PTX forms, `fast::rsqrt` for `rsqrtf` (Table 8.2). MSL has no `log1p`, so `log1pf` gets a helper of its
+   own, and the library `expf` maps to `metal::precise::exp`. One helper serves each operation at every site, so
+   kernels that basalt checks bitwise against each other (`qsa_dec_attn_parity`, `dec_gdn_parity`, and
+   `hc_fused_parity`'s window checks) stay bitwise equal on Metal. Where `MUFU.RCP` is not correctly rounded, where
+   basalt approximates an exponential or a square root (`ex2.approx`, `rsqrtf`), and where it calls `log1pf` or the
+   library `expf`, the Metal result can therefore differ from CUDA's last bits. Basalt's tolerances accept that, and
+   invariant 1 still holds, because each Metal kernel rounds the same way at every window width.
 
 ### How this departs from the repository-wide contract
 

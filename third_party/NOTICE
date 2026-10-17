@@ -83,6 +83,10 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   sizes of `gguf-py/gguf/constants.py` `GGML_QUANT_SIZES`; its Q2_0 decode is a scalar port of
   `ggml/src/ggml-quants.c` `dequantize_row_q2_0`. License: `third_party/GGML-LICENSE`; gguf-py's own `LICENSE` is the
   same MIT text under "Copyright (c) 2023 Georgi Gerganov", which the file's header carries.
+- `kernels/common/basalt_fp.metal` — through basalt's `src/kernels/cuda/native_mmvq.cu` (below), which adapts
+  `ggml/src/ggml-cuda/{quantize.cu,vecdotq.cuh,mmvq.cu,common.cuh}` and `ggml/src/ggml-common.h` (MIT): the warp sum
+  and max butterflies, the two-16-bit-load word read and the `__dp4a`, `__byte_perm` and `__vsubss4` semantics.
+  License: `third_party/GGML-LICENSE`.
 
 ## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
 
@@ -92,6 +96,10 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `src/core/mtp.cpp`. The test writer in `tests/contract/test_basalt_reader.py` follows `tools/model_file.py`'s
   `ModelWriter`. `tests/contract/test_gguf_formats.py` compiles basalt's references only from a checkout the user points
   `BASALT_SRC` at. License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_fp.metal` — adapted from `src/kernels/cuda/native_mmvq.cu`, `include/basalt/kernels/dp4a.hpp`
+  and `include/basalt/kernels/q8_1_finite.hpp` (MIT): `warp_sum`, `warp_max`, `load_int_b2` and the `DP4A` helper,
+  with the flush-to-zero and reciprocal helpers that write out the arithmetic nvcc compiles for them
+  (`docs/research/basalt-nvcc/matvec.md`). License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

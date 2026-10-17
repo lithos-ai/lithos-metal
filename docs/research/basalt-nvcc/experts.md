@@ -38,12 +38,12 @@ and a bare `:N` is a line of the file named last.
 
 ## Notation
 
-As in `matvec.md`: fl(e) rounds once to fp32, to nearest even; fma(a, b, c) rounds a·b + c once; h(x) is an fp16
-value converted to fp32 (exact); f(n) an int32 converted to fp32 (exact here). The PTX has no `.ftz` (0 in each
-dump). In the SASS, `.FTZ` appears only in `div.rn.f32`'s slow-path subroutine, `__cuda_sm3x_div_rn_noftz_f32_slowpath`
-(32 instructions in each dump: four copies of eight): compares against infinity, which flushing cannot change, the add
-that returns a NaN operand's NaN, and a negation and a compare on operands it has scaled into [1, 2). Its quotient is
-`div.rn.f32`'s, IEEE's, so every float operation of these kernels is IEEE's, subnormals kept.
+As in `matvec.md`: fl(e) rounds once to fp32, to nearest even; fma(a, b, c) rounds a·b + c once; h(x) is an fp16 value
+converted to fp32 (exact); f(n) an int32 converted to fp32 (exact here). The PTX has no `.ftz` (0 in each dump). In the
+SASS, `.FTZ` appears only in `div.rn.f32`'s slow-path subroutine, `__cuda_sm3x_div_rn_noftz_f32_slowpath` (32
+instructions in each dump: four copies of eight): compares against infinity, which flushing cannot change, the add that
+returns a NaN operand's NaN, and a negation and a compare on values it has scaled away from the subnormal range. Its
+quotient is `div.rn.f32`'s, IEEE's, so every float operation of these kernels is IEEE's, subnormals kept.
 
 **Where a subnormal can occur.** This GPU flushes subnormal inputs and results of add, multiply, fma and division in
 `MTLMathModeSafe` (`tests/kernels/test_basalt_platform.py`), where these IEEE instructions keep them. Each site below

@@ -314,6 +314,21 @@ def basalt_mmvq_params(n_in: int, n_out: int) -> bytes:
     return struct.pack("<IIII", n_in, n_out, 0, 0)
 
 
+DEQUANT_TYPES = (11, 20, 23, 42)   # Q3_K, IQ4_NL, IQ4_XS, Q2_0: basalt's dequantizers for the types iq_parity checks
+
+
+def basalt_dequant_source() -> str:
+    """basalt's ``dequant_flat_kernel<float>`` for ``DEQUANT_TYPES`` (``basalt_dequant_f32``): n / 256 threadgroups of
+    32 threads, one 256-value superblock each."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_dequant.metal")
+
+
+def basalt_dequant_macros(type_id: int) -> Dict[str, str]:
+    if type_id not in DEQUANT_TYPES:
+        raise ValueError(f"basalt_dequant: unsupported ggml type {type_id}")
+    return {"DQ_TYPE": str(type_id)}
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

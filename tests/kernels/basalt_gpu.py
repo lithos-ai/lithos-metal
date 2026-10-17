@@ -19,13 +19,16 @@ def pipeline(source: str, name: str, macros: tuple = ()):
 
 
 def run(pso, buffers, params, slot, grid, threads):
-    """Bind ``buffers`` (bytes or byte counts) at 0, 1, ...; ``params`` at ``slot``; return the buffers' bytes."""
+    """Bind ``buffers`` (bytes or byte counts) at 0, 1, ...; ``params`` (if any) at ``slot``; return the buffers'
+    bytes."""
     dev = device()
     bufs = [nt.Buffer(dev, b) for b in buffers]
     d = nt.Dispatch().pipeline(pso)
     for k, b in enumerate(bufs):
         d = d.buffer(k, b)
-    d = d.bytes(slot, params).grid(grid).threadgroup(threads)
+    if params is not None:
+        d = d.bytes(slot, params)
+    d = d.grid(grid).threadgroup(threads)
     r = nt.Queue(dev).run([d])
     assert not r.error, r.error
     return [b.read(0, len(src) if isinstance(src, (bytes, bytearray)) else src) for b, src in zip(bufs, buffers)]
@@ -53,3 +56,11 @@ def mmvq(type_id, w, xq, n_in, n_out, ncols, upstream=False):
     out = run(pso, [np.ascontiguousarray(w, np.uint8).tobytes(), np.ascontiguousarray(xq, np.uint8).tobytes(),
                     4 * ncols * n_out], kernels.basalt_mmvq_params(n_in, n_out), 3, grid, threads)
     return np.frombuffer(out[2], np.float32).reshape(ncols, n_out)
+
+
+def dequant(type_id, raw, n):
+    """``basalt_dequant_f32``: the ``n`` values (a multiple of 256) of the GGUF blocks ``raw``, as float32."""
+    pso = pipeline(kernels.basalt_dequant_source(), "basalt_dequant_f32",
+                   tuple(sorted(kernels.basalt_dequant_macros(type_id).items())))
+    out = run(pso, [np.ascontiguousarray(raw, np.uint8).tobytes(), 4 * n], None, 0, n // 256, 32)
+    return np.frombuffer(out[1], np.float32)

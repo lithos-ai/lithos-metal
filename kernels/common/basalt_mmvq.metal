@@ -43,9 +43,6 @@ struct MmvqParams { uint n_in; uint n_out; uint pad0; uint pad1; };
 static inline float q8_d(device const uint* x, int b) { return h2f(ushort(x[9 * b] & 0xffffu)); }
 static inline float q8_s(device const uint* x, int b) { return h2f(ushort(x[9 * b] >> 16)); }
 static inline int q8_w(device const uint* x, int b, int k) { return int(x[9 * b + 1 + k]); }
-static inline uchar w_u8(device const ushort* blk, int byte) {
-    return uchar(blk[byte >> 1] >> (8 * (byte & 1)));
-}
 
 // native_mmvq.cu:441-457: the IQ4 codebook as four words and its two-stage byte lookup
 static inline int2 iq4_table_lookup(int q4) {

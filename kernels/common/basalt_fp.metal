@@ -52,6 +52,9 @@ static inline int load_int_b2(device const ushort* p, int i32) {
     return int(uint(p[2 * i32]) | (uint(p[2 * i32 + 1]) << 16));
 }
 
+// byte `byte` of a 2-byte aligned block, through a 16-bit load (little-endian)
+static inline uchar w_u8(device const ushort* blk, uint byte) { return uchar(blk[byte >> 1] >> (8u * (byte & 1u))); }
+
 // __dp4a(a, b, c): c plus the four products of sign-extended bytes (no sum here comes near 2^31).
 static inline int dp4a(int a, int b, int c) {
     const char4 x = as_type<char4>(a), y = as_type<char4>(b);

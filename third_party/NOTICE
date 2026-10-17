@@ -93,6 +93,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `ggml/src/ggml-cuda/{vecdotq.cuh,mmvq.cu,common.cuh}` and `ggml/src/ggml-common.h` (MIT): the block structs, the
   `vec_dot_*_q8_1` integer dot products and their scale arithmetic, the IQ4 table lookup, and mmvq's thread-to-block
   mapping and cross-warp reduction. License: `third_party/GGML-LICENSE`.
+- `kernels/common/basalt_dequant.metal` — through basalt's `src/kernels/cuda/iq_kernels.cu` (below), which transcribes
+  `ggml/src/ggml-cuda/dequantize.cuh` and `convert.cu` and `ggml/src/ggml-common.h`'s `kvalues_iq4nl` (MIT): the
+  Q3_K, IQ4_NL and IQ4_XS dequantization rules and the IQ4 codebook. License: `third_party/GGML-LICENSE`.
 
 ## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
 
@@ -114,6 +117,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   for Q2_0, Q3_K, Q4_K, Q5_K, Q6_K, IQ4_XS, IQ4_NL, Q4_0, Q5_0 and Q8_0, in the exact and the upstream layouts, written
   in the rounding sequence nvcc compiles for them (`docs/research/basalt-nvcc/matvec.md`). License:
   `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_dequant.metal` — adapted from `src/kernels/cuda/iq_kernels.cu:2012-2069` and `:2216-2220`
+  (MIT): `dq_iq4_nl`, `dq_q3_k`, `dq_iq4_xs` and `dq_q2_0` under `dequant_flat_kernel<float>`, in the arithmetic nvcc
+  compiles for them (`docs/research/basalt-nvcc/dequant.md`). License: `third_party/BASALT-LICENSE`.
+- `tests/kernels/test_basalt_iq_parity.py` — adapted from `tools/iq_fixture.py` and `tools/gguf_writer.py`'s
+  `quantize_q2_0` (MIT): `iq_parity`'s fixtures, byte for byte, and its pass criterion
+  (`src/kernels/iq_parity.cpp`). License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

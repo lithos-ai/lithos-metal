@@ -292,3 +292,40 @@ def mmvq(type_id, w, xq, n_in, n_out, ncols, nw=4, row_chunk=64):
             t = add_ftz(t, tmp[..., 32 * sgi: 32 * sgi + 32])
         out[:, r0: r0 + row_chunk] = butterfly(t.reshape(-1, 32), add_ftz).reshape(ncols, len(rows))
     return out
+
+
+# ---- the routed experts (docs/research/basalt-nvcc/experts.md) ----------------------------------------------------
+# iq_kernels.cu builds with nvcc's IEEE defaults: no flush; numpy's float32 operations keep subnormals as CUDA does.
+
+def q2_0_dots(rows, n, xq):
+    """Q2_0 rows (R rows of ``n`` values, GGUF blocks) against q8_1 rows ``xq`` (E rows of n / 32 blocks): (E, R), in
+    the order basalt's row_dot_multi sums (experts.md sections 1 and 3): call k (Q2_0 block k / 2, half k % 2, q8_1
+    block k) on lane k % 32, s = fma(fl(d2 * d8), f(sumi), s) over the lane's calls in ascending k from +0, then the
+    32-lane butterfly of plain adds. gu2's rows2 and the down kernel's 16-lane tree give the same bits."""
+    rows = np.asarray(rows, np.uint8).reshape(-1, n // 64, 18)
+    nr, nk = rows.shape[0], n // 32
+    qs = rows[..., 2:18].astype(np.int64)
+    codes = ((qs[..., np.arange(64) // 4] >> (2 * (np.arange(64) % 4))) & 3) - 1     # (R, n / 64, 64): code - 1
+    xb = np.asarray(xq, np.uint8).reshape(-1, nk, 36)
+    a = xb[..., 4:].view(np.int8).astype(np.float64)                                   # (E, K, 32)
+    # exact integer dots (|sumi| <= 32 * 2 * 127), per call: (K, R, 32) @ (K, 32, E)
+    sumi = np.matmul(codes.reshape(nr, nk, 32).transpose(1, 0, 2).astype(np.float64), a.transpose(1, 2, 0))
+    d = _h(rows, 0)[:, np.arange(nk) // 2][None] * _h(xb, 0)[:, None, :]                # (E, R, K): exact products
+    f = sumi.transpose(2, 1, 0).astype(F32)
+    s = np.zeros(d.shape[:2] + (32,), F32)
+    for k0 in range(0, nk, 32):
+        ks = np.arange(k0, min(k0 + 32, nk))
+        s[..., ks - k0] = fma32(d[..., ks], f[..., ks], s[..., ks - k0])
+    for o in (16, 8, 4, 2, 1):
+        s = s + s[..., np.arange(32) ^ o]
+    return s[..., 0]
+
+
+def swiglu_q8_1(gate, up, e):
+    """The experts' SwiGLU + q8_1 (experts.md section 2): t = fl(1 + e), s = fl(g / t) correctly rounded,
+    h = fl(s * up) with IEEE subnormals, then the IEEE quantizer. ``e`` is __expf(-g), taken from the GPU's expf_neg
+    (MUFU.EX2 and fast::exp2 have no bit-exact host model)."""
+    g, up, e = (np.asarray(v, F32) for v in (gate, up, e))
+    with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
+        h = (g / (F32(1.0) + e)) * up
+    return q8_1_ieee(h)

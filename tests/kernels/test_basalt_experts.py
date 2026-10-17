@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 from monolith import kernels
+from tests.kernels import basalt_emu as emu
 from tests.kernels import basalt_gpu as gpu
 
 F32 = np.float32
@@ -50,3 +51,174 @@ def test_every_variant_builds_and_runs(n_embd, n_ff):
             out = r["out"]
             assert np.isfinite(out[[0, 1, 3]]).all(), (gu2, sub16)
             assert np.all(out[[2, 4]].view(np.uint32) == 0xFFFFFFFF), (gu2, sub16)
+
+
+# ---- calls as basalt's tests build them --------------------------------------------------------------------------
+
+class Call:
+    """One expert call: ``n_blobs`` blobs in one arena (each at a 256-byte aligned slot, native_grouped_parity.cpp:117),
+    groups of ``sizes`` entries from entry ``base`` on, each group its own blob while there are enough (plan_sizes,
+    :163-191), random tokens and scattered destinations (a permutation of the cap rows), and ``tokens`` q8_1 rows of
+    N(0, 1) activations from the IEEE quantizer."""
+
+    def __init__(self, rng, n_embd, n_ff, sizes, tokens, *, base=0, cap=None, n_blobs=None, neg=0.5, cap_groups=None):
+        self.n_embd, self.n_ff = n_embd, n_ff
+        self.lay = kernels.basalt_expert_layout(n_embd, n_ff)
+        slot = (self.lay["bytes"] + 255) // 256 * 256
+        n_blobs = n_blobs or max(len(sizes), 1)
+        self.arena = np.zeros(slot * n_blobs, np.uint8)
+        for b in range(n_blobs):
+            self.arena[slot * b: slot * b + self.lay["bytes"]] = random_blob(rng, n_embd, n_ff, neg)
+        order = rng.permutation(n_blobs)
+        self.grp_off = [int(slot * order[g % n_blobs]) for g in range(len(sizes))]
+        self.grp_start = [base + int(v) for v in np.cumsum([0] + list(sizes))]
+        self.n_ent = self.grp_start[-1]
+        self.cap = cap or self.n_ent + 3
+        self.cap_groups = cap_groups or max(len(sizes), 1)
+        assert self.n_ent <= self.cap
+        self.ent_tok = rng.integers(0, tokens, self.cap).astype(np.int32)
+        self.ent_dst = rng.permutation(self.cap).astype(np.int32)
+        self.x = rng.standard_normal(tokens * n_embd).astype(F32)
+        self.xq = gpu.q8_1(self.x, "ieee")
+
+    def entries(self):
+        return range(self.grp_start[0], self.n_ent)
+
+    def group_of(self, e):
+        return next(g for g in range(len(self.grp_off)) if self.grp_start[g] <= e < self.grp_start[g + 1])
+
+    def run(self, **kw):
+        return gpu.experts(self.arena, self.grp_off, self.grp_start, self.ent_tok, self.ent_dst, self.xq, self.n_embd,
+                           self.n_ff, self.cap, cap_groups=self.cap_groups, cap_entries=self.cap, **kw)
+
+    def per_entry(self, **kw):
+        """Each entry alone (one group of one entry): the grouped kernels' arithmetic one entry a call, the comparand
+        that stands for basalt's older kernels. Rows no entry writes keep the NaN pattern."""
+        out = np.full((self.cap, self.n_embd), 0xFFFFFFFF, np.uint32)
+        for e in self.entries():
+            g, d = self.group_of(e), int(self.ent_dst[e])
+            r = gpu.experts(self.arena, [self.grp_off[g]], [0, 1], [self.ent_tok[e]], [d], self.xq, self.n_embd,
+                            self.n_ff, self.cap, **kw)
+            out[d] = r["out"][d].view(np.uint32)
+        return out
+
+    def blob(self, e, part):
+        """Entry e's gate, up or down rows (GGUF bytes)."""
+        o, lay = self.grp_off[self.group_of(e)], self.lay
+        start = {"gate": 0, "up": lay["up_off"], "down": lay["down_off"]}[part]
+        n = lay["n_ff"] * lay["gu_row"] if part != "down" else lay["n_embd"] * lay["d_row"]
+        return self.arena[o + start: o + start + n]
+
+
+def q8_rows(xq, rows, n):
+    """The q8_1 rows ``rows`` (n values each) of the q8_1 bytes ``xq``."""
+    b = n // 32 * kernels.Q8_1_BLOCK_BYTES
+    return np.concatenate([np.asarray(xq)[r * b: (r + 1) * b] for r in rows])
+
+
+def gpu_expf_neg(g):
+    """The SwiGLU's __expf(-g) as the kernel computes it: basalt_fp.metal's expf_neg, the same device function."""
+    src = kernels.PRELUDE + kernels.template("basalt_fp.metal") + """
+kernel void ex(device const float* g [[buffer(0)]], device float* e [[buffer(1)]], constant uint& n [[buffer(2)]],
+               uint i [[thread_position_in_grid]]) {
+    if (i < n) e[i] = expf_neg(g[i]);
+}
+"""
+    g = np.ascontiguousarray(g, F32).reshape(-1)
+    out = gpu.run(gpu.pipeline(src, "ex"), [g.tobytes(), 4 * g.size], np.uint32(g.size).tobytes(), 2,
+                  -(-g.size // 256), 256)
+    return np.frombuffer(out[1], F32)
+
+
+def check_against_emulation(c, r):
+    """Every stage bit for bit against tests/kernels/basalt_emu.py (experts.md): gate and up rows per entry, the q8_1 of
+    the SwiGLU product from the GPU's gate and up (with the GPU's __expf), the down rows from the GPU's q8_1."""
+    n_embd, n_ff = c.n_embd, c.n_ff
+    ents = list(c.entries())
+    if not ents:                                                # an empty call: nothing to emulate
+        return
+    for e in ents:
+        xr = q8_rows(c.xq, [c.ent_tok[e]], n_embd)
+        for part in ("gate", "up"):
+            want = emu.q2_0_dots(c.blob(e, part), n_embd, xr)[0]
+            assert np.array_equal(r[part][e].view(np.uint32), want.view(np.uint32)), (part, e)
+    lo, hi = c.grp_start[0] * n_ff, c.n_ent * n_ff
+    g, u = r["gate"].reshape(-1)[lo:hi], r["up"].reshape(-1)[lo:hi]
+    hq = emu.swiglu_q8_1(g, u, gpu_expf_neg(g))
+    blk = kernels.Q8_1_BLOCK_BYTES
+    assert np.array_equal(r["hq"][lo // 32 * blk: hi // 32 * blk], hq)
+    for e in ents:
+        want = emu.q2_0_dots(c.blob(e, "down"), n_ff, q8_rows(r["hq"], [e], n_ff))[0]
+        assert np.array_equal(r["out"][c.ent_dst[e]].view(np.uint32), want.view(np.uint32)), ("down", e)
+
+
+# ---- iq_multi_parity's check_grouped (iq_multi_parity.cpp:239-337) -----------------------------------------------
+
+def grouped_case(seed=18):
+    """check_grouped's call: 9 groups of {1, 3, 4, 5, 0, 8, 2, 11, 1} entries (one pass of GRP_NC, partial passes, two
+    passes and more), 8 tokens, cap_groups = groups + 2 (the extra threadgroup rows must exit), cap = entries + 3, the
+    entries' destinations a permutation of the first rows, random tokens (:248-275); Q2_0 / Q2_0 at 2560 x 640
+    (:497-500)."""
+    rng = np.random.default_rng(seed)
+    sizes = [1, 3, 4, 5, 0, 8, 2, 11, 1]
+    c = Call(rng, 2560, 640, sizes, 8, neg=0.25, cap_groups=len(sizes) + 2)
+    c.ent_dst = np.concatenate([rng.permutation(c.n_ent), np.arange(c.n_ent, c.cap)]).astype(np.int32)
+    return c
+
+
+def test_check_grouped():
+    """The grouped call against the same kernels one entry a call (basalt: old kernels against new), every float
+    compared, the NaN rows nothing may write included; basalt's criterion, quoted: ``const bool ok = diff == 0 &&
+    finite;`` (iq_multi_parity.cpp:329), finite over the written rows. Also the kernel choices against each other
+    (gate/up two rows or one row a SIMD-group, down on 16 or 32 lanes) and every stage against the emulation."""
+    c = grouped_case()
+    r = c.run(scratch_fill=0x00)                                # out NaN-filled, scratch zeroed (:290-291)
+    got = r["out"].view(np.uint32)
+    diff = np.count_nonzero(got != c.per_entry())
+    finite = np.isfinite(r["out"][: c.n_ent]).all()
+    assert diff == 0 and finite, (diff, finite)
+    assert np.all(got[c.n_ent:] == 0xFFFFFFFF)
+    for gu2, sub16 in ((False, True), (True, False), (False, False)):
+        other = c.run(gu2=gu2, sub16=sub16)["out"].view(np.uint32)
+        assert np.count_nonzero(other != got) == 0, (gu2, sub16)
+    check_against_emulation(c, r)
+
+
+# ---- native_grouped_parity (native_grouped_parity.cpp:207-247, 513-532) ------------------------------------------
+
+@pytest.mark.parametrize("n_embd, n_ff", [(512, 256), (2560, 640)])
+def test_native_grouped_parity(n_embd, n_ff):
+    """native_grouped_parity's check on Q2_0 / Q2_0: T = 6 tokens x 4 experts (cap 24 entries), 9 blobs, calls of 0, 1,
+    2, 3, 5, 8 and 24 groups of 1..T entries from entry 0 and from entry 7, scattered destinations over the cap rows;
+    each call with grid_groups 0, 1, 2, 3, 4 and cap + 3 and stale scratch (0x00 or 0x7F alternately) against the same
+    kernels one entry a call (basalt: against v1). 512 x 256 is the registered test's shape (gate/up one row a
+    SIMD-group); 2560 x 640 is its ``--gu2`` run (the kernels decode runs). Criteria, quoted: ``for (size_t i = 0; i <
+    ref.size(); ++i) diff += ref[i] != got[i];`` (:234) and ``if (written == 0) { std::printf("  nothing was written:
+    the check checked nothing  FAIL\\n"); ++bad; }`` (:246). Every stage of each call's first run is also checked
+    against the emulation."""
+    rng = np.random.default_rng(316 + n_embd)
+    T, K, n_blobs = 6, 4, 9
+    cap = T * K
+    calls = written = 0
+    for base in (0, 7):
+        for groups in (0, 1, 2, 3, 5, 8, 24):
+            sizes, used = [], base
+            for _ in range(groups):                                  # plan(): groups of 1..T while they fit
+                m = min(int(rng.integers(1, T + 1)), cap - used)
+                if m <= 0:
+                    break
+                sizes.append(m)
+                used += m
+            c = Call(rng, n_embd, n_ff, sizes, T, base=base, cap=cap, n_blobs=n_blobs, cap_groups=cap)
+            ref = c.per_entry()
+            written += np.count_nonzero(ref != 0xFFFFFFFF)
+            for gy in (0, 1, 2, 3, 4, cap + 3):
+                r = c.run(grid_groups=gy, scratch_fill=0x7F if calls & 1 else 0x00)
+                if gy == 0:
+                    check_against_emulation(c, r)
+                diff = np.count_nonzero(ref != r["out"].view(np.uint32))
+                calls += 1
+                assert diff == 0, (base, groups, gy, diff)
+    # basalt: if (written == 0) { ... "nothing was written: the check checked nothing  FAIL" ... }
+    assert written > 0
+    print(f"\nQ2_0/Q2_0 {n_embd} x {n_ff}: {calls} calls bitwise equal to per-entry calls, {written} floats written")

@@ -28,7 +28,8 @@ one-row kernel), bf16_gemv_fp32_mmvf_multi and bf16_gemv_fp32_mmvf_cols.
   unwritten, at block sizes 32, 96 and 256.
 - Bit for bit against the numpy emulation of docs/research/basalt-nvcc/bf16.md (tests/kernels/basalt_emu.py) at
   block sizes 32, 96, 192 and 256, with pair counts that leave threads idle, and with planted subnormal weights,
-  subnormal activations, subnormal products and a subnormal block sum, each of which .FTZ turns into +0."""
+  subnormal activations, subnormal products and a subnormal block sum, each of which .FTZ turns into +0, and exact
+  FMA results just below 2^-126, which FFMA.FTZ rounds up to 2^-126 before it flushes."""
 
 import numpy as np
 import pytest
@@ -167,11 +168,15 @@ def p2(e):
 
 
 def test_flush_to_zero():
-    """Each .FTZ site of bf16.md planted so that the flush gives +0 where IEEE arithmetic gives a nonzero result:
-    a subnormal weight (row B), a subnormal activation (row x1), a subnormal product (row A times x0) and a block sum
-    whose last add is subnormal (row D times x2: 2^-125 from warp 0 plus -1.75 * 2^-126 from warp 1). This GPU's
-    arithmetic flushes subnormals itself (docs/research/basalt-nvcc/matvec.md, Notation), so the kernel passes here
-    without its explicit flushes too; the test pins CUDA's results, which the explicit flushes keep on any GPU."""
+    """Each .FTZ site of bf16.md planted so that the flush gives +0 where IEEE float32 arithmetic (the emulation
+    without flushes) gives a nonzero result: a subnormal product (row A times x0, output (0, 0)), a subnormal weight
+    (row B times x2, (2, 1)), a subnormal activation (row C times x1, (1, 2)) and a block sum whose last add is
+    subnormal (row D times x2, (2, 3): 2^-125 from warp 0 plus -1.75 * 2^-126 from warp 1). This GPU's arithmetic
+    flushes these itself (docs/research/basalt-nvcc/matvec.md, Notation), so the kernel would pass them without its
+    explicit flushes too. Then the other side of the flush: FFMA.FTZ rounds before it flushes (PTX ISA, fma.f32), so an
+    exact value in [2^-126 - 2^-150, 2^-126) gives 2^-126, where this GPU's fma gives +0 and fma_ftz rebuilds it: R1
+    (2^-126 - 2^-151) at the first FMA of a pair, from +0; the second FMA from a normal acc (2^-126 - 2^-25 * 2^-126)
+    and its negative; and the tie 2^-126 - 2^-150, to 2^-126 (the even neighbour)."""
     n_in, n_out = 2560, 8
     rng = np.random.default_rng(3)
     x = np.stack([np.full(n_in, p2(-30), F32), np.full(n_in, p2(-140), F32),
@@ -184,9 +189,16 @@ def test_flush_to_zero():
     got = gpu.mmvf(w, x, n_in, n_out, 3, fill=0xFF).reshape(3, n_out)
     want = emu.mmvf(w, x, kernels.basalt_mmvf_block(n_in))
     assert np.array_equal(bits(got), bits(want))
-    ieee = x.astype(np.float64) @ weight_values(w).astype(np.float64).T
-    for k, r in [(0, 0), (0, 1), (2, 1), (1, 2), (1, 3), (2, 3)]:
+    ieee = emu.mmvf(w, x, kernels.basalt_mmvf_block(n_in), flush=False)
+    for k, r in [(0, 0), (2, 1), (1, 2), (2, 3)]:
         assert bits(got)[k, r] == 0 and ieee[k, r] != 0, (k, r)
+    # one pair (n_in 2): output (k, k) for k = 0, 1, 2 and (1, 3), on the one-row and the multi kernel
+    w = emu.bf16_bits(np.array([[31 * 2.0 ** -70, 0], [1, -2.0 ** -25], [2.0 ** -126, 0], [-1, 2.0 ** -25]], F32))
+    x = np.array([[1082401 * 2.0 ** -81, 0], [2.0 ** -126, 2.0 ** -126], [1 - 2.0 ** -24, 0]], F32)
+    want = emu.mmvf(w, x, 32)
+    assert list(bits(want)[[0, 1, 2, 1], [0, 1, 2, 3]]) == [0x00800000, 0x00800000, 0x00800000, 0x80800000]
+    assert np.array_equal(bits(one_row(w, x, 2, 4)), bits(want))
+    assert np.array_equal(bits(gpu.mmvf(w, x, 2, 4, 3, fill=0xFF).reshape(3, 4)), bits(want))
 
 
 def test_launch_rules():

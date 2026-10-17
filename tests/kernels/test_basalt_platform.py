@@ -98,13 +98,16 @@ def test_rounding_is_to_nearest_even():
 def test_subnormals_in_safe_mode():
     """Measured: add, multiply, fma and division flush a subnormal input and a subnormal result to the zero of its
     sign (MSL section 8.1 permits it); each input case has a normal exact result, so an input flush is told apart from
-    a result flush. fmax and fmin do not flush: their comparison treats a subnormal as zero, and the chosen operand
-    comes back unflushed, the second one on a tie. fabs and moves keep the bits. Hence the *_ftz helpers flush
-    explicitly (test_ftz_helpers_match_the_emulation)."""
+    a result flush. Multiply and fma flush on the exact value, before rounding: an exact product of 2^-126 - 2^-151,
+    which rounds to 2^-126, comes back as +0 (CUDA's .ftz flushes the rounded result: fma_ftz and mul_ftz rebuild it).
+    fmax and fmin do not flush: their comparison treats a subnormal as zero, and the chosen operand comes back
+    unflushed, the second one on a tie. fabs and moves keep the bits. Hence the *_ftz helpers flush explicitly
+    (test_ftz_helpers_match_the_emulation)."""
     s, s2 = F32(1.5e-39), F32(3e-39)         # subnormals, s < s2
     m = F32(2.0 ** -126)                     # the smallest normal
     rows = np.array([(s, m, 0), (-s, 2.0 ** 100, 0), (m, 1, s), (1.5 * m, -m, 0), (-1.5 * m, m, 0), (m, 0.5, 0),
-                     (-m, 0.5, 0), (m, 2, 0), (s, 0, 0), (0, s, 0), (s2, s, 0), (s, -1, 0), (0, -0.0, 0)], F32)
+                     (-m, 0.5, 0), (m, 2, 0), (s, 0, 0), (0, s, 0), (s2, s, 0), (s, -1, 0), (0, -0.0, 0),
+                     (31 * 2.0 ** -70, 1082401 * 2.0 ** -81, 0)], F32)
     got = run_ops(rows[:, 0], rows[:, 1], rows[:, 2])
     bits = got.view(np.uint32)
     sb, nsb, neg0 = s.view(np.uint32), (-s).view(np.uint32), 0x80000000
@@ -119,6 +122,8 @@ def test_subnormals_in_safe_mode():
     assert bits[5, 2] == 0 and bits[6, 2] == neg0                # fma(m, 0.5, 0), fma(-m, 0.5, 0)
     assert bits[5, 4] == 0 and bits[7, 3] == 0                   # m * 0.5 + 0, m / 2
     assert got[7, 1] == F32(2.0 ** -125)                         # normal results are untouched
+    # (2^25 - 1) * 2^-151 rounds to 2^-126 but is below it: flushed before rounding
+    assert bits[13, 1] == 0 and bits[13, 2] == 0 and bits[13, 4] == 0
     # fmax and fmin: a subnormal compares as zero, the chosen operand comes back unflushed, the second on a tie
     assert bits[8, 5] == 0 and bits[9, 5] == sb                  # fmax(s, 0) = +0, fmax(0, s) = s
     assert bits[10, 5] == sb                                     # fmax(s2, s) = s, the smaller
@@ -132,8 +137,11 @@ def test_subnormals_in_safe_mode():
 def test_ftz_helpers_match_the_emulation():
     """Each *_ftz helper bit for bit against basalt_emu, on random values of every exponent below 2^13 and planted
     blocks: subnormal inputs (and pairs of them), sums and fma results that land in the subnormal range, exact
-    subnormal products beside a normal addend (fused, so they count), and reciprocals that underflow. On this GPU the
-    arithmetic flushes anyway (test_subnormals_in_safe_mode); fmax and fabs do not, so max_ftz and abs_ftz carry it."""
+    subnormal products beside a normal addend (fused, so they count), reciprocals that underflow, and products and fma
+    results within 40 * 2^-152 of +-2^-126, where rounding first gives 2^-126 from just below it (planted cases: the
+    tie 2^-126 - 2^-150 and its neighbours, a product of 2^-252 beside +-2^-126, an exact cancellation). This GPU's
+    multiply and fma flush before rounding (test_subnormals_in_safe_mode), so fma_ftz and mul_ftz rebuild those;
+    fmax and fabs do not flush, so max_ftz and abs_ftz carry it."""
     rng = np.random.default_rng(2)
     n, t = 1 << 18, 1 << 14
     a, b, c = normals(rng, n, 0, 140), normals(rng, n, 0, 140), normals(rng, n, 0, 140)
@@ -145,7 +153,28 @@ def test_ftz_helpers_match_the_emulation():
     a[q], b[q] = normals(rng, t, 40, 88), normals(rng, t, 40, 88)
     c[q] = -(a[q] * b[q])
     a[5 * t: 6 * t] = normals(rng, t, 251, 255)                                # 1 / a below 2^-126
+    r = slice(6 * t, 7 * t)                  # a * b + c near +-2^-126, c = 0 in the first half, else 0 or +-k * 2^-126
+    a[r] = normals(rng, t, 67, 127)
+    c[r] = np.where(np.arange(t) < t // 2, 0, rng.integers(-3, 4, t) * 2.0 ** -126).astype(F32)
+    near = 2.0 ** -126 * (1 + rng.integers(-40, 40, t) * 2.0 ** -26) * np.where(rng.integers(0, 2, t), 1, -1)
+    b[r] = ((near - c[r]) / a[r].astype(np.float64)).astype(F32)
+    planted = [(31 * 2.0 ** -70, 1082401 * 2.0 ** -81, 0, 0x00800000),        # 2^-126 - 2^-151
+               (2.0 ** -126, 1 - 2.0 ** -24, 0, 0x00800000),                   # the tie 2^-126 - 2^-150: to even
+               (2.0 ** -126, 1 - 2.0 ** -23, 0, 0),                            # 2^-126 - 2^-149: subnormal
+               (-31 * 2.0 ** -70, 1082401 * 2.0 ** -81, 0, 0x80800000),
+               (2.0 ** -126, -2.0 ** -25, 2.0 ** -126, 0x00800000),            # c + a * b = 2^-126 - 2^-151
+               (2.0 ** -126, 2.0 ** -25, -2.0 ** -126, 0x80800000),
+               (2.0 ** -126 * (1 + 2.0 ** -23), -2.0 ** -24, 2.0 ** -126, 0),  # just below the tie
+               (2.0 ** -100 * (1 - 2.0 ** -24), -2.0 ** -50, 2.0 ** -126, 0x00800000),   # just above it
+               (2.0 ** -126, -2.0 ** -126, 2.0 ** -126, 0x00800000),           # 2^-126 - 2^-252
+               (2.0 ** -126, 2.0 ** -126, -2.0 ** -126, 0x80800000),
+               (2.0 ** -100, 2.0 ** -26, -2.0 ** -126, 0)]                     # exactly 0: +0
+    k = slice(7 * t, 7 * t + len(planted))
+    a[k], b[k], c[k] = np.array([v[:3] for v in planted], F32).T
     got = run_ops(a, b, c)
+    assert np.array_equal(emu.fma_ftz(a[k], b[k], c[k]).view(np.uint32), [v[3] for v in planted])
+    exact = a[r].astype(np.float64) * b[r]                    # exact products: below 2^-126, rounding up to it
+    assert np.count_nonzero((np.abs(exact) < 2.0 ** -126) & (np.abs(emu.mul_ftz(a[r], b[r])) == 2.0 ** -126)) > t // 64
     fa, fb = emu.ftz(a), emu.ftz(b)
     # the port takes max_ftz of flushed absolute values only, so no -0 reaches it; on +0 against -0 this GPU's fmax
     # returns the second operand, numpy's fmax +0, and CUDA's FMNMX was not checked: those pairs are left out

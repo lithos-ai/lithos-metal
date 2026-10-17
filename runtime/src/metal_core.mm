@@ -5,6 +5,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <atomic>
 #include <stdexcept>
 #include "metal_core.h"
 
@@ -129,7 +130,11 @@ static double now_ms() { static mach_timebase_info_data_t tb; if (!tb.denom) mac
 // logged on it (`reported`: there was one). Validation drops an out-of-bounds access and records it only in `logs`,
 // which are complete when waitUntilCompleted returns: the status stays completed and the error nil (measured), so this
 // string is how the caller sees it, with or without MTL_SHADER_VALIDATION_REPORT_TO_STDERR. A report ends with the host
-// stack that allocated the buffer — the same nanobind frames for every buffer — which is cut.
+// stack that allocated the buffer — the same nanobind frames for every buffer — which is cut. Each report is counted
+// (validation_reports()).
+static std::atomic<uint64_t> reports{0};
+uint64_t validation_reports() { return reports.load(); }
+
 static std::string failure(id<MTLCommandBuffer> cb, bool* reported = nullptr) {
   std::string e = cb.error ? [cb.error.localizedDescription UTF8String] : "";
   for (id<MTLFunctionLog> log in cb.logs) {
@@ -137,6 +142,7 @@ static std::string failure(id<MTLCommandBuffer> cb, bool* reported = nullptr) {
     NSRange cut = [d rangeOfString:@"\nMTLBuffer allocated here"];
     if (cut.location != NSNotFound) d = [d substringToIndex:cut.location];
     e += (e.empty() ? "" : "\n") + std::string("shader validation: ") + [d UTF8String];
+    reports++;
     if (reported) *reported = true;
   }
   return e;
@@ -357,7 +363,8 @@ RunnerStats Runner::run(uint32_t max_steps, uint32_t steps_per_cb, uint32_t in_f
     st.wait_ms += now_ms() - waiting;
     st.gpu_ms += (cb.GPUEndTime - cb.GPUStartTime) * 1e3;
     st.command_buffers++;
-    if (st.error.empty()) st.error = failure(cb);
+    std::string e = failure(cb);   // every buffer's reports are counted; the first failure stops the pump
+    if (st.error.empty()) st.error = e;
     drain_ring(r);
     st.done = *(volatile uint32_t*)((char*)r.state.contents + r.done_off) != 0;
     { std::lock_guard<std::mutex> lk(r.mu); tokens_seen = r.tokens.size(); }   // drained since the last drain(): this call's tokens

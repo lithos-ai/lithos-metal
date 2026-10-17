@@ -83,6 +83,11 @@ struct Dispatch {
 // on a report whether or not it checks `error`.
 struct RunResult { double gpu_ms; double wall_ms; std::string error; };
 
+// The shader-validation reports read so far from this process's completed command buffers, on every path that commits
+// one: the test suite fails a test phase in which this grows, where a harness caught the raised error or a thread
+// raised it.
+uint64_t validation_reports();
+
 class Queue {
  public:
   explicit Queue(const Device& d);

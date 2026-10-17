@@ -103,7 +103,7 @@ ones this pack runs.
    (`src/program/generate.cpp:1889-1893`), including its rounding sequence. The authority for that sequence is what
    nvcc compiles, read from basalt's sm_120 PTX and SASS and recorded per kernel and site in
    `docs/research/basalt-nvcc/` (`matvec.md` for the q8_1 quantizers and `native_mmvq`, `dequant.md` for the GGUF
-   dequantizers, `experts.md` for the routed experts): which multiply-adds fuse and
+   dequantizers, `experts.md` for the routed experts, `bf16.md` for the BF16 GEMVs): which multiply-adds fuse and
    with which operands, the operand order of each `a * b - c * d`, where `.FTZ` flushes subnormals, and each
    approximate instruction. The source alone does not settle it: nvcc's default `--fmad=true` fuses where the source
    writes no FMA, `ptxas` fuses further than the PTX (the Q4_K and Q5_K returns, `matvec.md` section 5) and replaces an

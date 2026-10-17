@@ -54,11 +54,15 @@ and a bare `:N` is a line of the file named last.
   (`max_ftz` returns one of its flushed inputs); `rcp_ftz(x)` is `ftz(1.0f / ftz(x))`, the correctly rounded
   reciprocal that stands where SASS has `MUFU.RCP`. Every Metal source of the port starts with `#pragma STDC
   FP_CONTRACT OFF`, so only an explicit `fma()` fuses.
-- **This GPU flushes too.** Measured on the M3 Max (Apple family 9) in `MTLMathModeSafe`, the repository default:
-  `x + y`, `x * y`, `fma`, `x / y` and `fmax` flush subnormal inputs and subnormal results to sign-preserving zero, as
-  MSL section 8.1 permits; `fabs`, moves and loads keep the bits (`tests/kernels/test_basalt_platform.py`). So at every
-  `.FTZ` site the hardware already does what SASS does; the helpers make that explicit and independent of the GPU.
-  At basalt's IEEE sites (no `.ftz`) the same flushing is a difference, treated in section 3.
+- **This GPU flushes its arithmetic, not its comparisons.** Measured on the M3 Max (Apple family 9) in
+  `MTLMathModeSafe`, the repository default: `x + y`, `x * y`, `fma` and `x / y` flush subnormal inputs and subnormal
+  results to sign-preserving zero, as MSL section 8.1 permits. `fmax` and `fmin` do not flush: their comparison treats
+  a subnormal as zero, and the chosen operand comes back unflushed, the second one on a tie (`fmax(s, 0)` is +0,
+  `fmax(0, s)` is s, and of two subnormals `fmax` returns the second, even the smaller). `fabs`, moves and loads keep
+  the bits (`tests/kernels/test_basalt_platform.py`). So the hardware does what SASS does at the `.FTZ` adds,
+  multiplies and fmas, but not at the `.FTZ` absolute value and maximum (`abs.ftz` and the amax butterfly's
+  `FMNMX.FTZ`, section 1): the helpers flush explicitly, which makes every site independent of the GPU. At basalt's
+  IEEE sites (no `.ftz`) the arithmetic's flushing is a difference, treated in section 3.
 
 ## Summary
 
@@ -147,9 +151,10 @@ Built with nvcc's defaults. `q8_1_store` runs the two butterflies in one loop (`
 | `roundf`, clamp, int8 | `add.rz.f32`, `cvt.rzi.f32.f32`; `cvt.rzi.s32.f32` | `FADD.RZ`, `FRND.TRUNC`; `FMNMX.NAN`, `FSEL`, `F2I.TRUNC.NTZ` | as section 1 |
 | ds | `cvt.rn.f16.f32` ×2 | `F2FP.F16.F32.PACK_AB` | `half(v)` |
 
-Nothing flushes here. Metal's add, max and division do (Notation), so a literal port would differ from CUDA on
-subnormal values: a subnormal activation would drop out of amax and of the block sum, and a subnormal d would become
-0. The port emulates IEEE behaviour where a subnormal can occur, from integer operations on the bits: amax as the
+Nothing flushes here. Metal's add and division do, and its `fmax` compares a subnormal as zero (Notation), so a
+literal port would differ from CUDA on subnormal values: in a block of subnormals every comparison of the amax
+butterfly is a tie and `fmax` returns its second operand, not the larger; a subnormal activation would drop out of the
+block sum; and a subnormal d would become 0. The port emulates IEEE behaviour where a subnormal can occur, from integer operations on the bits: amax as the
 largest bit pattern of the absolute values, an add that rescales two small operands by 2^64 and rebuilds a subnormal
 sum from its integer significand, d = amax / 127 rounded on the subnormal grid with integer division when it falls
 below 2^-126, and the codes' quotient taken on rescaled operands. Above the subnormal range each of these is the

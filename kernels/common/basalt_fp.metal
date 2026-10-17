@@ -13,7 +13,9 @@
 // - ftz(x): a subnormal becomes the zero of its sign; every other value keeps its bits. Integer operations only, so
 //   it means the same on any GPU, whatever the hardware does with subnormals.
 // - add_ftz, mul_ftz, fma_ftz, max_ftz, abs_ftz: CUDA's FADD.FTZ, FMUL.FTZ, FFMA.FTZ, FMNMX.FTZ and the .FTZ absolute
-//   value: the operation on flushed inputs, correctly rounded, then the result flushed.
+//   value: the operation on flushed inputs, correctly rounded, then the result flushed. max_ftz needs its explicit
+//   flush: this GPU's fmax compares a subnormal as zero but returns it unflushed. On +0 against -0 it returns the
+//   second operand (CUDA's choice there is not checked); the port takes max_ftz of absolute values only.
 // - rcp_ftz(x): stands where SASS has MUFU.RCP (an approximate reciprocal NVIDIA does not specify bit for bit): the
 //   correctly rounded 1 / x of the flushed input, flushed.
 // - warp_sum_ftz / warp_max_ftz: basalt's warp_sum and warp_max (native_mmvq.cu:130-144), XOR butterflies with offsets

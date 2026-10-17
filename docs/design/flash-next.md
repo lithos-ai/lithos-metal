@@ -119,8 +119,10 @@ ones this pack runs.
    flushes (`.FTZ`), the Metal kernel flushes the inputs and the result to the zero of their sign explicitly, with
    integer operations on the bits, so the result does not depend on what the GPU does with subnormals. Where basalt's
    SASS keeps subnormals (the IEEE-built kernels' unflagged operations), the Metal kernel emulates IEEE behaviour
-   wherever a subnormal can occur: this GPU flushes subnormal inputs and results of add, multiply, fma, division and
-   `fmax` in `MTLMathModeSafe` (measured; MSL section 8.1 permits it). An approximate division or reciprocal
+   wherever a subnormal can occur: in `MTLMathModeSafe` this GPU flushes subnormal inputs and results of add,
+   multiply, fma and division to the zero of their sign (MSL section 8.1 permits it), and `fmax` and `fmin` compare a
+   subnormal as zero but return the chosen operand unflushed, the second one on a tie (measured,
+   `tests/kernels/test_basalt_platform.py`). An approximate division or reciprocal
    (`MUFU.RCP`, then `FMUL` for a division) becomes the correctly rounded reciprocal `1.0f / x` and the same multiply:
    it gives CUDA's bits wherever `MUFU.RCP` returns the correctly rounded reciprocal, which NVIDIA does not specify,
    and it needs no undocumented Metal behaviour. The tests count how often a quotient through the correctly rounded

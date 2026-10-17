@@ -44,6 +44,10 @@ def fma_ftz(a, b, c):
     return ftz(fma32(ftz(a), ftz(b), ftz(c)))
 
 
+def max_ftz(a, b):
+    return np.fmax(ftz(a), ftz(b))
+
+
 def rcp_ftz(x):
     """The correctly rounded reciprocal the port writes where SASS has MUFU.RCP."""
     with np.errstate(divide="ignore", over="ignore"):
@@ -101,7 +105,7 @@ def q8_1_pack(d, s, codes):
 def q8_1_native(x):
     """native_quantize_q8_1 as nvcc compiles it, with the correctly rounded reciprocal in place of MUFU.RCP."""
     v = np.asarray(x, F32).reshape(-1, 32)
-    amax = butterfly(ftz(np.abs(v)), lambda p, q: np.fmax(ftz(p), ftz(q)))
+    amax = butterfly(ftz(np.abs(v)), max_ftz)
     s = butterfly(v, add_ftz)
     d = q8_1_finite(mul_ftz(amax, RCP127))
     with np.errstate(invalid="ignore"):

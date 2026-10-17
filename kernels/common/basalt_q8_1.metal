@@ -17,7 +17,8 @@
 // - native_swiglu_quantize_q8_1: the shared expert's SwiGLU value (native_mmvq.cu:170; matvec.md section 2), then the
 //   native sequence. __expf is MUFU.EX2 of fl(g * -log2 e), here fast::exp2 of the same product.
 // - quantize_q8_1: quantize_q8_1_kernel (iq_kernels.cu, nvcc's IEEE defaults; matvec.md section 3): correctly rounded
-//   divisions and no flushing. This GPU flushes subnormal inputs and results of add, max and division
+//   divisions and no flushing. This GPU flushes subnormal inputs and results of add and division, and its fmax
+//   compares a subnormal as zero, returning the second operand of a tie rather than the larger
 //   (tests/kernels/test_basalt_platform.py), so wherever a subnormal can occur the IEEE result is rebuilt from integer
 //   operations: amax as the largest bit pattern, the block sum and the codes on operands scaled by 2^64, d = amax / 127
 //   on the subnormal grid by integer division. Above 2^-100 every one of these is the plain operation.

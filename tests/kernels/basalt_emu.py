@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2023-2026 The ggml authors
 # Copyright (c) 2026 Jesús Gulfo
-# adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu and
-# include/basalt/kernels/q8_1_finite.hpp @ b4c63b55754637f4c72ad53a0f791d425f71eb36, which adapt ggml-org/llama.cpp
-# ggml/src/ggml-common.h (kvalues_iq4nl), ggml/src/ggml-quants.c (get_scale_min_k4) and ggml/src/ggml-cuda/quantize.cu
-# @ 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
+# adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
+# src/kernels/cuda/native_bf16.cu and include/basalt/kernels/q8_1_finite.hpp @
+# b4c63b55754637f4c72ad53a0f791d425f71eb36, which adapt ggml-org/llama.cpp ggml/src/ggml-common.h (kvalues_iq4nl),
+# ggml/src/ggml-quants.c (get_scale_min_k4), ggml/src/ggml-cuda/quantize.cu and ggml/src/ggml-cuda/mmvf.cu @
+# 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
 """numpy emulation of basalt's float32 arithmetic as nvcc compiles it (docs/research/basalt-nvcc/matvec.md), for the
 bit-for-bit tests of the Metal port. Every float operation rounds once to float32, to nearest even: numpy's float32
 add, multiply and divide do; ``fma32`` does by rounding the exact float64 sum to odd before the float32 cast. The

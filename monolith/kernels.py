@@ -392,6 +392,9 @@ def basalt_dequant_macros(type_id: int) -> Dict[str, str]:
 
 
 # ---- basalt's BF16 GEMVs on fp32 activations (kernels/common/basalt_mmvf.metal; docs/research/basalt-nvcc/bf16.md) --
+# The launch rules below are adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_bf16.cu:124-203 @
+# b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE), whose block-size rule is ggml-org/llama.cpp's
+# ggml/src/ggml-cuda/mmvf.cu @ 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
 
 def basalt_mmvf_source() -> str:
     """basalt's ``bf16_gemv_fp32_mmvf`` and ``bf16_gemv_fp32_mmvf_multi`` (``basalt_mmvf``)."""

@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jesús Gulfo
+# adapted from basalt (jesdga95/basalt) src/kernels/mmvq_multi_parity.cpp @ b4c63b55754637f4c72ad53a0f791d425f71eb36
+# (MIT; third_party/NOTICE): its cases, sane_half, widths, seeds and Q8_0 geometries, compare_q80's float64 reference
+# and output pre-fills, and its pass criteria.
 """basalt's native_mmvq on Metal (kernels/common/basalt_mmvq.metal), one column and several, for the ten GGUF types.
 
 - mmvq_multi_parity, ported (basalt src/kernels/mmvq_multi_parity.cpp): the cases of :69-77 at widths 1, 2, 3, 4, 5,

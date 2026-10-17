@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jesús Gulfo
+# adapted from basalt (jesdga95/basalt) src/kernels/iq_multi_parity.cpp @ b4c63b55754637f4c72ad53a0f791d425f71eb36
+# (MIT; third_party/NOTICE): check_q8_1_finite's planted blocks, its host transcription and its pass criterion.
 """basalt's q8_1 activation quantizers on Metal (kernels/common/basalt_q8_1.metal).
 
 - ``check_q8_1_finite``, ported from basalt's iq_multi_parity.cpp:421-484: both quantizers on 3 rows of 2560 N(0, 1)

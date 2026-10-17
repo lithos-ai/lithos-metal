@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jesús Gulfo
+# adapted from basalt (jesdga95/basalt) src/kernels/elementwise_parity.cpp @ b4c63b55754637f4c72ad53a0f791d425f71eb36
+# (MIT; third_party/NOTICE): the contraction check's pass criterion.
 """The platform facts the exact basalt port rests on, measured on this GPU in MTLMathModeSafe (the repository default):
 fp32 add, multiply, fma and division round to nearest even; how they treat subnormals; fp16 conversions; and that
 ``#pragma STDC FP_CONTRACT OFF`` stops contraction in a runtime-compiled source, told apart the way basalt's

@@ -14,9 +14,15 @@
 // - ftz(x): a subnormal becomes the zero of its sign; every other value keeps its bits. Integer operations only, so
 //   it means the same on any GPU, whatever the hardware does with subnormals.
 // - add_ftz, mul_ftz, fma_ftz, max_ftz, abs_ftz: CUDA's FADD.FTZ, FMUL.FTZ, FFMA.FTZ, FMNMX.FTZ and the .FTZ absolute
-//   value: the operation on flushed inputs, correctly rounded, then the result flushed. max_ftz needs its explicit
-//   flush: this GPU's fmax compares a subnormal as zero but returns it unflushed. On +0 against -0 it returns the
-//   second operand (CUDA's choice there is not checked); the port takes max_ftz of absolute values only.
+//   value: the operation on flushed inputs, correctly rounded (to nearest even on the float32 grid, subnormals
+//   included: PTX's "rounded to single precision"), then a subnormal result flushed. This GPU's multiply and fma flush
+//   on the exact value instead, before rounding: an exact result in [2^-126 - 2^-150, 2^-126), which rounds up to the
+//   smallest normal 2^-126, comes back as the zero of its sign (tests/kernels/test_basalt_platform.py). So fma_ftz
+//   checks a zero from nonzero factors against the exact value (fma_ftz_min_normal), and mul_ftz is fma_ftz(a, b, -0)
+//   (a * b + -0 is a * b, zeros included). A sum below 2^-126 is exact, so add_ftz needs no check, and no reciprocal
+//   of a float lies in that interval. max_ftz needs its explicit flush: this GPU's fmax compares a subnormal as zero
+//   but returns it unflushed. On +0 against -0 it returns the second operand (CUDA's choice there is not checked); the
+//   port takes max_ftz of absolute values only.
 // - rcp_ftz(x): stands where SASS has MUFU.RCP (an approximate reciprocal NVIDIA does not specify bit for bit): the
 //   correctly rounded 1 / x of the flushed input, flushed.
 // - warp_sum_ftz / warp_max_ftz: basalt's warp_sum and warp_max (native_mmvq.cu:130-144), XOR butterflies with offsets
@@ -34,8 +40,37 @@ static inline float ftz(float x) {
     return (b & 0x7f800000u) == 0u ? as_type<float>(b & 0x80000000u) : x;
 }
 static inline float add_ftz(float a, float b) { return ftz(ftz(a) + ftz(b)); }
-static inline float mul_ftz(float a, float b) { return ftz(ftz(a) * ftz(b)); }
-static inline float fma_ftz(float a, float b, float c) { return ftz(fma(ftz(a), ftz(b), ftz(c))); }
+
+// fma_ftz's check where the hardware fma of flushed operands, a and b nonzero, gave a zero r. The exact v = a * b + c
+// in units of 2^-150: |a * b| = q * 2^k (q the 48-bit product of the significands), |c| = mc * 2^ec (ec its exponent
+// field; 0 for a zero c). v rounds to +-2^-126 exactly when floor(|v|) is 2^24 - 1 units: from the tie 2^-126 - 2^-150
+// (2^-126 is the even neighbour) up to 2^-126. With k > 0, v is a multiple of 2^-149; with ec > 25 (and k <= 0), |v| is
+// above 2^-102: either way r is v's flushed value.
+static inline float fma_ftz_min_normal(float a, float b, float c, float r) {
+    const uint ua = as_type<uint>(a), ub = as_type<uint>(b), uc = as_type<uint>(c);
+    const int k = int((ua >> 23) & 0xffu) + int((ub >> 23) & 0xffu) - 150;
+    const uint ec = (uc >> 23) & 0xffu;
+    if (k > 0 || ec > 25u) return r;
+    const ulong q = ulong((ua & 0x7fffffu) | 0x800000u) * ulong((ub & 0x7fffffu) | 0x800000u);
+    const uint s = uint(-k);                                              // 0 <= s <= 148
+    const ulong p = s < 64u ? q >> s : 0ul;                               // floor(|a * b|)
+    const bool f = s != 0u && (s >= 64u || (q << (64u - s)) != 0ul);      // |a * b| has a fraction of a unit
+    long n = ((ua ^ ub) >> 31) != 0u ? -long(p) - long(f) : long(p);      // floor(a * b)
+    if (ec != 0u) {                                                       // c: whole units
+        const long m = long((uc & 0x7fffffu) | 0x800000u) << ec;
+        n += (uc >> 31) != 0u ? -m : m;
+    }
+    const long fl = n < 0 ? -n - long(f) : n;                             // floor(|v|); n < 0 exactly when v < 0
+    return fl == long(0xffffff) ? as_type<float>((n < 0 ? 0x80000000u : 0u) | 0x00800000u) : r;
+}
+static inline float fma_ftz(float a, float b, float c) {
+    a = ftz(a);
+    b = ftz(b);
+    c = ftz(c);
+    const float r = ftz(fma(a, b, c));
+    return r != 0.0f || a == 0.0f || b == 0.0f ? r : fma_ftz_min_normal(a, b, c, r);
+}
+static inline float mul_ftz(float a, float b) { return fma_ftz(a, b, -0.0f); }
 static inline float max_ftz(float a, float b) { return fmax(ftz(a), ftz(b)); }
 static inline float abs_ftz(float x) { return ftz(fabs(x)); }
 static inline float rcp_ftz(float x) { return ftz(1.0f / ftz(x)); }

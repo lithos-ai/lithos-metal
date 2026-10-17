@@ -45,17 +45,20 @@ Regenerate the archive and formula together for each version.
 After a kernel or emitter change, run the GPU tiers under Metal shader validation:
 
 ```bash
-MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 pytest tests/kernels tests/runtime
+MTL_SHADER_VALIDATION=1 MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 \
+  pytest tests/kernels tests/runtime tests/spec tests/layers tests/models
 ```
 
-Validation drops a store outside its binding and logs it on the command buffer, which still completes without an
-error. The runtime raises each report where the command buffer completes (`Queue.run`, `Queue.profile`, `Engine.run`,
-`Engine.profile`) as `RuntimeError: shader validation: <report>`, so the test that ran the kernel fails whatever it
-checks, in any capture mode (`-s` included), and a report in a fixture fails the run as an error.
+Validation reports a load or a store outside its binding, in device, constant or threadgroup memory (measured on an M3
+Max under macOS 27), and logs it on the command buffer, which still completes without an error. The runtime raises
+each report where the command buffer completes (`Queue.run`, `Queue.profile`, `Engine.run`, `Engine.profile`) as
+`RuntimeError: shader validation: <report>`. Under pytest, `tests/conftest.py` also fails the test phase (setup, call or
+teardown) in which a command buffer with a report completed, when nothing raised it: a harness caught the error, or a
+thread raised it. So the test that ran the kernel fails whatever it checks, in any capture mode (`-s` included), and a
+report in a fixture fails the run as an error; outside pytest only the raise applies.
 `MTL_SHADER_VALIDATION=1` alone is enough; `MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1` adds each full report on
 stderr (otherwise it goes to the unified log). Command buffers the runtime does not commit, such as MLX's in the
-mlx-lm comparisons, are not checked. On an M3 Max under macOS 27, validation reported out-of-bounds stores but not
-out-of-bounds loads.
+mlx-lm comparisons, are not checked.
 
 CI runs the contract tier on every push and the other tiers on bare-metal Macs when a maintainer comments
 `/mac-test` on the pull request, under validation with `/mac-test --shader-validation` ([CI](docs/ci.md)).

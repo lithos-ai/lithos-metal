@@ -34,12 +34,13 @@ def test_validation_report_fails_the_test(args, to_stderr):
         env["MTL_SHADER_VALIDATION_REPORT_TO_STDERR"] = "1"
     p = _pytest(args, env)
     out = p.stdout + p.stderr
-    assert p.returncode == 1 and re.search(r"\b5 failed, 6 passed, (\d+ warnings?, )?1 error\b", out), out   # the thread's warning
+    assert p.returncode == 1 and re.search(r"\b6 failed, 7 passed, (\d+ warnings?, )?1 error\b", out), out   # the thread's warning
     failed = re.findall(r"^FAILED \S+::test_store\[(\w+)-(\w+)\]", out, re.M)
-    assert sorted(failed) == [(path, "out_of_bounds") for path in ("caught", "engine", "profile", "queue", "thread")], out
+    paths = ("caught", "engine", "profile", "queue", "skipped", "thread")
+    assert sorted(failed) == [(path, "out_of_bounds") for path in paths], out
     assert re.findall(r"^ERROR \S+::(\w+)", out, re.M) == ["test_outside_the_test_body"], out
     assert out.count("shader validation: Invalid store") >= 4, out
-    assert out.count("in this call phase that nothing raised") >= 2, out     # caught and thread: tests/conftest.py
+    assert out.count("in this call phase that nothing raised") >= 3, out     # caught, skipped, thread: tests/conftest.py
 
 
 def test_ci_lane_fails_the_tier(tmp_path):
@@ -47,5 +48,5 @@ def test_ci_lane_fails_the_tier(tmp_path):
     junit = tmp_path / "runtime.xml"
     p = _pytest(["-rs", f"--junitxml={junit}"], mac_gpu.tier_env(tmp_path, {}, shader_validation=True))
     counts = mac_gpu.parse_junit(junit)
-    assert counts["tests"] == 11 and mac_gpu.judge("runtime", counts, p.returncode) == ["5 failed, 1 errors"], p.stdout
+    assert counts["tests"] == 13 and mac_gpu.judge("runtime", counts, p.returncode) == ["6 failed, 1 errors"], p.stdout
     assert junit.read_text().count("shader validation: Invalid store") >= 4

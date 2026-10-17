@@ -1,6 +1,7 @@
 """Every tier: a Metal shader-validation report fails the test phase (setup, call or teardown) in which a command buffer
 carried it. The runtime raises each report as ``RuntimeError: shader validation: …``; this catches the ones that never
-reach pytest: an ``except Exception`` in a harness, or a raise on another thread, which pytest only turns into a warning.
+reach pytest as a failure: an ``except Exception`` in a harness (which may then skip), or a raise on another thread,
+which pytest only turns into a warning.
 """
 import pytest
 
@@ -11,7 +12,12 @@ _reports = getattr(_native, "validation_reports", lambda: 0)   # 0 without the M
 
 def _checked(when):
     before = _reports()
-    result = yield                          # a phase that raised re-raises here and fails as it is
+    try:
+        result = yield                      # a phase that failed re-raises here and fails as it is
+    except (pytest.skip.Exception, pytest.xfail.Exception):
+        if _reports() == before:
+            raise
+        result = None                       # a skip must not hide a report
     if n := _reports() - before:
         pytest.fail(f"{n} Metal shader-validation report(s) in this {when} phase that nothing raised (an exception caught, "
                     "or raised on another thread); the reports are on stderr with MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1, "

@@ -233,19 +233,25 @@ def test_native_grouped_parity(n_embd, n_ff):
 def test_ieee_mul_keeps_subnormals():
     """ieee_mul (basalt_q8_1.metal), CUDA's mul.rn.f32 without .ftz, bit for bit against numpy's IEEE float32 product
     on planted pairs: products across the subnormal range, at the 2^-126 boundary (rounding up into it), at ties of
-    the subnormal grid, below half the smallest subnormal, signed zeros, subnormal operands, and normal products."""
+    the subnormal grid, below half the smallest subnormal, signed zeros, subnormal operands, normal products, and
+    infinities and NaN against zeros and subnormals (NaN for 0 * inf and a NaN, the signed infinity for a subnormal
+    times inf; a NaN's payload is the GPU's)."""
     rng = np.random.default_rng(9)
     n = 1 << 16
     a = (rng.choice([-1, 1], n) * np.exp2(rng.uniform(-90, -20, n))).astype(F32)
     b = (rng.choice([-1, 1], n) * np.exp2(rng.uniform(-90, -20, n))).astype(F32)
-    tie = np.full(64, F32(2.0 ** -75))                                 # 2^-75 * (k + 0.5) 2^-74: grid ties
+    tie = np.full(64, F32(2.0 ** -75))                                 # 2^-75 * (2k + 1) 2^-75 = (k + 0.5) 2^-149
+    inf, nan, sub = F32(np.inf), F32(np.nan), np.uint32(5).view(F32)
     planted = [(F32(2.0 ** -63), F32(2.0 ** -63) * F32(1 - 2.0 ** -24)),      # just below 2^-126: rounds up
                (F32(2.0 ** -75), F32(2.0 ** -75)), (F32(2.0 ** -100), F32(2.0 ** -50)),  # exactly 2^-150: to +0
                (F32(-(2.0 ** -100)), F32(2.0 ** -49) * F32(1.5)),   # 1.5 * 2^-149: tie, to even (2 units)
                (F32(0.0), F32(-3.0)), (F32(-0.0), F32(-0.0)), (F32(2.0 ** -140), F32(3.0)),   # zeros, a subnormal
-               (np.uint32(1).view(F32), F32(2.0 ** 100)), (F32(1.5), F32(2.0 ** -128)), (F32(3.0), F32(5.0))]
+               (np.uint32(1).view(F32), F32(2.0 ** 100)), (F32(1.5), F32(2.0 ** -128)), (F32(3.0), F32(5.0)),
+               (F32(0.0), inf), (F32(-0.0), inf), (F32(0.0), -inf), (-inf, F32(-0.0)),    # 0 * inf: NaN
+               (F32(0.0), nan), (F32(-0.0), nan), (nan, F32(0.0)), (nan, F32(-0.0)),      # a NaN: NaN
+               (sub, inf), (-inf, sub), (-sub, -inf), (sub, nan), (nan, -sub), (inf, F32(-3.0))]   # inf, NaN, -inf
     pa = np.concatenate([a, tie, np.array([p[0] for p in planted], F32)])
-    pb = np.concatenate([b, (np.arange(64) * 2 + 1).astype(F32) * F32(2.0 ** -74), np.array([p[1] for p in planted], F32)])
+    pb = np.concatenate([b, (np.arange(64) * 2 + 1).astype(F32) * F32(2.0 ** -75), np.array([p[1] for p in planted], F32)])
     src = kernels.basalt_q8_1_source() + """
 kernel void mul(device const float* a [[buffer(0)]], device const float* b [[buffer(1)]], device float* c [[buffer(2)]],
                 constant uint& n [[buffer(3)]], uint i [[thread_position_in_grid]]) {
@@ -255,20 +261,26 @@ kernel void mul(device const float* a [[buffer(0)]], device const float* b [[buf
     out = gpu.run(gpu.pipeline(src, "mul"), [pa.tobytes(), pb.tobytes(), 4 * pa.size], np.uint32(pa.size).tobytes(), 3,
                   -(-pa.size // 256), 256)
     got = np.frombuffer(out[2], F32)
-    with np.errstate(under="ignore"):
+    with np.errstate(under="ignore", invalid="ignore"):
         want = pa * pb
+        units = pa.astype(np.float64) * pb.astype(np.float64) * 2.0 ** 149      # exact products, units of 2^-149
+        ties = np.count_nonzero((np.abs(units) < 2.0 ** 23) & (np.abs(units) % 1 == 0.5))
     sub = np.count_nonzero((np.abs(want) < F32(2.0 ** -126)) & (want != 0))
-    assert np.array_equal(got.view(np.uint32), want.view(np.uint32)), np.flatnonzero(got.view(np.uint32) != want.view(np.uint32))[:8]
-    assert sub > 1000                                                   # the subnormal path ran
-    print(f"\nieee_mul: {pa.size} products bit for bit, {sub} of them subnormal")
+    same = (got.view(np.uint32) == want.view(np.uint32)) | (np.isnan(got) & np.isnan(want))
+    assert same.all(), np.flatnonzero(~same)[:8]
+    assert sub > 1000 and ties >= 64, (sub, ties)                       # the subnormal path ran, on grid ties too
+    print(f"\nieee_mul: {pa.size} products bit for bit, {sub} of them subnormal, {ties} grid ties, "
+          f"{np.count_nonzero(np.isnan(want))} NaN")
 
 
 def test_swiglu_q8_1_edges():
     """The SwiGLU + q8_1 dispatch alone on planted gate and up values, bit for bit against the emulation (the
     exponential taken from the GPU): very negative gates (-88.7 .. -60) with small up values, whose IEEE products are
     subnormal; gates past -88.72, where the exponential overflows and the quotient is -0; large positive gates, zeros,
-    multiples of 2^-48 (the GEMV's grid), and N(0, 4) gates. Entries [1, 5) of a 6-entry scratch, so the dispatch must
-    leave entry 0's and entry 5's q8_1 blocks as they were."""
+    multiples of 2^-48 (the GEMV's grid), and N(0, 4) gates; non-finite gates and ups (a weight row with a non-finite
+    fp16 scale), whose IEEE products are NaN: five in a finite block (its sum NaN) and a whole block of inf * 0 (its
+    scale and sum NaN; a NaN's fp16 payload is the GPU's, as in test_basalt_q8_1). Entries [1, 5) of a 6-entry
+    scratch, so the dispatch must leave entry 0's and entry 5's q8_1 blocks as they were."""
     rng = np.random.default_rng(10)
     n_ff, ents = 640, 4
     g = np.concatenate([rng.standard_normal(n_ff) * 4, rng.uniform(-88.7, -60, n_ff), rng.uniform(-91, -86, n_ff),
@@ -276,6 +288,10 @@ def test_swiglu_q8_1_edges():
                                         rng.integers(-1000, 1000, 320) * 2.0 ** -48])]).astype(F32)
     up = np.concatenate([rng.standard_normal(n_ff), rng.choice([-1, 1], n_ff) * np.exp2(rng.uniform(-40, -1, n_ff)),
                          rng.standard_normal(n_ff), rng.standard_normal(n_ff) * 1e-3]).astype(F32)
+    nf = 3 * n_ff + 96                                                  # blocks nf / 32 and nf / 32 + 1
+    g[nf: nf + 5] = [np.inf, np.nan, 0.0, -100.0, -np.inf]              # s = inf, NaN, 0, -0, NaN against
+    up[nf: nf + 5] = [0.0, -0.0, np.inf, np.nan, 0.0]                   # up = 0, -0, inf, NaN, 0: five NaN products
+    g[nf + 32: nf + 64], up[nf + 32: nf + 64] = np.inf, 0.0             # a whole block of inf * 0
     gate = np.concatenate([np.full(n_ff, np.nan, F32), g, np.full(n_ff, np.nan, F32)])
     upp = np.concatenate([np.zeros(n_ff, F32), up, np.zeros(n_ff, F32)])
     nb = 6 * n_ff // 32 * kernels.Q8_1_BLOCK_BYTES
@@ -287,8 +303,14 @@ def test_swiglu_q8_1_edges():
     hq = np.frombuffer(out[4], np.uint8)
     per = n_ff // 32 * kernels.Q8_1_BLOCK_BYTES
     assert np.all(hq[:per] == 0xA5) and np.all(hq[5 * per:] == 0xA5)
-    assert np.array_equal(hq[per: 5 * per], emu.swiglu_q8_1(g, up, gpu_expf_neg(g)))
-    with np.errstate(over="ignore", under="ignore"):
+    got, want = hq[per: 5 * per].reshape(-1, 36), emu.swiglu_q8_1(g, up, gpu_expf_neg(g)).reshape(-1, 36)
+    gh, wh = (b[:, :4].copy().view(np.uint16) for b in (got, want))    # each block's fp16 d and s
+    nan_h = ((wh & 0x7C00) == 0x7C00) & ((wh & 0x3FF) != 0)
+    assert nan_h[nf // 32, 1] and nan_h[nf // 32 + 1].all() and nan_h.sum() == 3        # the planted NaN halves
+    assert np.array_equal(got[:, 4:], want[:, 4:])                     # every code bit for bit
+    assert np.array_equal(gh[~nan_h], wh[~nan_h]) and np.all((gh[nan_h] & 0x7C00) == 0x7C00) \
+        and np.all(gh[nan_h] & 0x3FF), np.flatnonzero(np.any((gh != wh) & ~nan_h, axis=1))
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
         h = (g / (F32(1) + gpu_expf_neg(g))) * up
     sub = np.count_nonzero((h != 0) & (np.abs(h) < F32(2.0 ** -126)))
     assert sub > 50, sub                                                # ieee_mul's subnormal path ran

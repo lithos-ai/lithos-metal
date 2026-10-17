@@ -92,18 +92,25 @@ static inline float ieee_add(float a, float b) {
     return ieee_down64(ieee_up64(a) + ieee_up64(b));
 }
 
-// a * b with IEEE subnormals, for finite a and b (CUDA's mul.rn.f32 in an IEEE-built kernel). Normal operands with a
-// product of at least 2^-125 take the hardware's correctly rounded product; otherwise (a subnormal operand, which the
-// hardware flushes, or a product it may flush) the product is rebuilt from the exact integer product m of the
-// significands: |a * b| = m * 2^e units of 2^-149, rounded to nearest even on the grid of its binade (k = 0 is the
-// subnormal grid and binade -126), so that the float's bits are (k << 23) + r for r units of 2^(k - 149).
+// a * b with IEEE subnormals (CUDA's mul.rn.f32 in an IEEE-built kernel). Two operands with nonzero exponent fields
+// (normal, infinite or NaN) whose product is at least 2^-125, infinite or NaN take the hardware's correctly rounded
+// product. An infinity or NaN against a zero or a subnormal (which the hardware flushes, making a subnormal times inf
+// 0 * inf) gives IEEE's result from the bits: NaN (CUDA's canonical 0x7fffffff) for a NaN or a zero operand, else the
+// signed infinity. Otherwise (a subnormal operand, or a product the hardware may flush) the product is rebuilt from
+// the exact integer product m of the significands: |a * b| = m * 2^e units of 2^-149, rounded to nearest even on the
+// grid of its binade (k = 0 is the subnormal grid and binade -126), so that the float's bits are (k << 23) + r for r
+// units of 2^(k - 149).
 static inline float ieee_mul(float a, float b) {
     const float p = a * b;
     const uint ab = as_type<uint>(a), bb = as_type<uint>(b);
     uint ea = (ab >> 23) & 0xffu, eb = (bb >> 23) & 0xffu, ma = ab & 0x7fffffu, mb = bb & 0x7fffffu;
-    if (ea != 0u && eb != 0u && !(fabs(p) < 0x1p-125f)) return p;      // also inf and NaN
+    if (ea != 0u && eb != 0u && !(fabs(p) < 0x1p-125f)) return p;      // p infinite or NaN included
     const uint sign = (ab ^ bb) & 0x80000000u;
-    if ((ea | ma) == 0u || (eb | mb) == 0u) return as_type<float>(sign);
+    const bool za = (ea | ma) == 0u, zb = (eb | mb) == 0u;             // zeros by their bits (a compare may flush)
+    if (ea == 0xffu || eb == 0xffu)                                     // the other operand is a zero or a subnormal
+        return as_type<float>((ea == 0xffu && ma != 0u) || (eb == 0xffu && mb != 0u) || za || zb
+                              ? 0x7fffffffu : sign | 0x7f800000u);
+    if (za || zb) return as_type<float>(sign);
     if (ea == 0u) ea = 1u; else ma |= 0x800000u;
     if (eb == 0u) eb = 1u; else mb |= 0x800000u;
     const ulong m = ulong(ma) * ulong(mb);

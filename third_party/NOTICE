@@ -89,6 +89,10 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   License: `third_party/GGML-LICENSE`.
 - `kernels/common/basalt_q8_1.metal` — through basalt's `native_mmvq.cu` and `iq_kernels.cu` (below), which adapt
   `ggml/src/ggml-cuda/quantize.cu` (MIT): the q8_1 block and its quantization rule. License: `third_party/GGML-LICENSE`.
+- `kernels/common/basalt_mmvq.metal` — through basalt's `src/kernels/cuda/native_mmvq.cu` (below), which adapts
+  `ggml/src/ggml-cuda/{vecdotq.cuh,mmvq.cu,common.cuh}` and `ggml/src/ggml-common.h` (MIT): the block structs, the
+  `vec_dot_*_q8_1` integer dot products and their scale arithmetic, the IQ4 table lookup, and mmvq's thread-to-block
+  mapping and cross-warp reduction. License: `third_party/GGML-LICENSE`.
 
 ## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
 
@@ -105,6 +109,11 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
 - `kernels/common/basalt_q8_1.metal` — adapted from `src/kernels/cuda/native_mmvq.cu:146-177` (the native and SwiGLU
   quantizers), `src/kernels/cuda/iq_kernels.cu:1880-1900` (the IEEE quantizer) and `include/basalt/kernels/q8_1_finite.hpp`
   (MIT), written in the rounding sequence nvcc compiles for them. License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_mmvq.metal` — adapted from `src/kernels/cuda/native_mmvq.cu:179-1172` (MIT): the
+  one-column `native_*_mmvq_kernel`s and `native_mmvq_multi_kernel` with the format traits' `load` / `apply` split,
+  for Q2_0, Q3_K, Q4_K, Q5_K, Q6_K, IQ4_XS, IQ4_NL, Q4_0, Q5_0 and Q8_0, in the exact and the upstream layouts, written
+  in the rounding sequence nvcc compiles for them (`docs/research/basalt-nvcc/matvec.md`). License:
+  `third_party/BASALT-LICENSE`.
 
 ## Test data
 

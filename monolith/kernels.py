@@ -291,14 +291,14 @@ def basalt_mmvq_macros(type_id: int, n_in: int, ncols: int, *, upstream: bool = 
     """basalt's launch for ``ncols`` columns: one column, 4 SIMD-groups and 1 row per threadgroup (4 rows for small
     K: fewer blocks per row than BPI); several, the exact layout (basalt's default) with 1 row (2 for small K);
     ``upstream``: llama.cpp's table that mmvq_multi_parity's negative control runs (4 SIMD-groups up to 4 columns,
-    else 2; always 2 rows)."""
+    else 2; always 2 rows). One column is always the one-column launch, as in basalt (native_mmvq.cu:1585-1599)."""
     if type_id not in MMVQ_TRAITS:
         raise ValueError(f"basalt_mmvq: unsupported ggml type {type_id}")
     div, _, bpi = MMVQ_TRAITS[type_id]
     if n_in <= 0 or n_in % div or not 1 <= ncols <= 8:
         raise ValueError(f"basalt_mmvq: n_in must be a positive multiple of {div} and ncols in 1..8")
     small = n_in // div < bpi
-    if upstream:
+    if upstream and ncols > 1:
         nw, rows = (4 if ncols <= 4 else 2), 2
     else:
         nw, rows = 4, ((4 if small else 1) if ncols == 1 else (2 if small else 1))

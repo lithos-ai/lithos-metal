@@ -63,7 +63,8 @@ def half_bits(x):
 
 
 def h2f(bits):
-    return np.asarray(bits, np.uint16).view(np.float16).astype(F32)
+    with np.errstate(invalid="ignore"):                      # NaN patterns stay NaN
+        return np.asarray(bits, np.uint16).view(np.float16).astype(F32)
 
 
 # ---- the q8_1 quantizers (matvec.md sections 1 and 3) -------------------------------------------------------------

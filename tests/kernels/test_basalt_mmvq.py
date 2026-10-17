@@ -72,23 +72,26 @@ def test_mmvq_multi_parity(case):
         multi, single = multi_vs_single(type_id, n_in, n_out, t, False, 1234 + type_id * 97 + t)
         nonfinite += np.count_nonzero(~np.isfinite(multi)) + np.count_nonzero(~np.isfinite(single))
         bad += np.count_nonzero(multi.view(np.uint32) != single.view(np.uint32)) != 0
+    # basalt: "any non-finite output fails" (:531-535) and ``if (exact && diff != 0) ++bad;`` (:215)
     assert nonfinite == 0, name
     assert bad == 0, name
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c[0] for c in CASES])
 def test_mmvq_multi_parity_negative_control(case):
-    """The upstream layout groups the partial sums differently above 4 columns: the comparison must see it."""
+    """The upstream layout groups the partial sums differently above 4 columns: the comparison must see it. T = 1 is
+    the one-column launch in both sweeps, as in basalt (ncols 1 never reaches launch_multi)."""
     name, type_id, n_in, n_out = case
     wide = nonfinite = 0
     for t in WIDTHS:
         multi, single = multi_vs_single(type_id, n_in, n_out, t, True, 1234 + type_id * 97 + t)
-        nonfinite += np.count_nonzero(~np.isfinite(multi))
+        nonfinite += np.count_nonzero(~np.isfinite(multi)) + np.count_nonzero(~np.isfinite(single))
         diff = np.count_nonzero(multi.view(np.uint32) != single.view(np.uint32))
         if t <= 4:
             assert diff == 0, (name, t)          # the layouts coincide up to 4 columns (4 SIMD-groups, 2 rows)
         else:
             wide += diff
+    # basalt: case_wide counts the differing finite outputs at T > 4; ``if (off.powerless_cases != 0) {`` (:555) fails
     assert nonfinite == 0 and wide > 0, name
 
 
@@ -111,6 +114,7 @@ def test_q8_0_one_column(geom):
     ref = reference(8, w, columns(xq, n_in, 0), n_in, n_out)
     diff = np.count_nonzero(a.view(np.uint32) != b.view(np.uint32))
     worst, scale = np.max(np.abs(a.astype(np.float64) - ref)), np.max(np.abs(ref))
+    # basalt: ``const bool ok = diff == 0 && worst <= 1e-4 * (scale + 1e-30);`` (:461)
     assert diff == 0 and worst <= 1e-4 * (scale + 1e-30), (diff, worst, scale)
 
 

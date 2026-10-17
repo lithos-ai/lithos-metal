@@ -111,10 +111,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `src/core/mtp.cpp`. The test writer in `tests/contract/test_basalt_reader.py` follows `tools/model_file.py`'s
   `ModelWriter`. `tests/contract/test_gguf_formats.py` compiles basalt's references only from a checkout the user points
   `BASALT_SRC` at. License: `third_party/BASALT-LICENSE`.
-- `kernels/common/basalt_fp.metal` — adapted from `src/kernels/cuda/native_mmvq.cu`, `include/basalt/kernels/dp4a.hpp`
-  and `include/basalt/kernels/q8_1_finite.hpp` (MIT): `warp_sum`, `warp_max`, `load_int_b2` and the `DP4A` helper,
-  with the flush-to-zero and reciprocal helpers that write out the arithmetic nvcc compiles for them
-  (`docs/research/basalt-nvcc/matvec.md`). License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_fp.metal` — adapted from `src/kernels/cuda/native_mmvq.cu`, `src/kernels/cuda/iq_kernels.cu`,
+  `include/basalt/kernels/dp4a.hpp` and `include/basalt/kernels/q8_1_finite.hpp` (MIT): `warp_sum`, `warp_max`,
+  `load_int_b2` and the `DP4A` helper, with the flush-to-zero and reciprocal helpers that write out the arithmetic nvcc
+  compiles for them (`docs/research/basalt-nvcc/matvec.md`); from `iq_kernels.cu`, `Split<42>`'s Q2_0 decode, the
+  IEEE-built `warp_sum` and the SwiGLU's `__expf(-g)` (`expf_neg`), in the arithmetic nvcc compiles for them
+  (`docs/research/basalt-nvcc/experts.md`). License: `third_party/BASALT-LICENSE`.
 - `kernels/common/basalt_q8_1.metal` — adapted from `src/kernels/cuda/native_mmvq.cu:146-177` (the native and SwiGLU
   quantizers), `src/kernels/cuda/iq_kernels.cu:1880-1900` (the IEEE quantizer) and `include/basalt/kernels/q8_1_finite.hpp`
   (MIT), written in the rounding sequence nvcc compiles for them. License: `third_party/BASALT-LICENSE`.
@@ -130,8 +132,7 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `:1648-1921` and `src/kernels/cuda/gu2.cuh:223-390` (MIT): `native_expert_grouped`'s Q2_0 kernels
   (`native_gu2_kernel`, `native_gu_multi_kernel`, `swiglu_q8_1_entries_pdl_kernel`, `native_down_multi_kernel` with
   `row_dot_multi` and `row_dot_20_sub16`), written in the rounding sequence nvcc compiles for them
-  (`docs/research/basalt-nvcc/experts.md`). `basalt_fp.metal` also takes `Split<42>` and `warp_sum` from
-  `iq_kernels.cu`. License: `third_party/BASALT-LICENSE`.
+  (`docs/research/basalt-nvcc/experts.md`). License: `third_party/BASALT-LICENSE`.
 - `tests/kernels/test_basalt_experts.py` — adapted from `src/kernels/iq_multi_parity.cpp` (`check_grouped`,
   `check_mmvq`'s reference), `src/kernels/native_grouped_parity.cpp` and `src/kernels/native_expert_parity.cpp` (MIT):
   their fixtures, plans, pre-fills and pass criteria. License: `third_party/BASALT-LICENSE`.
@@ -148,8 +149,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `src/kernels/elementwise_parity.cpp` (MIT). License: `third_party/BASALT-LICENSE`.
 - `tests/kernels/basalt_emu.py` — adapted from `src/kernels/cuda/native_mmvq.cu`, `src/kernels/cuda/iq_kernels.cu` and
   `include/basalt/kernels/q8_1_finite.hpp` (MIT): the iteration traits, and in numpy the quantizers' and the
-  `native_mmvq` kernels' arithmetic as nvcc compiles it (`docs/research/basalt-nvcc/matvec.md`). License:
-  `third_party/BASALT-LICENSE`.
+  `native_mmvq` kernels' arithmetic as nvcc compiles it (`docs/research/basalt-nvcc/matvec.md`) and the routed
+  experts' (`q2_0_dots`: `iq_kernels.cu`'s `row_dot_multi`; `swiglu_q8_1`: the SwiGLU and its IEEE quantizer;
+  `docs/research/basalt-nvcc/experts.md`). License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

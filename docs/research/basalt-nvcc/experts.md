@@ -39,8 +39,11 @@ and a bare `:N` is a line of the file named last.
 ## Notation
 
 As in `matvec.md`: fl(e) rounds once to fp32, to nearest even; fma(a, b, c) rounds a·b + c once; h(x) is an fp16
-value converted to fp32 (exact); f(n) an int32 converted to fp32 (exact here). No instruction of these kernels carries
-`.FTZ`: they are IEEE operations, subnormals kept.
+value converted to fp32 (exact); f(n) an int32 converted to fp32 (exact here). The PTX has no `.ftz` (0 in each
+dump). In the SASS, `.FTZ` appears only in `div.rn.f32`'s slow-path subroutine, `__cuda_sm3x_div_rn_noftz_f32_slowpath`
+(32 instructions in each dump: four copies of eight): compares against infinity, which flushing cannot change, the add
+that returns a NaN operand's NaN, and a negation and a compare on operands it has scaled into [1, 2). Its quotient is
+`div.rn.f32`'s, IEEE's, so every float operation of these kernels is IEEE's, subnormals kept.
 
 **Where a subnormal can occur.** This GPU flushes subnormal inputs and results of add, multiply, fma and division in
 `MTLMathModeSafe` (`tests/kernels/test_basalt_platform.py`), where these IEEE instructions keep them. Each site below
@@ -57,8 +60,9 @@ says whether a subnormal can reach it:
   +inf and the quotient is -0.
 - **The SwiGLU product can.** s · up for a very negative g and a small up (g = -70, up = 1e-10 gives -2.8e-39). The
   port computes it with `ieee_mul`, which rebuilds a subnormal product from the exact integer product of the
-  significands (`kernels/common/basalt_q8_1.metal`), and the q8_1 quantizer after it is the IEEE one of `matvec.md`
-  section 3, which already emulates subnormal values.
+  significands (`kernels/common/basalt_q8_1.metal`) and gives IEEE's NaN or infinity where an infinity or a NaN (from
+  a non-finite fp16 scale in a gate or up row) meets a zero or a subnormal, so that a NaN stays visible as in basalt;
+  the q8_1 quantizer after it is the IEEE one of `matvec.md` section 3, which already emulates subnormal values.
 
 ## Summary
 
@@ -155,7 +159,7 @@ stores the staging copy unrolls into, 7 against 8).
 
 | Site | basalt | PTX (13.3) | SASS 13.0 | SASS 13.3 | Metal |
 |---|---|---|---|---|---|
-| call t | `:994` `s[c] += S::apply(...)`, s = 0 | `mul.f32`; `cvt.rn.f32.s32`; `fma.rn.f32 %r, %r, %r, 0f00000000` | `FFMA R16, R14, R31, RZ` | `FMUL R14, R14, R17`; `FFMA R16, R14, R31, RZ` | `fma(d2 * d8, float(sumi), 0.0f)` |
+| call t | `:994` `s[c] += S::apply(...)`, s = 0 | `mul.f32`; `cvt.rn.f32.s32`; `fma.rn.f32 %r, %r, %r, 0f00000000` | `FMUL R14, R14, R17`; `FFMA R16, R14, R31, RZ` | `FMUL R14, R14, R17`; `FFMA R16, R14, R31, RZ` | `fma(d2 * d8, float(sumi), 0.0f)` |
 | call t + 16, t < 4 | `:1004` `s16[c] += S::apply(...)`, s16 = 0 | `mul.f32`; `fma.rn.f32 %r, %r, %r, 0f00000000` | `FMUL R14, R14, R35`; `FFMA R17, R14, R15, RZ` | `FMUL R14, R14, R35`; `FFMA R17, R14, R15, RZ` | the same; s16 = 0 for t ≥ 4 |
 | `__fadd_rn(s, s16)` | `:1009` | `add.rn.f32` | `FADD R35, R16, R17` | `FADD R35, R16, R17` | `s + s16` |
 | butterfly | `:1011` offsets 8, 4, 2, 1 | `shfl.sync.bfly.b32 ..., 8, 31, -1` ... `1` with `add.f32` | `SHFL.BFLY` + `FADD` ×4 | the same | `s + simd_shuffle_xor(s, o)`, o = 8, 4, 2, 1 |
@@ -187,7 +191,8 @@ subnormals. The Q2_0 decode, the q8_1 word readers and `dp4a` are the device fun
 buffer of blobs; the plan's other arrays, the scratch and the output keep basalt's layout.
 
 `tests/kernels/test_basalt_experts.py` checks every stage bit for bit against the numpy emulation of this page
-(`tests/kernels/basalt_emu.py`: `q2_0_dots`, `swiglu_q8_1`, with the exponential taken from the GPU's `expf_neg`), the
-two gate/up kernels and the two down trees bitwise against each other, `ieee_mul` against numpy's IEEE product on
-subnormal products, and ports `iq_multi_parity`'s `check_grouped` and `native_grouped_parity` (512 x 256 and, as its
-`--gu2` run, 2560 x 640) with float64 references for each stage and the whole expert.
+(`tests/kernels/basalt_emu.py`: `q2_0_dots`, `swiglu_q8_1`, with the exponential taken from the GPU's `expf_neg`),
+the two gate/up kernels and the two down trees bitwise against each other, `ieee_mul` against numpy's IEEE product on
+subnormal products and on infinities and NaN against zeros and subnormals, and ports `iq_multi_parity`'s
+`check_grouped` and `native_grouped_parity` (512 x 256 and, as its `--gu2` run, 2560 x 640) with float64 references
+for each stage and the whole expert.

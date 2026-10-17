@@ -222,3 +222,70 @@ def test_native_grouped_parity(n_embd, n_ff):
     # basalt: if (written == 0) { ... "nothing was written: the check checked nothing  FAIL" ... }
     assert written > 0
     print(f"\nQ2_0/Q2_0 {n_embd} x {n_ff}: {calls} calls bitwise equal to per-entry calls, {written} floats written")
+
+
+# ---- IEEE subnormals in the SwiGLU product ------------------------------------------------------------------------
+
+def test_ieee_mul_keeps_subnormals():
+    """ieee_mul (basalt_q8_1.metal), CUDA's mul.rn.f32 without .ftz, bit for bit against numpy's IEEE float32 product
+    on planted pairs: products across the subnormal range, at the 2^-126 boundary (rounding up into it), at ties of
+    the subnormal grid, below half the smallest subnormal, signed zeros, subnormal operands, and normal products."""
+    rng = np.random.default_rng(9)
+    n = 1 << 16
+    a = (rng.choice([-1, 1], n) * np.exp2(rng.uniform(-90, -20, n))).astype(F32)
+    b = (rng.choice([-1, 1], n) * np.exp2(rng.uniform(-90, -20, n))).astype(F32)
+    tie = np.full(64, F32(2.0 ** -75))                                 # 2^-75 * (k + 0.5) 2^-74: grid ties
+    planted = [(F32(2.0 ** -63), F32(2.0 ** -63) * F32(1 - 2.0 ** -24)),      # just below 2^-126: rounds up
+               (F32(2.0 ** -75), F32(2.0 ** -75)), (F32(2.0 ** -100), F32(2.0 ** -50)),  # exactly 2^-150: to +0
+               (F32(-(2.0 ** -100)), F32(2.0 ** -49) * F32(1.5)),   # 1.5 * 2^-149: tie, to even (2 units)
+               (F32(0.0), F32(-3.0)), (F32(-0.0), F32(-0.0)), (F32(2.0 ** -140), F32(3.0)),   # zeros, a subnormal
+               (np.uint32(1).view(F32), F32(2.0 ** 100)), (F32(1.5), F32(2.0 ** -128)), (F32(3.0), F32(5.0))]
+    pa = np.concatenate([a, tie, np.array([p[0] for p in planted], F32)])
+    pb = np.concatenate([b, (np.arange(64) * 2 + 1).astype(F32) * F32(2.0 ** -74), np.array([p[1] for p in planted], F32)])
+    src = kernels.basalt_q8_1_source() + """
+kernel void mul(device const float* a [[buffer(0)]], device const float* b [[buffer(1)]], device float* c [[buffer(2)]],
+                constant uint& n [[buffer(3)]], uint i [[thread_position_in_grid]]) {
+    if (i < n) c[i] = ieee_mul(a[i], b[i]);
+}
+"""
+    out = gpu.run(gpu.pipeline(src, "mul"), [pa.tobytes(), pb.tobytes(), 4 * pa.size], np.uint32(pa.size).tobytes(), 3,
+                  -(-pa.size // 256), 256)
+    got = np.frombuffer(out[2], F32)
+    with np.errstate(under="ignore"):
+        want = pa * pb
+    sub = np.count_nonzero((np.abs(want) < F32(2.0 ** -126)) & (want != 0))
+    assert np.array_equal(got.view(np.uint32), want.view(np.uint32)), np.flatnonzero(got.view(np.uint32) != want.view(np.uint32))[:8]
+    assert sub > 1000                                                   # the subnormal path ran
+    print(f"\nieee_mul: {pa.size} products bit for bit, {sub} of them subnormal")
+
+
+def test_swiglu_q8_1_edges():
+    """The SwiGLU + q8_1 dispatch alone on planted gate and up values, bit for bit against the emulation (the
+    exponential taken from the GPU): very negative gates (-88.7 .. -60) with small up values, whose IEEE products are
+    subnormal; gates past -88.72, where the exponential overflows and the quotient is -0; large positive gates, zeros,
+    multiples of 2^-48 (the GEMV's grid), and N(0, 4) gates. Entries [1, 5) of a 6-entry scratch, so the dispatch must
+    leave entry 0's and entry 5's q8_1 blocks as they were."""
+    rng = np.random.default_rng(10)
+    n_ff, ents = 640, 4
+    g = np.concatenate([rng.standard_normal(n_ff) * 4, rng.uniform(-88.7, -60, n_ff), rng.uniform(-91, -86, n_ff),
+                        np.concatenate([rng.uniform(80, 120, 160), np.zeros(160),
+                                        rng.integers(-1000, 1000, 320) * 2.0 ** -48])]).astype(F32)
+    up = np.concatenate([rng.standard_normal(n_ff), rng.choice([-1, 1], n_ff) * np.exp2(rng.uniform(-40, -1, n_ff)),
+                         rng.standard_normal(n_ff), rng.standard_normal(n_ff) * 1e-3]).astype(F32)
+    gate = np.concatenate([np.full(n_ff, np.nan, F32), g, np.full(n_ff, np.nan, F32)])
+    upp = np.concatenate([np.zeros(n_ff, F32), up, np.zeros(n_ff, F32)])
+    nb = 6 * n_ff // 32 * kernels.Q8_1_BLOCK_BYTES
+    pso = gpu.pipeline(kernels.basalt_experts_source(), "basalt_expert_swiglu_q8_1",
+                       tuple(sorted(kernels.basalt_expert_macros(512, n_ff).items())))
+    out = gpu.run(pso, [gate.tobytes(), upp.tobytes(), np.array([1, 3, 5], np.int32).tobytes(),
+                        np.int32(2).tobytes(), nb], kernels.basalt_expert_params(512, n_ff), 5,
+                  -(-6 * n_ff // kernels.EXPERT_THREADS), kernels.EXPERT_THREADS, fill=0xA5)
+    hq = np.frombuffer(out[4], np.uint8)
+    per = n_ff // 32 * kernels.Q8_1_BLOCK_BYTES
+    assert np.all(hq[:per] == 0xA5) and np.all(hq[5 * per:] == 0xA5)
+    assert np.array_equal(hq[per: 5 * per], emu.swiglu_q8_1(g, up, gpu_expf_neg(g)))
+    with np.errstate(over="ignore", under="ignore"):
+        h = (g / (F32(1) + gpu_expf_neg(g))) * up
+    sub = np.count_nonzero((h != 0) & (np.abs(h) < F32(2.0 ** -126)))
+    assert sub > 50, sub                                                # ieee_mul's subnormal path ran
+    print(f"\nSwiGLU + q8_1 edges: {g.size} values bit for bit, {sub} subnormal products")

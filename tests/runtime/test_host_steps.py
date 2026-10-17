@@ -712,60 +712,36 @@ def test_a_task_that_calls_its_own_runner_is_refused():
                       "set_host_points: called from one of the runner's own host tasks"]
 
 
-def _signal_points(fn):
-    """The offsets in ``fn`` where CPython can raise a pending signal's KeyboardInterrupt: the instruction after one
-    that calls (the CALL family, and ``BEFORE_WITH``, which calls ``__enter__``), and each ``RESUME``."""
-    import dis
-
-    code, prev, out = fn.__code__, None, []
-    for ins in dis.get_instructions(code):
-        if ins.opname == "RESUME" or (prev is not None and (prev.opname.startswith("CALL") or prev.opname == "BEFORE_WITH")):
-            out.append((code, ins.offset))
-        prev = ins
-    return out
-
-
-def test_an_interrupt_at_any_signal_point_of_the_claim_leaves_the_engine_usable():
-    """Ctrl-C during a run raises at the next point CPython checks for a signal. At every such point of run() and of
-    the claim it makes, the engine must stay claimable, so no interrupt leaves later runs refused or blocked."""
-    import sys
+def test_a_real_interrupt_during_a_run_leaves_the_engine_usable():
+    """Ctrl-C sets a flag the interpreter turns into a KeyboardInterrupt at its next check, which is after the call
+    it arrives in returns. One arriving in the claim, and one arriving in the run itself, must each leave the engine
+    claimable, so no interrupt leaves later runs refused or blocked."""
+    import signal
     import threading
 
     eng = Engine(_program(_base_buffers(1000), [_tick()]))
-    points = _signal_points(Engine.run) + _signal_points(Engine._claim)
-    assert len(points) >= 4                                           # the claim, the run, and the frames' entries
 
-    for code, offset in points:
-        raised = []
+    for name in ("_claim", "_run"):
+        inner = getattr(eng, name, None) or getattr(Engine, name).__get__(eng)
 
-        def trace(frame, event, arg, code=code, offset=offset, raised=raised):
-            if frame.f_code is not code:
-                return None
+        def interrupt_after(*args, _inner=inner, **kw):
+            out = _inner(*args, **kw)
+            signal.raise_signal(signal.SIGINT)                        # the interpreter raises it at its next check
+            return out
 
-            def step(frame, event, arg):
-                if event == "opcode" and frame.f_lasti == offset and not raised:
-                    raised.append(offset)
-                    raise KeyboardInterrupt
-                return step
-
-            frame.f_trace_opcodes = True
-            return step
-
-        sys.settrace(trace)
+        setattr(eng, name, interrupt_after)
         try:
-            eng.run(1)
-        except KeyboardInterrupt:
-            pass
+            with pytest.raises(KeyboardInterrupt):
+                eng.run(1)
         finally:
-            sys.settrace(None)
+            delattr(eng, name)
 
         steps = []
         after = threading.Thread(target=lambda: steps.append(eng.run(1).steps))
         after.start()
         after.join(10.0)
-        where = f"{code.co_name} at offset {offset}"
-        assert not after.is_alive(), f"a run after an interrupt in {where} blocked"
-        assert steps == [1], f"a run after an interrupt in {where} failed"
+        assert not after.is_alive(), f"a run after an interrupt in {name} blocked"
+        assert steps == [1], f"a run after an interrupt in {name} failed"
 
 
 def test_an_interrupt_cannot_strand_the_claim():

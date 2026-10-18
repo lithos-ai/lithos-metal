@@ -35,12 +35,7 @@ def place_barriers(program: Program, mode: str = "minimal") -> int:
         for o in ops:
             o.barrier_before = True
         return len(ops)
-    sets = []                                                   # per op: (reads, writes)
-    for o in ops:
-        w_idx = o.meta.get("writes")
-        bound = {b[1] for b in o.bindings}
-        writes = bound if w_idx is None else {b[1] for b in o.bindings if b[0] in w_idx}
-        sets.append((bound - writes, writes))
+    sets = [o.access() for o in ops]                            # per op: (reads, writes)
 
     def conflict(r, w, reads, writes):
         return bool(w & (reads | writes)) or bool(r & writes)

@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 command -v clang >/dev/null || { echo "clang not found - install the Xcode Command Line Tools (see header)"; exit 1; }
 mkdir -p build results
-ALL="p1_limits p2_sync p3_residency p4_core_model p5_bandwidth p5b_access_pattern p6_preemption p6b_interleave p7_dispatch_overhead p8_threadgroup_mem p9_clock_warp p10_claim_protocol p11_interop_overlap p12_stream_geometry p13_decode_gemv p14_tensor_ops p15_frame_pacing"
+ALL="p1_limits p2_sync p3_residency p4_core_model p5_bandwidth p5b_access_pattern p6_preemption p6b_interleave p7_dispatch_overhead p8_threadgroup_mem p9_clock_warp p10_claim_protocol p11_interop_overlap p12_stream_geometry p13_decode_gemv p14_tensor_ops p15_frame_pacing p16_host_handoff"
 chip=$(sysctl -n machdep.cpu.brand_string 2>/dev/null | tr ' ' '-')
 cores=${GPU_CORES:-$(ioreg -l 2>/dev/null | awk -F'= ' '/"gpu-core-count"/{print $2; exit}')}
 out="results/${chip:-unknown}_${cores:-NA}c_macOS$(sw_vers -productVersion)_$(date +%Y%m%d-%H%M%S).txt"

@@ -26,7 +26,9 @@ tests run as the runner's user and could have rewritten what an earlier run left
 `kernels`, `runtime`, `spec`, `layers` and `models`, one pytest run per tier. A test may skip only for a reason
 `ALLOWED_SKIPS` lists: a module that did not build, a missing checkpoint, package or chip profile skips silently on a
 developer's machine and fails here. `--shader-validation` (`/mac-test --shader-validation`) runs the Metal tiers under
-`MTL_SHADER_VALIDATION=1`; use it for kernel and emitter changes (CLAUDE.md).
+`MTL_SHADER_VALIDATION=1`, where a validation report on a command buffer the runtime commits fails the test that made
+it; MLX's command buffers are not checked ([test tiers](../CONTRIBUTING.md#test-tiers)). Use it for kernel and
+emitter changes (CLAUDE.md).
 
 A maintainer starts the lane on a pull request by commenting, after reading the change:
 

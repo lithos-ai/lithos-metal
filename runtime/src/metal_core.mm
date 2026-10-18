@@ -286,6 +286,13 @@ size_t Icb::count() const { return impl->count; }
 
 static constexpr uint32_t kDoneLog = 64;   // steps of done snapshots kept; the GPU runs at most two steps ahead of the host
 
+// Gives a task back, unless another runner has claimed it since (a schedule may hold one task at several points, so
+// this runs more than once for it).
+static void release_task(HostTask& task, const void* owner) {
+  const void* held = owner;
+  task.owner.compare_exchange_strong(held, nullptr);
+}
+
 struct RunnerImpl {
   id<MTLDevice> dev; id<MTLCommandQueue> q;
   std::shared_ptr<IcbImpl> icb; std::vector<Dispatch> ops;
@@ -315,7 +322,7 @@ struct RunnerImpl {
   uint64_t drop_step = 0;
   uint32_t drop_point = 0;
   ~RunnerImpl() {
-    for (auto& p : points) if (p.task) p.task->owner.store(nullptr);   // its tasks serve another runner again
+    for (auto& p : points) if (p.task) release_task(*p.task, this);    // its tasks serve another runner again
     if (resident) [q removeResidencySet:residency_set];
   }
 };
@@ -477,7 +484,7 @@ void Runner::set_host_points(std::vector<HostPoint> points, uint32_t error_offse
     if (!p.task) continue;
     bool kept = false;
     for (auto& q : r.points) kept = kept || q.task == p.task;
-    if (!kept) p.task->owner.store(nullptr);
+    if (!kept) release_task(*p.task, &r);
   }
 }
 
@@ -490,7 +497,7 @@ std::vector<std::shared_ptr<HostTask>> Runner::host_tasks() const {
 void Runner::release_host_tasks() {
   std::vector<std::shared_ptr<HostTask>> dying;   // the points hold null tasks before any task's destructor runs Python
   for (auto& p : impl->points) {
-    if (p.task) p.task->owner.store(nullptr);     // released: the task serves another runner again
+    if (p.task) release_task(*p.task, impl.get());   // released: the task serves another runner again
     dying.push_back(std::move(p.task));
   }
 }

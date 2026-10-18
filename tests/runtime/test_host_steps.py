@@ -733,6 +733,20 @@ def test_a_task_serves_one_runner():
     assert second.run(3).steps == 3
 
 
+def test_a_task_at_two_points_is_released_once():
+    """A schedule may hold one task at several points, so its release runs once per point; a release gives back only
+    what this runner still holds, or the second one would take the task from the runner that claimed it meanwhile."""
+    task = nt.CallableTask(lambda step, point: None)
+    first = Engine(_program(_base_buffers(10), [_tick(), _tick()]))
+    second = Engine(_program(_base_buffers(10), [_tick()]))
+    first.runner.set_host_points([(1, 1, task), (2, 2, task)], LAYOUT.offset("error"), 1000)
+    first.runner.set_host_points([], LAYOUT.offset("error"), 1000)       # both points release the one task
+    second.runner.set_host_points([(1, 1, task)], LAYOUT.offset("error"), 1000)
+    with pytest.raises(RuntimeError, match="this task is installed on another runner"):
+        first.runner.set_host_points([(1, 1, task)], LAYOUT.offset("error"), 1000)
+    assert second.run(2).steps == 2
+
+
 def test_a_refused_task_leaves_the_runner_as_it_was():
     """The refusal comes before the schedule is swapped in, and the points of the same call that were free before it
     are free again."""

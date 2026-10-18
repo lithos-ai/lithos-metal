@@ -40,8 +40,6 @@
 #endif
 #define GRP_NC 6   // entries a pass (iq_kernels.cu:1123)
 
-struct GrpPtr { device const ushort* p; };   // one grp_ptr entry: a blob's 64-bit GPU address
-
 struct ExpertParams { uint n_embd; uint n_ff; uint gu_row; uint d_row; uint up_off; uint down_off; uint pad0; uint pad1; };
 
 // Split<42>::apply into s: s = fma(fl(d2 * d8), f(sumi), s), the contracted `s += r.d2 * d8 * sumi` (FFMA in SASS)

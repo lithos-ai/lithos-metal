@@ -126,6 +126,92 @@ def experts(blobs, grp_off, grp_start, ent_tok, ent_dst, xq, n_embd, n_ff, n_out
             "hq": np.frombuffer(b_hq.read(0, b_hq.nbytes), np.uint8), "out": f32(b_out).reshape(n_out_rows, n_embd)}
 
 
+def q8_0_scaled(x, fill=0x5A, src=None):
+    """``basalt_quantize_q8_0_scaled`` over the float32 vector ``x`` (a multiple of 32 values), into blocks and scales
+    whose bytes start as ``fill``: (34-byte blocks as bytes, fp32 scales). ``src``: another source of the kernels (the
+    tests' negative controls)."""
+    x = np.ascontiguousarray(x, np.float32)
+    nb = x.size // 32
+    pso = pipeline(src or kernels.basalt_s2_experts_source(), "basalt_quantize_q8_0_scaled")
+    out = run(pso, [x.tobytes(), nb * kernels.Q8_0_BLOCK_BYTES, 4 * nb], kernels.basalt_q8_0_scaled_params(x.size), 3,
+              kernels.basalt_q8_0_scaled_grid(x.size), kernels.S2_THREADS, fill)
+    return np.frombuffer(out[1], np.uint8), np.frombuffer(out[2], np.float32)
+
+
+def s2_experts(blob_bufs, grp, grp_start, n_groups, ent_tok, ent_dst, xq, xs, cap_groups, cap_entries, n_out_rows, *,
+               resident=None, out_fill=0xA5, scratch_fill=0x5A, src=None):
+    """basalt's ``moe_grouped_s2`` (with ``resident``: ``moe_group_resident`` first) in one command buffer.
+    ``blob_bufs``: device buffers holding the expert blobs; group g's blob is ``grp[g]`` = (buffer index, byte offset),
+    and the kernels get basalt's grp_ptr, that buffer's GPU address plus the offset (the table padded to cap_groups
+    with group 0's, the starts with the last, as basalt's test pads them). ``resident`` = (ids, k_per_tok, buffer
+    index, byte offset of expert 0): the plan comes from ``basalt_s2_group_resident`` instead, and ``grp``,
+    ``grp_start``, ``n_groups``, ``ent_tok`` and ``ent_dst`` are ignored. ``xq``: the activation rows (34-byte
+    blocks), ``xs`` their fp32 scales. The output (``n_out_rows`` rows of 2560 floats) starts as ``out_fill`` bytes,
+    the scratch (``basalt_s2_scratch``'s size) as ``scratch_fill``. Returns the output and scratch bytes, and the plan
+    the kernels read. ``src``: another source of the kernels (the tests' negative controls)."""
+    dev, src = device(), src or kernels.basalt_s2_experts_source()
+    pgu, psw, pq, pdn = (pipeline(src, n) for n in ("basalt_s2_gu", "basalt_s2_swiglu", "basalt_quantize_q8_0_scaled",
+                                                     "basalt_s2_down"))
+    grids, sc = kernels.basalt_s2_grids(cap_groups, cap_entries), kernels.basalt_s2_scratch(cap_entries)
+
+    def arr(a, dt, n, pad=0):
+        v = np.full(max(n, len(a), 1), pad, dt)
+        v[: len(a)] = a
+        return nt.Buffer(dev, v.tobytes())
+
+    ds = []
+    if resident is None:
+        b_ptr = arr([blob_bufs[i].gpu_address + int(o) for i, o in grp], np.uint64, cap_groups,
+                    blob_bufs[grp[0][0]].gpu_address + int(grp[0][1]) if len(grp) else 0)
+        b_start = arr(grp_start, np.int32, cap_groups + 1, grp_start[-1])
+        b_ng = nt.Buffer(dev, np.int32(n_groups).tobytes())
+        b_tok, b_dst = arr(ent_tok, np.int32, cap_entries), arr(ent_dst, np.int32, cap_entries)
+    else:
+        ids, k_per_tok, bi, bo = resident
+        n = len(ids)
+        b_ids = nt.Buffer(dev, np.asarray(ids, np.int32).tobytes())
+        b_ptr, b_start = nt.Buffer(dev, 8 * n), nt.Buffer(dev, 4 * (n + 1))
+        b_ng, b_dst, b_tok = nt.Buffer(dev, 16), nt.Buffer(dev, 4 * n), nt.Buffer(dev, 4 * n)
+        for b in (b_ptr, b_start, b_ng, b_dst, b_tok):
+            b.fill(0)
+        d0 = nt.Dispatch().pipeline(pipeline(src, "basalt_s2_group_resident")).buffer(0, b_ids)
+        d0 = d0.buffer(1, blob_bufs[bi], bo)
+        for k, b in enumerate((b_ptr, b_start, b_ng, b_dst, b_tok), start=2):
+            d0 = d0.buffer(k, b)
+        ds.append(d0.bytes(7, kernels.basalt_s2_resident_params(n, k_per_tok)).grid(1).threadgroup(128))
+    b_x = nt.Buffer(dev, np.ascontiguousarray(xq, np.uint8).tobytes())
+    b_xs = nt.Buffer(dev, np.ascontiguousarray(xs, np.float32).tobytes())
+    b_s, b_out = nt.Buffer(dev, sc["bytes"]), nt.Buffer(dev, 4 * n_out_rows * kernels.S2_H)
+    b_s.fill(scratch_fill)
+    b_out.fill(out_fill)
+    params = kernels.basalt_s2_params(cap_entries)
+    d1 = nt.Dispatch().pipeline(pgu)
+    for k, b in enumerate((b_ptr, b_start, b_ng, b_tok, b_x, b_xs, b_s)):
+        d1 = d1.buffer(k, b)
+    for b in blob_bufs:
+        d1 = d1.use(b)
+    ds.append(d1.bytes(7, params).grid(*grids["gu"]).threadgroup(kernels.S2_THREADS))
+    ds.append(nt.Dispatch().pipeline(psw).buffer(0, b_s).bytes(1, params).grid(grids["swiglu"])
+              .threadgroup(kernels.S2_THREADS))
+    ds.append(nt.Dispatch().pipeline(pq).buffer(0, b_s).buffer(1, b_s, sc["hq"]).buffer(2, b_s, sc["hs"])
+              .bytes(3, kernels.basalt_q8_0_scaled_params(cap_entries * kernels.S2_FF)).grid(grids["quant"])
+              .threadgroup(kernels.S2_THREADS))
+    d4 = nt.Dispatch().pipeline(pdn)
+    for k, b in enumerate((b_ptr, b_start, b_ng, b_dst)):
+        d4 = d4.buffer(k, b)
+    d4 = d4.buffer(4, b_s, sc["hq"]).buffer(5, b_s, sc["hs"]).buffer(6, b_out)
+    for b in blob_bufs:
+        d4 = d4.use(b)
+    ds.append(d4.grid(*grids["down"]).threadgroup(kernels.S2_THREADS))
+    r = nt.Queue(dev).run(ds)
+    assert not r.error, r.error
+    i32 = lambda b: np.frombuffer(b.read(0, b.nbytes), np.int32)
+    return {"out": np.frombuffer(b_out.read(0, b_out.nbytes), np.uint32).reshape(n_out_rows, kernels.S2_H),
+            "scratch": np.frombuffer(b_s.read(0, b_s.nbytes), np.uint8), "grp_ptr": np.frombuffer(
+                b_ptr.read(0, b_ptr.nbytes), np.uint64), "grp_start": i32(b_start), "n_groups": i32(b_ng),
+            "ent_dst": i32(b_dst), "ent_tok": i32(b_tok)}
+
+
 def mmvf(w, x, n_in, n_out, n_tok=1, ldx=None, ldy=None, fill=None):
     """``basalt_mmvf`` in basalt's launch (``bf16_gemv_fp32_mmvf_multi``; one row with ldy >= n_out:
     ``bf16_gemv_fp32_mmvf``) for BF16 bits ``w`` (n_out rows of n_in) and the float32 rows of ``x`` (row k at k * ldx,

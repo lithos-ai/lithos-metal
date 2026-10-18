@@ -3,7 +3,8 @@
 # Copyright (c) 2026 Jesús Gulfo
 # adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
 # src/kernels/cuda/native_bf16.cu, src/kernels/cuda/dense_tc.cu, src/kernels/cuda/q5k_head.cu,
-# src/kernels/cuda/head_proxy.cuh and include/basalt/kernels/q8_1_finite.hpp @
+# src/kernels/cuda/head_proxy.cuh, src/kernels/cuda/quantize_act.cu, src/kernels/cuda/s2_expert_grouped.cu,
+# include/basalt/kernels/q8_1_finite.hpp and include/basalt/kernels/f16_bits.hpp @
 # b4c63b55754637f4c72ad53a0f791d425f71eb36, which adapt ggml-org/llama.cpp ggml/src/ggml-common.h (kvalues_iq4nl),
 # ggml/src/ggml-quants.c (get_scale_min_k4), ggml/src/ggml-cuda/quantize.cu and ggml/src/ggml-cuda/mmvf.cu @
 # 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
@@ -336,6 +337,81 @@ def swiglu_q8_1(gate, up, e):
     with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
         h = (g / (F32(1.0) + e)) * up
     return q8_1_ieee(h)
+
+
+# ---- the drafter's experts (docs/research/basalt-nvcc/s2_experts.md) ----------------------------------------------
+# quantize_act.cu and s2_expert_grouped.cu build with nvcc's IEEE defaults: no flush, as numpy's float32 operations.
+
+def f16_from_f32(x):
+    """f16_bits.hpp:36-65's f16_from_f32, transcribed in integer operations: round to nearest even, a finite overflow
+    to infinity, fp16 subnormals kept, a NaN to sign | 0x7E00."""
+    xb = np.asarray(x, F32).view(np.uint32).astype(np.int64)
+    sign, rawexp, man = (xb >> 16) & 0x8000, (xb >> 23) & 0xFF, xb & 0x7FFFFF
+    exp = rawexp - 127 + 15
+    sh = np.clip(14 - exp, 1, 24)
+    mm = man | 0x800000
+    h_sub = (mm >> sh) & 0x3FF
+    rem, half = mm & ((1 << sh) - 1), 1 << (sh - 1)
+    h_sub = h_sub + ((rem > half) | ((rem == half) & ((h_sub & 1) == 1)))
+    h_norm = sign | (np.clip(exp, 0, 31) << 10) | (man >> 13)
+    rem_n = man & 0x1FFF
+    h_norm = h_norm + ((rem_n > 0x1000) | ((rem_n == 0x1000) & ((h_norm & 1) == 1)))
+    out = np.where(exp <= 0, np.where(exp < -10, sign, sign | h_sub), h_norm)
+    out = np.where(exp >= 31, sign | 0x7C00, out)
+    out = np.where(rawexp == 0xFF, sign | 0x7C00 | np.where(man != 0, 0x200, 0), out)
+    return out.astype(np.uint16)
+
+
+def q8_0_scaled(x):
+    """quantize_q8_0_scaled_warp_kernel (s2_experts.md section 1), the host transcription: per 32-value block amax =
+    fmaxf over |x| (a NaN dropped), s = amax > 0 ? amax / 127 : 0, inv = s > 0 ? 1 / s : 0, t = x * inv,
+    r = t + (t >= 0 ? 0.5 : -0.5), code (int) r clamped to +-127 (NaN to 0); d = f16_from_f32(s). Returns (34-byte
+    blocks as bytes, fp32 scales)."""
+    v = np.asarray(x, F32).reshape(-1, 32)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
+        amax = np.fmax.reduce(np.abs(v), axis=1)
+        s = np.where(amax > 0, amax / F32(127.0), F32(0.0)).astype(F32)
+        inv = np.where(s > 0, F32(1.0) / s, F32(0.0)).astype(F32)
+        t = v * inv[:, None]
+        r = t + np.where(t >= 0, F32(0.5), F32(-0.5))
+        code = np.where(np.isnan(r), 0, np.trunc(np.clip(r, -127, 127))).astype(np.int8)
+    out = np.zeros((len(v), 34), np.uint8)
+    out[:, :2] = f16_from_f32(s).view(np.uint8).reshape(-1, 2)
+    out[:, 2:] = code.view(np.uint8)
+    return out.reshape(-1), s
+
+
+def s2_dots(codes, scales, xq, xs):
+    """Q2_0 rows of the drafter's blob against Q8_0 activation rows with fp32 scales, as gu_grouped_t_kernel and
+    down_grouped_t_kernel sum them (s2_experts.md sections 2 and 5): (E, R) for code rows ``codes`` (R, n / 4 bytes),
+    their fp16 scale bits ``scales`` (R, n / 64), the activation rows ``xq`` (E, n / 32 blocks of 34 bytes) and their
+    scales ``xs`` (E, n / 32). Per (row, entry) lane L takes the chunks L, L + 32, ... in order, acc = fma(fl(dw * dx),
+    f(s - hx), acc) from +0, s - hx the exact sum of (code - 1) * x; then the 32-lane butterfly of IEEE adds."""
+    codes = np.asarray(codes, np.uint8)
+    nr, nk = codes.shape[0], codes.shape[1] // 8
+    w = ((codes[:, np.arange(32 * nk) // 4].astype(np.int64) >> (2 * (np.arange(32 * nk) % 4))) & 3) - 1
+    xb = np.asarray(xq, np.uint8).reshape(-1, nk, 34)
+    a = xb[..., 2:].view(np.int8).astype(np.float64)                                   # (E, K, 32)
+    n = np.einsum("rkv,ekv->erk", w.reshape(nr, nk, 32).astype(np.float64), a).astype(F32)   # exact integers
+    dw = h2f(np.asarray(scales, np.uint16))[:, np.arange(nk) // 2]                      # (R, K)
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        p = dw[None] * np.asarray(xs, F32).reshape(-1, nk)[:, None, :]                  # (E, R, K): fl(dw * dx)
+    acc = np.zeros(n.shape[:2] + (32,), F32)
+    for k0 in range(0, nk, 32):
+        ks = np.arange(k0, min(k0 + 32, nk))
+        acc[..., ks - k0] = fma32(p[..., ks], n[..., ks], acc[..., ks - k0])
+    with np.errstate(over="ignore", invalid="ignore"):
+        for o in (16, 8, 4, 2, 1):
+            acc = acc + acc[..., np.arange(32) ^ o]
+    return acc[..., 0]
+
+
+def s2_swiglu(g, u, e):
+    """swiglu_kernel (s2_experts.md section 3): fl(fl(g / fl(1 + e)) * u), IEEE; ``e`` is __expf(-g), taken from the
+    GPU's expf_neg (MUFU.EX2 and fast::exp2 have no bit-exact host model)."""
+    g, u, e = (np.asarray(v, F32) for v in (g, u, e))
+    with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
+        return (g / (e + F32(1.0))) * u
 
 
 # ---- the BF16 GEMVs on fp32 activations (docs/research/basalt-nvcc/bf16.md) -----------------------------------------

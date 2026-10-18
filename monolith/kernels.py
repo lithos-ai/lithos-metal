@@ -376,6 +376,89 @@ def basalt_expert_params(n_embd: int, n_ff: int) -> bytes:
     return struct.pack("<8I", n_embd, n_ff, lay["gu_row"], lay["d_row"], lay["up_off"], lay["down_off"], 0, 0)
 
 
+# ---- basalt's drafter experts (kernels/common/basalt_s2_experts.metal; docs/research/basalt-nvcc/s2_experts.md) ----
+# The constants and the scratch layout are adapted from basalt (jesdga95/basalt) src/kernels/cuda/s2_expert_grouped.cu
+# :34-46, :554-562, :1085-1122 and src/kernels/cuda/quantize_act.cu:219-238 @ b4c63b55754637f4c72ad53a0f791d425f71eb36
+# (MIT; third_party/NOTICE).
+
+Q8_0_BLOCK_BYTES = 34       # fp16 d, 32 int8 codes
+S2_THREADS = 256            # every dispatch but the plan's: 256-thread threadgroups
+S2_H, S2_FF, S2_GMAX = 2560, 640, 8
+S2_BLOB_BYTES = 2 * S2_FF * S2_H // 4 + S2_H * S2_FF // 4 + 2 * S2_FF * S2_H // 64 * 2 + S2_H * S2_FF // 64 * 2
+
+
+def basalt_s2_experts_source() -> str:
+    """basalt's drafter experts: ``basalt_s2_group_resident`` (moe_group_resident), ``basalt_quantize_q8_0_scaled`` and
+    moe_grouped_s2's ``basalt_s2_gu``, ``basalt_s2_swiglu``, ``basalt_quantize_q8_0_scaled`` (the intermediate) and
+    ``basalt_s2_down``, dispatched in that order. The gate/up and down kernels take basalt's ``grp_ptr`` at buffer(0):
+    one 64-bit GPU address a group (each 2-byte aligned, inside a buffer the dispatch makes resident)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_q8_1.metal") + template("basalt_s2_experts.metal")
+
+
+CUDA_GRID_X, CUDA_GRID_Y = 2 ** 31 - 1, 65535   # CUDA's largest gridDim.x and .y: a larger basalt launch exits
+
+
+def basalt_q8_0_scaled_params(n_values: int) -> bytes:
+    """``Q80Params`` for ``basalt_quantize_q8_0_scaled`` over ``n_values`` floats, a positive multiple of 32 (basalt
+    refuses others, quantize_act.cu:222-225) on a grid basalt can launch (``basalt_q8_0_scaled_grid``, threadgroups of
+    256). The block count is 64-bit, basalt's long long."""
+    if n_values <= 0 or n_values % 32:
+        raise ValueError(f"quantize_q8_0_scaled: the value count must be a positive multiple of 32, got {n_values}")
+    basalt_q8_0_scaled_grid(n_values)
+    return struct.pack("<QQ", n_values // 32, 0)
+
+
+def basalt_q8_0_scaled_grid(n_values: int) -> int:
+    """Threadgroups of 256 for ``n_values`` floats: one SIMD-group a block (quantize_act.cu:229-231). At most
+    ``CUDA_GRID_X``: basalt launches ``(unsigned) ((nb * 32 + 255) / 256)`` blocks and exits when the launch fails
+    (:230-236). Within it no 32-bit threadgroup position wraps."""
+    grid = -(-n_values // S2_THREADS)
+    if grid > CUDA_GRID_X:
+        raise ValueError(f"quantize_q8_0_scaled: {n_values} values need {grid} threadgroups, above {CUDA_GRID_X}")
+    return grid
+
+
+def basalt_s2_scratch(cap_entries: int) -> Dict[str, int]:
+    """moe_grouped_s2's scratch for ``cap_entries`` entries (s2_expert_grouped.cu:1090-1094): the byte offsets of the
+    quantized intermediate ("hq") and its fp32 scales ("hs") after gate/up at 0, each region's bytes rounded up to 16,
+    and the size basalt allocates (``moe_hit_grouped_scratch_bytes``, :554-562). At most 858,993,458 entries: basalt's
+    SwiGLU and quantizer grids of cap_entries * 640 / 256 blocks (:1107-1108, :1111) stop at ``CUDA_GRID_X``, which
+    also keeps the ``(int) cap_entries`` basalt hands the gate/up kernel (:1100) in range."""
+    if cap_entries <= 0:
+        raise ValueError(f"moe_grouped_s2: cap_entries must be positive, got {cap_entries}")
+    basalt_q8_0_scaled_grid(cap_entries * S2_FF)
+    r16 = lambda n: (n + 15) // 16 * 16
+    nc = S2_FF // 32
+    gu, q8, hs = r16(cap_entries * 2 * S2_FF * 4), r16(cap_entries * nc * Q8_0_BLOCK_BYTES), r16(cap_entries * nc * 4)
+    return {"hq": gu, "hs": gu + q8, "bytes": gu + q8 + 2 * hs + r16(S2_H // 32 * 4)}
+
+
+def basalt_s2_params(cap_entries: int) -> bytes:
+    """``S2Params`` of the gate/up and SwiGLU dispatches."""
+    basalt_s2_scratch(cap_entries)
+    return struct.pack("<IIII", cap_entries, 0, 0, 0)
+
+
+def basalt_s2_grids(cap_groups: int, cap_entries: int) -> Dict[str, object]:
+    """Threadgroup grids (each of 256 threads) of moe_grouped_s2's four dispatches (s2_expert_grouped.cu:1096-1121):
+    gate/up (40, cap_groups), the SwiGLU, the intermediate's quantizer, down (40, cap_groups). cap_groups is at most
+    ``CUDA_GRID_Y`` (basalt's grid y, :1097), so the kernels' ``int(tg.y)`` (basalt's ``int g = blockIdx.y``) stays
+    non-negative; cap_entries as ``basalt_s2_scratch`` takes it."""
+    if not 0 < cap_groups <= CUDA_GRID_Y:
+        raise ValueError(f"moe_grouped_s2: cap_groups must be 1..{CUDA_GRID_Y}, got {cap_groups}")
+    basalt_s2_scratch(cap_entries)
+    grid = basalt_q8_0_scaled_grid(cap_entries * S2_FF)              # the SwiGLU's too: a thread a value
+    return {"gu": (2 * S2_FF // 32, cap_groups), "swiglu": grid, "quant": grid, "down": (S2_H // 64, cap_groups)}
+
+
+def basalt_s2_resident_params(n: int, k_per_tok: int, blob: int = S2_BLOB_BYTES) -> bytes:
+    """``S2ResidentParams`` of ``basalt_s2_group_resident`` (one threadgroup of 128): n routed ids, 1..128 as basalt
+    requires (s2_expert_grouped.cu:1079), k_per_tok of them a token, experts ``blob`` bytes apart."""
+    if not 1 <= n <= 128 or k_per_tok <= 0:
+        raise ValueError(f"moe_group_resident: n must be 1..128 and k_per_tok positive, got {n}, {k_per_tok}")
+    return struct.pack("<iiII", n, k_per_tok, blob, 0)
+
+
 DEQUANT_TYPES = (11, 20, 23, 42)   # Q3_K, IQ4_NL, IQ4_XS, Q2_0: basalt's dequantizers for the types iq_parity checks
 
 

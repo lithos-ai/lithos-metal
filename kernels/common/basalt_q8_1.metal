@@ -21,7 +21,9 @@
 //   compares a subnormal as zero, returning the second operand of a tie rather than the larger
 //   (tests/kernels/test_basalt_platform.py), so wherever a subnormal can occur the IEEE result is rebuilt from integer
 //   operations: amax as the largest bit pattern, the block sum and the codes on operands scaled by 2^64, d = amax / 127
-//   on the subnormal grid by integer division. Above 2^-100 every one of these is the plain operation.
+//   on the subnormal grid by integer division. Above 2^-100 every one of these is the plain operation. The IEEE
+//   helpers (ieee_add, ieee_mul, ieee_div127, ieee_rcp, ieee_fma, ieee_div, warp_sum_ieee) serve every IEEE-built
+//   port kernel.
 #pragma STDC FP_CONTRACT OFF
 
 struct Q81Params { uint n; uint pad0; uint pad1; uint pad2; };   // n: values (ncols * n_in), a multiple of 32
@@ -38,7 +40,8 @@ static inline char q8_1_code(float q) {
 static inline void q8_1_put(device uchar* y, uint i, char code, float d, float sum) {
     y[36u * (i / 32u) + 4u + i % 32u] = as_type<uchar>(code);
     if (i % 32u == 0u) {
-        *(device uint*) (y + 36u * (i / 32u)) = as_type<uint>(half2(half(q8_1_finite(d)), half(q8_1_finite(sum))));
+        *(device uint*) (y + 36u * (i / 32u)) =
+            uint(f16_bits(q8_1_finite(d))) | (uint(f16_bits(q8_1_finite(sum))) << 16);
     }
 }
 
@@ -131,6 +134,85 @@ static inline float ieee_mul(float a, float b) {
     return as_type<float>(sign | (uint(k) << 23) + uint(r));            // r == 2^24 carries into the exponent
 }
 
+// amax / 127 rounded as IEEE does, for amax >= 0 or NaN, decided on its bits (a compare may flush): the plain division
+// from 2^-100 (and for 0 and NaN); from 2^-119, where the quotient is normal, on amax scaled by 2^64; below, on the
+// subnormal grid by integer division (127 is odd: no ties).
+static inline float ieee_div127(float amax) {
+    const uint b = as_type<uint>(amax);
+    if (b >= IEEE_SMALL || b == 0u) return amax / 127.0f;
+    if (b >= (8u << 23)) return (ieee_up64(amax) / 127.0f) * 0x1p-64f;
+    const uint m = (b & 0x7f800000u) == 0u ? b : ((b & 0x007fffffu) | 0x00800000u) << ((b >> 23) - 1u);
+    return as_type<float>(m / 127u + (m % 127u >= 64u ? 1u : 0u));
+}
+
+// 1 / s rounded as IEEE does (rcp.rn.f32 without .ftz) for |s| <= 2^126 (the quantizer's s is at most FLT_MAX / 127),
+// an infinity or NaN: below 2^-100 (zero included) on s scaled by 2^64, rcp.rn.f32's own slow path: the correctly
+// rounded reciprocal of a normal value, scaled back exactly or overflowing where 1 / s does.
+static inline float ieee_rcp(float s) {
+    if ((as_type<uint>(s) & 0x7fffffffu) >= IEEE_SMALL) return 1.0f / s;
+    return (1.0f / ieee_up64(s)) * 0x1p64f;
+}
+
+// fma(a, n, c) rounded as IEEE does (fma.rn.f32 without .ftz) for an integer n, |n| < 2^24, decided on bits:
+// - a and c each zero or at least 2^-100: a * n + c is a multiple of 2^-123, zero or normal: the hardware's fma.
+// - a nonzero below 2^-100: |a * n| < 2^-76. With |c| < 2^62, on the operands scaled by 2^64 (exactly): a * n + c is
+//   a multiple of 2^-149, so a subnormal result is exact in the scaled form and scales back exactly (ieee_down64), and
+//   a normal one rounds as its scaled form does. With a larger c (or an infinite or NaN one) the sum rounds to c
+//   whether or not the hardware flushes a: its fma.
+// - c nonzero below 2^-100, a zero or at least 2^-100: a finite a * n of zero leaves c. Otherwise |a * n| >= 2^-100
+//   (or a is infinite or NaN): the sum is at least 2^-124, and a subnormal c changes its rounding only by breaking a
+//   tie, as any value of its sign below 2^-123 does: the hardware's fma with c at +-2^-126.
+static inline float ieee_fma(float a, float n, float c) {
+    const uint ua = as_type<uint>(a) & 0x7fffffffu, uc = as_type<uint>(c) & 0x7fffffffu;
+    const bool a_ok = ua == 0u || ua >= IEEE_SMALL, c_ok = uc == 0u || uc >= IEEE_SMALL;
+    if (a_ok && c_ok) return fma(a, n, c);
+    if (!a_ok) return uc < (189u << 23) ? ieee_down64(fma(ieee_up64(a), n, ieee_up64(c))) : fma(a, n, c);
+    if ((ua == 0u || n == 0.0f) && ua < 0x7f800000u) return c;
+    return fma(a, n, uc < 0x00800000u ? copysign(0x1p-126f, c) : c);
+}
+
+// a / b rounded as IEEE does (div.rn.f32 without .ftz) for b >= 1, infinite or NaN (the SwiGLU's 1 + e): the
+// hardware's quotient when a or b is infinite or NaN, or when |a| >= 2^-100 and the quotient is at least 2^-125
+// (normal operands and result: Metal's division is IEEE's, tests/kernels/test_basalt_platform.py); a zero a gives its
+// signed zero. Otherwise the quotient is below 2^-100 and is rebuilt from the integer quotient of the significands,
+// rounded to nearest even on the grid of its binade (k = 0 the subnormal grid), as ieee_mul does.
+static inline float ieee_div(float a, float b) {
+    const float q = a / b;
+    const uint ab = as_type<uint>(a), bb = as_type<uint>(b), ua = ab & 0x7fffffffu;
+    if (ua >= 0x7f800000u || (bb & 0x7f800000u) == 0x7f800000u) return q;
+    if (ua >= IEEE_SMALL && !(fabs(q) < 0x1p-125f)) return q;
+    const uint sign = (ab ^ bb) & 0x80000000u;
+    if (ua == 0u) return as_type<float>(sign);
+    uint ea = ua >> 23, ma = ua & 0x7fffffu;
+    if (ea == 0u) ea = 1u; else ma |= 0x800000u;
+    const int z = int(clz(ma)) - 8;                                    // normalize ma to [2^23, 2^24)
+    ma <<= uint(z);
+    const uint mb = (bb & 0x7fffffu) | 0x800000u;
+    const int s = int(ea) - z - int((bb >> 23) & 0xffu) + 149;        // |a / b| = ma / mb * 2^s units of 2^-149
+    const int k = max(0, s - (ma < mb ? 1 : 0) - 23);                 // the grid: 24 significant bits, or 2^-149
+    ulong num = ulong(ma), den = ulong(mb);
+    if (s - k >= 0) num <<= uint(s - k);
+    else if (k - s < 40) den <<= uint(k - s);
+    else num = 0ul;
+    ulong r = num / den;
+    const ulong rem = num - r * den;
+    if (2ul * rem > den || (2ul * rem == den && (r & 1ul) != 0ul)) r += 1ul;
+    return as_type<float>(sign | (uint(k) << 23) + uint(r));            // r == 2^24 carries into the exponent
+}
+
+// basalt's warp_sum with IEEE adds (the XOR butterfly the port shares; lane 0 is a shift-down tree's lane 0 too)
+static inline float warp_sum_ieee(float x) {
+    for (ushort o = 16; o > 0; o >>= 1) x = ieee_add(x, shfl_xor(x, o));
+    return x;
+}
+
+// x with a NaN as sm_120's: every FADD, FMUL, FFMA and div.rn.f32 that makes a NaN gives the canonical 0x7fffffff,
+// where this GPU gives 0x7fc00000. A port kernel whose NaN can only come from such operations (or pass through them)
+// applies it to the float it stores.
+static inline float cuda_nan(float x) {
+    return (as_type<uint>(x) & 0x7fffffffu) > 0x7f800000u ? as_type<float>(0x7fffffffu) : x;
+}
+
 static inline void q8_1_store_ieee(float xi, device uchar* y, uint i) {
     int key = isnan(xi) ? -1 : int(as_type<uint>(fabs(xi)));        // fmaxf drops a NaN operand
     float sum = xi;
@@ -140,17 +222,7 @@ static inline void q8_1_store_ieee(float xi, device uchar* y, uint i) {
     }
     const float amax = key < 0 ? as_type<float>(0x7fffffffu) : as_type<float>(uint(key));
     const bool small = uint(key) < IEEE_SMALL;                        // NaN (key -1) is not small
-    float d;                                                          // (amax compared by its bits: a compare may flush)
-    if (!small || key == 0) {
-        d = amax / 127.0f;
-    } else if (key >= (8 << 23)) {                                    // amax >= 2^-119: d is normal, scaled division
-        d = (ieee_up64(amax) / 127.0f) * 0x1p-64f;
-    } else {                                                          // d on the subnormal grid: integer division
-        const uint b = as_type<uint>(amax);
-        const uint m = (b & 0x7f800000u) == 0u ? b : ((b & 0x007fffffu) | 0x00800000u) << ((b >> 23) - 1u);
-        d = as_type<float>(m / 127u + (m % 127u >= 64u ? 1u : 0u));  // round to nearest (127 is odd: no ties)
-    }
-    d = q8_1_finite(d);
+    const float d = q8_1_finite(ieee_div127(amax));
     char code = char(0);
     if (key != 0) code = q8_1_code(round(small ? ieee_up64(xi) / ieee_up64(d) : xi / d));
     q8_1_put(y, i, code, d, sum);

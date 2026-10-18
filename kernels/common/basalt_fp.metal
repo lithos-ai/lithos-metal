@@ -32,6 +32,7 @@
 // - load_int_b2, dp4a, byte_perm, vsubss4, vsub4: CUDA's two 16-bit loads, __dp4a, __byte_perm (3-bit selectors),
 //   __vsubss4 and __vsub4 as exact integer arithmetic; iq4_table_lookup: the IQ4 codebook's two-stage byte lookup
 //   (native_mmvq.cu:441-457; dense_tc.cu:79-84 computes the same bytes).
+// - h2f, f16_bits: fp16 bits to fp32 and back; GrpPtr: an address in basalt's grp_ptr table.
 // - q8_d, q8_s, q8_w: a q8_1 block's scale, sum and code words; q2_0_load, q2_0_sumi: the Q2_0 decode and its exact
 //   integer dot, shared by native_mmvq and the routed experts; q5k_load, q5k_dot: the Q5_K decode and dot, shared by
 //   native_mmvq and the Q5_K head.
@@ -104,6 +105,14 @@ static inline float expf_ftz(float x) { return ftz(fast::exp2(mul_ftz(x, as_type
 
 // fp16 field to fp32 (exact): CUDA's __half2float / __low2float, HADD2.F32 in SASS.
 static inline float h2f(ushort h) { return float(as_type<half>(h)); }
+
+// fp32 to fp16 bits, round to nearest even: a finite overflow to infinity, fp16 subnormals kept, an fp32 subnormal to
+// the zero of its sign (basalt's f16_from_f32, f16_bits.hpp:36-65, and __float2half;
+// docs/research/basalt-nvcc/s2_experts.md section 1). A NaN's payload is the GPU's.
+static inline ushort f16_bits(float x) { return as_type<ushort>(half(x)); }
+
+// one entry of basalt's grp_ptr table: a blob's 64-bit GPU address (MSL takes no pointer-to-pointer kernel argument)
+struct GrpPtr { device const ushort* p; };
 
 // native_mmvq.cu:353-358: a 32-bit word of a 2-byte aligned block, as two 16-bit loads combined little-endian.
 static inline int load_int_b2(device const ushort* p, int i32) {

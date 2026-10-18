@@ -113,6 +113,11 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   copied, `get_scale_min_k4` of `ggml/src/ggml-quants.c`, the q8_1 rule of `ggml/src/ggml-cuda/quantize.cu` and the
   MMVF accumulation and reductions of `ggml/src/ggml-cuda/mmvf.cu`, re-implemented in numpy (MIT). License:
   `third_party/GGML-LICENSE`.
+- `runtime/src/basalt_cpu.h`, `runtime/src/basalt_cpu.cpp` and `tests/kernels/basalt_cpu_emu.py` — through basalt's
+  `src/kernels/cpu/expert.cpp` (below), which reads `ggml/src/ggml-common.h`'s `block_q2_0` and
+  `ggml/src/ggml-quants.c`'s `dequantize_row_q2_0` (MIT): the 18-byte block layout (an fp16 scale, then 64 codes two
+  bits each) and its code extraction `(qs[m / 4] >> 2 * (m % 4)) & 3`, re-implemented. The `- 1` that centres a code
+  reaches the result through basalt's own correction term, not through a dequantization. License: `third_party/GGML-LICENSE`.
 
 ## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
 
@@ -228,6 +233,16 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `include/basalt/kernels/f16_bits.hpp:36-65` transcribed; `q8_0_scaled`, `s2_dots`, `s2_swiglu`:
   `src/kernels/cuda/quantize_act.cu` and `src/kernels/cuda/s2_expert_grouped.cu`;
   `docs/research/basalt-nvcc/s2_experts.md`). License: `third_party/BASALT-LICENSE`.
+- `runtime/src/basalt_cpu.h` and `runtime/src/basalt_cpu.cpp` — adapted from `src/kernels/cpu/expert.cpp:143-148`,
+  `:336-370` and `:503-556` and `include/basalt/kernels/cpu/expert.hpp:25-61` (MIT): the `ActQ` struct and the
+  geometry constants, `act_quant_q8_1`, and `q2_0_gguf_rows_multi` with `q2g_rows`, `q2g_row_multi` and
+  `unpack64_q2_0`, transcribed to ARM NEON operation for operation, with the lane-reduction trees of the AVX-512
+  intrinsics' own headers. License: `third_party/BASALT-LICENSE`.
+- `tests/kernels/basalt_cpu_emu.py` and `tests/kernels/test_basalt_cpu_q2.py` — adapted from
+  `src/kernels/cpu/expert.cpp:143-148`, `:336-370` and `:503-556` (MIT): the same two kernels re-implemented in numpy
+  as the AVX-512 semantics they are written in, and the shape of the per-token independence check of
+  `src/kernels/cpu/expert_multi_test.cpp:56-72`, which exercises a kernel off this pack's path: the pattern
+  transfers, not its code. License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

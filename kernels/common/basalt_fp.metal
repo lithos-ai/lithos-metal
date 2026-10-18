@@ -1,7 +1,7 @@
 // Copyright (c) 2023-2026 The ggml authors (MIT)
 // Copyright (c) 2026 Jesús Gulfo (MIT)
 // Adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
-// include/basalt/kernels/dp4a.hpp and include/basalt/kernels/q8_1_finite.hpp
+// src/kernels/cuda/q5k_head.cu, include/basalt/kernels/dp4a.hpp and include/basalt/kernels/q8_1_finite.hpp
 // @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE),
 // which adapt ggml-org/llama.cpp ggml/src/ggml-cuda/{quantize.cu,vecdotq.cuh,mmvq.cu,common.cuh} @
 // 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
@@ -33,7 +33,9 @@
 //   __vsubss4 and __vsub4 as exact integer arithmetic; iq4_table_lookup: the IQ4 codebook's two-stage byte lookup
 //   (native_mmvq.cu:441-457; dense_tc.cu:79-84 computes the same bytes).
 // - q8_d, q8_s, q8_w: a q8_1 block's scale, sum and code words; q2_0_load, q2_0_sumi: the Q2_0 decode and its exact
-//   integer dot, shared by native_mmvq and the routed experts.
+//   integer dot, shared by native_mmvq and the routed experts; q5k_load, q5k_dot: the Q5_K decode and dot, shared by
+//   native_mmvq and the Q5_K head.
+// - expf_ftz: __expf(x) in a --use_fast_math file (docs/research/basalt-nvcc/q5k_head.md section 2).
 #pragma STDC FP_CONTRACT OFF
 
 static inline float ftz(float x) {
@@ -96,6 +98,9 @@ static inline float warp_sum(float x) {
 // CUDA's __expf(-g) in an IEEE-built file: ex2.approx.f32 of fl(g * -log2 e) (experts.md section 2). MUFU.EX2 has no
 // documented Metal counterpart; the contract maps it to fast::exp2 of the same product.
 static inline float expf_neg(float g) { return fast::exp2(g * as_type<float>(0xBFB8AA3Bu)); }
+// CUDA's __expf(x) in a --use_fast_math file: ex2.approx.ftz.f32 of fl(x * log2 e), FMUL.FTZ then MUFU.EX2
+// (q5k_head.md section 2); fast::exp2 as in expf_neg, its result flushed as .ftz flushes.
+static inline float expf_ftz(float x) { return ftz(fast::exp2(mul_ftz(x, as_type<float>(0x3FB8AA3Bu)))); }
 
 // fp16 field to fp32 (exact): CUDA's __half2float / __low2float, HADD2.F32 in SASS.
 static inline float h2f(ushort h) { return float(as_type<half>(h)); }
@@ -180,4 +185,48 @@ template <typename P> static inline int q2_0_sumi(thread const Q20W& r, P x, int
         sumi = dp4a(q8_w(x, b, j * 2 + 1), r.qy[j], sumi);
     }
     return sumi;
+}
+
+// Q5_K (176-byte blocks: fp16 d and dmin, scales[12], qh[32], qs[128]): native_mmvq's Q5KTraits load and
+// q5_q8_dot_impl (native_mmvq.cu:180-240, 897-937), which the Q5_K head repeats (q5k_head.cu:41-106). q5k_load
+// decodes sub-position iqs of the block at blk once (qs and qh read as int16 pairs: the block is 2-byte aligned);
+// q5k_dot is its dot with q8_1 blocks bq8_offset and bq8_offset + 1 of x (x at the block's first q8_1 block):
+// dm.x * sumf_d - dm.y * sumf_m as ptxas compiles it, the dmin product rounded and the d product fused
+// (docs/research/basalt-nvcc/matvec.md section 5; q5k_head.md section 1). The caller adds the result.
+struct Q5KW { int vl[2]; int vh[2]; uchar sc[2]; uchar m[2]; float dmx, dmy; int bq8_offset; };
+static inline Q5KW q5k_load(device const ushort* blk, int iqs) {
+    Q5KW r;
+    r.bq8_offset = 2 * ((iqs / 2) / 4);
+    const int ql = (48 + 16 * r.bq8_offset + 4 * ((iqs / 2) % 4)) / 4;
+    r.vl[0] = load_int_b2(blk, ql);
+    r.vl[1] = load_int_b2(blk, ql + 4);
+    const int qh = (16 + 4 * ((iqs / 2) % 4)) / 4;
+    r.vh[0] = load_int_b2(blk, qh) >> r.bq8_offset;
+    r.vh[1] = load_int_b2(blk, qh + 4) >> r.bq8_offset;
+    const int j = r.bq8_offset / 2;
+    const int jm = j & 1;
+    const uint s0 = blk[2 + jm], s2 = blk[2 + jm + 2], s4 = blk[2 + jm + 4];
+    const uint hi = uint(-int(j >= 2));
+    const uint aux0 = ((s0 & 0x3f3fu) & ~hi) | ((((s4 >> 0) & 0x0f0fu) | ((s0 & 0xc0c0u) >> 2)) & hi);
+    const uint aux1 = ((s2 & 0x3f3fu) & ~hi) | ((((s4 >> 4) & 0x0f0fu) | ((s2 & 0xc0c0u) >> 2)) & hi);
+    r.sc[0] = uchar(aux0); r.sc[1] = uchar(aux0 >> 8);
+    r.m[0] = uchar(aux1); r.m[1] = uchar(aux1 >> 8);
+    r.dmx = h2f(blk[0]);
+    r.dmy = h2f(blk[1]);
+    return r;
+}
+static inline float q5k_dot(thread const Q5KW& r, device const uint* x, int iqs) {
+    float sumf_d = 0.0f, sumf_m = 0.0f;
+    for (int i = 0; i < 2; ++i) {
+        const int b = r.bq8_offset + i;
+        const float d8 = q8_d(x, b);
+        const int u0 = q8_w(x, b, (iqs / 2) % 4), u1 = q8_w(x, b, (iqs / 2) % 4 + 4);
+        const int v0i = ((r.vl[0] >> (4 * i)) & 0x0f0f0f0f) | (((r.vh[0] >> i) << 4) & 0x10101010);
+        const int v1i = ((r.vl[1] >> (4 * i)) & 0x0f0f0f0f) | (((r.vh[1] >> i) << 4) & 0x10101010);
+        const int dot1 = dp4a(v0i, u0, dp4a(v1i, u1, 0));
+        const int dot2 = dp4a(0x01010101, u0, dp4a(0x01010101, u1, 0));
+        sumf_d = fma_ftz(d8, float(dot1 * int(r.sc[i])), sumf_d);
+        sumf_m = fma_ftz(d8, float(dot2 * int(r.m[i])), sumf_m);
+    }
+    return fma_ftz(r.dmx, sumf_d, -mul_ftz(r.dmy, sumf_m));
 }

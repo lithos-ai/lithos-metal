@@ -2,7 +2,8 @@
 # Copyright (c) 2023-2026 The ggml authors
 # Copyright (c) 2026 Jesús Gulfo
 # adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
-# src/kernels/cuda/native_bf16.cu, src/kernels/cuda/dense_tc.cu and include/basalt/kernels/q8_1_finite.hpp @
+# src/kernels/cuda/native_bf16.cu, src/kernels/cuda/dense_tc.cu, src/kernels/cuda/q5k_head.cu,
+# src/kernels/cuda/head_proxy.cuh and include/basalt/kernels/q8_1_finite.hpp @
 # b4c63b55754637f4c72ad53a0f791d425f71eb36, which adapt ggml-org/llama.cpp ggml/src/ggml-common.h (kvalues_iq4nl),
 # ggml/src/ggml-quants.c (get_scale_min_k4), ggml/src/ggml-cuda/quantize.cu and ggml/src/ggml-cuda/mmvf.cu @
 # 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
@@ -497,3 +498,215 @@ def dense_tc(type_id, w, xq, n_in, n_out, ncols, order):
     else:
         out = (((ws[0] + ws[1]) + ws[2]) + ws[3]) + (((ws[4] + ws[5]) + ws[6]) + ws[7])
     return out.T.copy()
+
+
+# ---- the Q5_K head's top-1 (docs/research/basalt-nvcc/q5k_head.md section 2) -------------------------------------
+# A Top is (m, idx, s) arrays. m and idx change only through comparisons of logits, so every __expf argument follows
+# from the logits; ``expf`` evaluates the kernel's own expf_ftz on an array (MUFU.EX2 has no bit-exact model).
+
+TOP_NONE = 0x7FFFFFFF
+
+
+def top_take(t, l, row, on, expf):
+    """Top::take of logit l at row ``row`` where ``on`` (q5k_head.cu:155-164)."""
+    m, idx, s = t
+    up = l > m
+    with np.errstate(invalid="ignore"):
+        e = expf(np.where(up, add_ftz(m, -l), add_ftz(l, -m)))
+    s2 = np.where(up, fma_ftz(s, e, F32(1.0)), add_ftz(s, e))
+    i2 = np.where(up | ((l == m) & (row < idx)), row, idx)
+    return np.where(on, np.where(up, l, m), m).astype(F32), np.where(on, i2, idx), np.where(on, s2, s).astype(F32)
+
+
+def top_merge(t, o, expf):
+    """Top::merge of o into t (q5k_head.cu:165-175), elementwise."""
+    (m, idx, s), (om, oidx, os_) = t, o
+    on = oidx != TOP_NONE
+    take = (idx == TOP_NONE) | (om > m)
+    with np.errstate(invalid="ignore"):
+        e = expf(np.where(on, np.where(take, add_ftz(m, -om), add_ftz(om, -m)), F32(0.0)))
+    s2 = np.where(take, fma_ftz(s, e, os_), fma_ftz(os_, e, s))
+    i2 = np.where(take | ((om == m) & (oidx < idx)), oidx, idx)
+    return np.where(on & take, om, m).astype(F32), np.where(on, i2, idx), np.where(on, s2, s).astype(F32)
+
+
+def q5k_top1(logits, mapped, blocks, expf):
+    """q5k_head_top1 from the kernel's logits: SIMD-group k of threadgroup g takes rows 8g + k + 8 blocks i in order,
+    unmapped rows skipped (:191-219); thread 0 merges SIMD-groups 0..7 (:297-299) into the partial; the merge: thread t
+    merges partials t, t + 256, ... (:309-317), the XOR butterfly 16..1 over each SIMD-group (:318-324), thread 0 the
+    SIMD-groups in order (:327-329). Returns (the partials (m, idx, s) per threadgroup, the row, the probability)."""
+    n = len(logits)
+    nw = 8 * blocks
+    t = (np.full(nw, -np.inf, F32), np.full(nw, TOP_NONE, np.int64), np.zeros(nw, F32))
+    for r0 in range(0, n, nw):
+        row = r0 + np.arange(nw)
+        ok = row < n
+        rr = np.minimum(row, n - 1)
+        t = top_take(t, np.asarray(logits, F32)[rr], row, ok & np.asarray(mapped)[rr], expf)
+    w = [a.reshape(blocks, 8) for a in t]
+    b = tuple(a[:, 0] for a in w)
+    for k in range(1, 8):
+        b = top_merge(b, tuple(a[:, k] for a in w), expf)
+    part = b
+    g = (np.full(256, -np.inf, F32), np.full(256, TOP_NONE, np.int64), np.zeros(256, F32))
+    for i0 in range(0, blocks, 256):
+        i = i0 + np.arange(256)
+        ok = i < blocks
+        ii = np.minimum(i, blocks - 1)
+        o = (part[0][ii], np.where(ok, part[1][ii], TOP_NONE), part[2][ii])
+        g = top_merge(g, o, expf)
+    for off in (16, 8, 4, 2, 1):
+        src = np.arange(256) ^ off
+        g = top_merge(g, tuple(a[src] for a in g), expf)
+    f = tuple(a[0:1] for a in g)
+    for k in range(1, 8):
+        f = top_merge(f, tuple(a[32 * k: 32 * k + 1] for a in g), expf)
+    return part, int(f[1][0]), rcp_ftz(f[2])[0]
+
+
+# ---- the 2-bit proxy (q5k_head.md section 4) ------------------------------------------------------------------------
+
+PX_RCP15 = np.uint32(0x3F2AAAAB).view(F32)   # fl(1 / 1.5): ptxas's multiply for amax / 1.5f
+
+
+def px_tiles(n):
+    return (n + 31) // 32
+
+
+def px_level(w, rs):
+    """level(w, sh) as compiled: floor(FFMA.FTZ(w, rcp(sh), 2)) converted by F2I (NaN to 0, saturating), clamped."""
+    with np.errstate(invalid="ignore"):
+        f = np.floor(fma_ftz(w, rs, F32(2.0)))
+        return np.where(np.isnan(f), 0, np.clip(f, 0, 3)).astype(np.int64)
+
+
+def px_fit(w):
+    """fit_group<false> on groups ``w`` (..., 32): (the fp16 scale bits, its value)."""
+    amax = np.full(w.shape[:-1], F32(1e-9), F32)
+    for l in range(32):
+        amax = max_ftz(amax, ftz(np.abs(w[..., l])))
+    a15 = mul_ftz(amax, PX_RCP15)
+    best_s, best_e = a15, np.full(a15.shape, np.inf, F32)
+    for t in range(6):
+        s = mul_ftz(a15, fma_ftz(F32(t), F32(-0.1), F32(1.0)))
+        sh = h2f(half_bits(s))
+        lv = px_level(w, rcp_ftz(sh)[..., None])
+        with np.errstate(invalid="ignore", over="ignore"):
+            r = fma_ftz(add_ftz(lv.astype(F32), F32(-1.5)), sh[..., None], -w)
+            e = np.zeros(a15.shape, F32)
+            for l in range(32):
+                e = fma_ftz(r[..., l], r[..., l], e)
+        better = e < best_e
+        best_e, best_s = np.where(better, e, best_e), np.where(better, s, best_s)
+    hs = half_bits(best_s)
+    return hs, h2f(hs)
+
+
+def q5k_proxy_pack(q5, row0, n, n_cap, proxy=None):
+    """q5k_proxy_pack_kernel with pack_group<false>: rows row0 .. row0 + n - 1 of the Q5_K rows ``q5`` (1760 bytes
+    each) into the copy ``proxy`` (uint8 bytes; zeros when None). Returns the copy."""
+    out = np.zeros(px_tiles(n_cap) * 40 * 32 * 20, np.uint8) if proxy is None else np.array(proxy, np.uint8)
+    rows = row0 + np.arange(n)
+    b = np.asarray(q5, np.uint8).reshape(-1, 1760)[rows].reshape(n, 10, 176)[:, np.arange(80) // 8]   # (n, 80, 176)
+    j = np.arange(80) % 8
+    scl = b[..., 4:16].astype(np.int64)
+    at = lambda k: np.take_along_axis(scl, np.broadcast_to(k[None, :, None], (n, 80, 1)), axis=-1)[..., 0]
+    lo = j < 4
+    sci = np.where(lo, at(np.clip(j, 0, 3)) & 63, (at(np.clip(j, 4, 7) + 4) & 0xF) | ((at(np.clip(j, 4, 7) - 4) >> 6) << 4))
+    mi = np.where(lo, at(np.clip(j, 0, 3) + 4) & 63, (at(np.clip(j, 4, 7) + 4) >> 4) | ((at(np.clip(j, 4, 7)) >> 6) << 4))
+    d = mul_ftz(_h(b, 0), sci.astype(F32))
+    mn = mul_ftz(_h(b, 2), mi.astype(F32))
+    l = np.arange(32)
+    qs = np.take_along_axis(b, np.broadcast_to((48 + 32 * (j // 2))[None, :, None] + l, (n, 80, 32)), axis=-1)
+    qs = qs.astype(np.int64)
+    nib = np.where((j & 1)[None, :, None] == 1, qs >> 4, qs & 15)
+    q = nib | (((b[..., 16:48].astype(np.int64) >> j[None, :, None]) & 1) << 4)
+    with np.errstate(invalid="ignore", over="ignore"):
+        w = fma_ftz(d[..., None], q.astype(F32), -mn[..., None])
+    hs, sh = px_fit(w)
+    lv = px_level(w, rcp_ftz(sh)[..., None])                              # (n, 80, 32)
+    sh_bits = (8 * (np.arange(16) % 4) + 2 * (np.arange(16) // 4)).astype(np.uint64)   # value 4 ii + bb: bit 8 bb + 2 ii
+    words = [(lv[..., 16 * c: 16 * c + 16].astype(np.uint64) << sh_bits).sum(axis=-1).astype(np.uint32) for c in (0, 1)]
+    g = np.arange(80)
+    slot = ((rows[:, None] >> 5) * 40 + g[None] // 2) * 32 + (rows[:, None] & 31)
+    h = (g & 1)[None]
+    u32 = out[: px_tiles(n_cap) * 40 * 32 * 16].view(np.uint32)
+    u32[slot * 4 + 2 * h] = words[0]
+    u32[slot * 4 + 2 * h + 1] = words[1]
+    out[px_tiles(n_cap) * 40 * 32 * 16:].view(np.uint16)[slot * 2 + h] = hs
+    return out
+
+
+
+def q5k_proxy_score(proxy, xq, n_rows, n_cap, map_, tiles, expf):
+    """px::score_kernel on the tiles ``tiles`` of the copy ``proxy`` (``n_cap`` rows) against one q8_1 column ``xq``:
+    (cand (tiles, 4, 2) float32 with the rows' bits in [..., 1], part (tiles, 2)). The exponent arguments follow from
+    the scores; ``expf`` evaluates the kernel's own expf_ftz on them."""
+    ntc, tiles = px_tiles(n_cap), np.asarray(tiles)
+    nt_ = len(tiles)
+    proxy = np.asarray(proxy, np.uint8)
+    words = proxy[: ntc * 40 * 32 * 16].view(np.uint32).reshape(ntc, 40, 32, 4)[tiles]     # (tile, w4, lane, word)
+    scw = proxy[ntc * 40 * 32 * 16:].view(np.uint32).reshape(ntc, 40, 32)[tiles]
+    xb = np.asarray(xq, np.uint8).reshape(80, 36)
+    d8 = h2f(xb[:, 0].astype(np.uint16) | (xb[:, 1].astype(np.uint16) << 8))
+    codes = xb[:, 4:].view(np.int8).astype(np.int64)                                         # (80, 32)
+    xs = mul_ftz(d8, codes.sum(axis=1).astype(F32))
+    shifts = (8 * (np.arange(16) % 4) + 2 * (np.arange(16) // 4)).astype(np.uint32)        # value 4 ii + bb of a word
+    lv = ((words[..., None] >> shifts) & 3).astype(np.int64).reshape(nt_, 40, 32, 2, 32)   # (.., h, 16 c + value)
+    g = 2 * np.arange(40)[:, None] + np.arange(2)[None, :]                                  # group of (w4, h)
+    P = (lv * codes[g][None, :, None]).sum(axis=-1)                                         # exact, as DP4A
+    inner = fma_ftz(d8[g][None, :, None], P.astype(F32), -mul_ftz(xs[g], F32(1.5))[None, :, None])
+    scale = h2f(np.stack([scw & 0xFFFF, scw >> 16], axis=-1).astype(np.uint16))
+    red = []
+    for k in range(4):                                     # SIMD-group k: w4 = 10 k + j for j = 0..9, then h = 0, 1
+        acc = np.zeros((nt_, 32), F32)
+        for j in range(10):
+            for h in range(2):
+                acc = fma_ftz(scale[:, 10 * k + j, :, h], inner[:, 10 * k + j, :, h], acc)
+        red.append(acc)
+    v = add_ftz(add_ftz(add_ftz(red[0], red[1]), red[2]), red[3])
+    row = tiles[:, None] * 32 + np.arange(32)[None]
+    masked = (row >= n_rows) | (np.asarray(map_, np.int64)[np.minimum(row, n_rows - 1)] < 0)
+    v = np.where(masked, F32(-np.inf), v).astype(F32)
+    m = butterfly(v, max_ftz)
+    live = v > -np.inf
+    with np.errstate(invalid="ignore"):
+        arg = np.where(live, add_ftz(v, -m[:, None]), F32(0.0))
+    e = np.where(live, expf(arg), F32(0.0)).astype(F32)
+    part = np.stack([m, butterfly(e, add_ftz)], axis=-1)
+    cand = np.zeros((nt_, 4, 2), F32)
+    vv, at = v.copy(), np.arange(nt_)
+    for k in range(4):
+        bi = np.argmax(vv, axis=1)                         # the first maximum: ties to the lower row
+        cand[:, k, 0] = vv[at, bi]
+        cand[:, k, 1] = (tiles * 32 + bi).astype(np.int32).view(F32)
+        vv[at, bi] = -np.inf
+    return cand, part
+
+
+def q5k_proxy_final(cand, part, exact, map_, expf):
+    """q5k_proxy_final_kernel (collect, the exact rescoring, pick) from the score's ``cand`` (tiles, 4, 2) and ``part``
+    (tiles, 2); ``exact``: the head's logits of every row (the kernel rescores the listed rows with the head's own row,
+    native_mmvq's bits). The list in ascending candidate order, the port's fixed order (q5k_head.md section 4); ``expf``
+    evaluates the kernel's expf_ftz. Returns (id, probability, the listed rows)."""
+    c, pt = np.asarray(cand, F32).reshape(-1, 2), np.asarray(part, F32)
+    m = np.max(c[:, 0])
+    if m == -np.inf:                                        # every row is masked
+        return (0 if map_[0] < 0 else int(map_[0])), F32(1.0), np.zeros(0, np.int64)
+    sel = np.flatnonzero((c[:, 0] > -np.inf) & (c[:, 0] >= add_ftz(m, F32(-5.0))))[:64]
+    rows, lp = c[sel, 1].view(np.int32).astype(np.int64), c[sel, 0]
+    ex = np.asarray(exact, F32)[rows]
+    bv = np.max(ex)
+    bi = int(np.min(rows[ex == bv]))                        # the largest exact score, the lowest row on ties
+    live = pt[:, 1] > 0
+    et = expf(np.where(live, add_ftz(pt[:, 0], -bv), F32(0.0)))
+    ed = add_ftz(expf(add_ftz(ex, -bv)), -expf(add_ftz(lp, -bv)))
+    s = np.zeros(32, F32)                                   # lane L: tiles L, L + 32, ..., then rows L, L + 32
+    for t0 in range(0, len(pt), 32):
+        k = min(32, len(pt) - t0)
+        s[:k] = np.where(live[t0:t0 + k], fma_ftz(pt[t0:t0 + k, 1], et[t0:t0 + k], s[:k]), s[:k])
+    for c0 in range(0, len(rows), 32):
+        k = min(32, len(rows) - c0)
+        s[:k] = add_ftz(s[:k], ed[c0:c0 + k])
+    total = max_ftz(butterfly(s[None], add_ftz)[0], F32(1.0 if bi in rows else 0.0))
+    return int(np.asarray(map_)[bi]), rcp_ftz(total), rows

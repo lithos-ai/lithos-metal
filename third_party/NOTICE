@@ -106,6 +106,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `ggml/src/ggml-cuda/{mmvf.cu,common.cuh}` (MIT): the BF16 times fp32 MMVF kernel's pair accumulation and its warp
   and block reductions; `monolith/kernels.py`'s `basalt_mmvf_block` transcribes its block-size rule. License:
   `third_party/GGML-LICENSE`.
+- `kernels/common/basalt_q5k_head.metal` — through basalt's `src/kernels/cuda/q5k_head.cu` (below), whose Q5_K dot
+  repeats `native_mmvq.cu`'s, an adaptation of `ggml/src/ggml-cuda/vecdotq.cuh` and `ggml/src/ggml-common.h` (MIT): the
+  Q5_K block layout, its scale unpacking and the `vec_dot_q5_K_q8_1` integer dot. License: `third_party/GGML-LICENSE`.
 - `tests/kernels/basalt_emu.py` — through basalt (below): the `kvalues_iq4nl` table of `ggml/src/ggml-common.h`,
   copied, `get_scale_min_k4` of `ggml/src/ggml-quants.c`, the q8_1 rule of `ggml/src/ggml-cuda/quantize.cu` and the
   MMVF accumulation and reductions of `ggml/src/ggml-cuda/mmvf.cu`, re-implemented in numpy (MIT). License:
@@ -124,7 +127,10 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `load_int_b2`, the `DP4A` helper and the IQ4 table lookup (`native_mmvq.cu:441-457`), with the flush-to-zero and reciprocal helpers that write out the arithmetic nvcc
   compiles for them (`docs/research/basalt-nvcc/matvec.md`); from `iq_kernels.cu`, `Split<42>`'s Q2_0 decode, the
   IEEE-built `warp_sum` and the SwiGLU's `__expf(-g)` (`expf_neg`), in the arithmetic nvcc compiles for them
-  (`docs/research/basalt-nvcc/experts.md`). License: `third_party/BASALT-LICENSE`.
+  (`docs/research/basalt-nvcc/experts.md`); from `native_mmvq.cu:180-240` and `:897-937`, the Q5_K decode and dot
+  (`q5k_load`, `q5k_dot`) that `native_mmvq` and `src/kernels/cuda/q5k_head.cu` share, and from `q5k_head.cu`, a
+  fast-math file's `__expf` (`expf_ftz`; `docs/research/basalt-nvcc/q5k_head.md`). License:
+  `third_party/BASALT-LICENSE`.
 - `kernels/common/basalt_q8_1.metal` — adapted from `src/kernels/cuda/native_mmvq.cu:146-177` (the native and SwiGLU
   quantizers), `src/kernels/cuda/iq_kernels.cu:1880-1900` (the IEEE quantizer) and `include/basalt/kernels/q8_1_finite.hpp`
   (MIT), written in the rounding sequence nvcc compiles for them. License: `third_party/BASALT-LICENSE`.
@@ -141,6 +147,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   (`native_gu2_kernel`, `native_gu_multi_kernel`, `swiglu_q8_1_entries_pdl_kernel`, `native_down_multi_kernel` with
   `row_dot_multi` and `row_dot_20_sub16`), written in the rounding sequence nvcc compiles for them
   (`docs/research/basalt-nvcc/experts.md`). License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_q5k_head.metal` — adapted from `src/kernels/cuda/q5k_head.cu:19-496` and
+  `src/kernels/cuda/head_proxy.cuh:17-240` (MIT): `q5k_head_kernel` with `q5k_row_dev`, `q5k_head_top1_kernel` with
+  `Top` (its last-block merge as a second kernel), `mask_unmapped_kernel`, `q5k_proxy_pack_kernel` with `level`,
+  `fit_group` and `pack_group`, `px::score_kernel`, and `q5k_proxy_final_kernel` with `collect` and `pick`, written in
+  the rounding sequence nvcc compiles for them (`docs/research/basalt-nvcc/q5k_head.md`). License:
+  `third_party/BASALT-LICENSE`.
 - `kernels/common/basalt_dense_tc.metal` — adapted from `src/kernels/cuda/dense_tc.cu:32-931` (MIT): `half_sb_terms`
   for Q2_0, Q3_K, Q4_K, Q5_K, Q6_K and IQ4_XS with the `mma.sync` fragment layout, and the warps' chunks and warp-sum
   trees of `dense_tc_one_kernel`, `dense_tc_tile_kernel`, `dense_tc_kernel` (KS 1 and 2) and `dense_tc_pair_kernel`,
@@ -155,6 +167,14 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   (MIT): `Fmt<TYPE>::SB` (`DENSE_TC_SB`), and in `basalt_dense_tc_variant` the variant rule of `launch<TYPE>` with
   `one_ok`, `one_row_stride` and `one_smem_bytes<TYPE, 24>`; `dense_tc_supported` (`_dense_tc_check`) and
   `dense_tc_pair_supported`'s shared-memory test (`basalt_dense_tc_pair_macros`). License: `third_party/BASALT-LICENSE`.
+- `monolith/kernels.py` — adapted from `src/kernels/cuda/q5k_head.cu:337-386` and `:500-535` and
+  `src/kernels/cuda/head_proxy.cuh:17-28` (MIT): `q5k_head_supported` (`basalt_q5k_head_macros`), the head's and the
+  top-1's grid rule (`basalt_q5k_head_grid`), and the proxy's `tiles`, `bytes` and `scratch_bytes`
+  (`basalt_q5k_proxy_tiles`, `basalt_q5k_proxy_bytes`, `basalt_q5k_proxy_scratch_bytes`). License:
+  `third_party/BASALT-LICENSE`.
+- `tests/kernels/test_basalt_q5k_head.py` — adapted from `src/kernels/q5k_head_parity.cpp` (MIT): its weights and
+  activations, row counts, maps, rescaling, planted rows and trials, and the pass criteria. License:
+  `third_party/BASALT-LICENSE`.
 - `tests/kernels/test_basalt_dense_tc.py` — adapted from `src/kernels/dense_tc_parity.cpp` (MIT): its cases and pairs
   with their scale offsets and seeds, the T = 1..8 sweep, the 0xff output pre-fill and the pass criteria. License:
   `third_party/BASALT-LICENSE`.
@@ -181,8 +201,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   compiles it (`docs/research/basalt-nvcc/matvec.md`), the routed experts' (`q2_0_dots`: `iq_kernels.cu`'s
   `row_dot_multi`; `swiglu_q8_1`: the SwiGLU and its IEEE quantizer; `docs/research/basalt-nvcc/experts.md`), the
   BF16 GEMVs' (`mmvf`; `bf16_bits`: `include/basalt/kernels/bf16_bits.hpp`'s rounding;
-  `docs/research/basalt-nvcc/bf16.md`) and `dense_tc`'s (`docs/research/basalt-nvcc/dense_tc.md`). License:
-  `third_party/BASALT-LICENSE`.
+  `docs/research/basalt-nvcc/bf16.md`), `dense_tc`'s (`docs/research/basalt-nvcc/dense_tc.md`) and the Q5_K head's
+  top-1 and 2-bit proxy (`src/kernels/cuda/q5k_head.cu`, `src/kernels/cuda/head_proxy.cuh`;
+  `docs/research/basalt-nvcc/q5k_head.md`). License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

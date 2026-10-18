@@ -524,6 +524,89 @@ def basalt_dense_tc_pair_grid(n_out0: int, n_out1: int) -> Tuple[int, int]:
     return -(-n_out0 // 16) + -(-n_out1 // 16), 256
 
 
+# ---- basalt's Q5_K head (kernels/common/basalt_q5k_head.metal; docs/research/basalt-nvcc/q5k_head.md)
+# adapted from basalt (jesdga95/basalt) src/kernels/cuda/q5k_head.cu:337-386, :500-535 and
+# src/kernels/cuda/head_proxy.cuh:17-28 @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE)
+
+Q5K_HEAD_THREADS = 256      # basalt's WPB * WARP: 8 SIMD-groups, one row each
+Q5K_TOP1_SM_COUNT = 170     # the multiprocessors of basalt's measured GPU (an RTX 5090)
+Q5K_TOP1_PER_SM = 2         # cudaOccupancyMaxActiveBlocksPerMultiprocessor of q5k_head_top1_kernel on sm_120: 126
+                            # registers (ptxas, NVCC 13.0 and 13.3) round to 128; 128 x 256 of 65,536 (q5k_head.md)
+Q5K_TOP1_MAX_BLOCKS = 4096  # basalt's cap: q5k_head_top1_scratch_bytes holds 4096 partials
+
+
+def basalt_q5k_head_source() -> str:
+    """basalt's ``q5k_head_mmvq`` (``basalt_q5k_head``), ``q5k_head_mask_unmapped`` (``basalt_q5k_head_mask_unmapped``),
+    ``q5k_head_top1`` (``basalt_q5k_head_top1`` then ``basalt_q5k_head_top1_merge``), ``q5k_proxy_pack``
+    (``basalt_q5k_proxy_pack``) and ``q5k_proxy_top1`` (``basalt_q5k_proxy_score`` then ``basalt_q5k_proxy_final``)."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_q5k_head.metal")
+
+
+def basalt_q5k_head_macros(n_in: int, ncols: int) -> Dict[str, str]:
+    """``q5k_head_supported`` (q5k_head.cu:365-368): n_in a positive multiple of 256 with at most 64 blocks a row, 1..8
+    columns whose staging (6 int4 per q8_1 block) fits basalt's 96 KiB; the port reads the columns from device memory,
+    so the rule is the API's, not Metal's."""
+    if n_in <= 0 or n_in % 256 or n_in // 256 > 64 or not 1 <= ncols <= 8 or ncols * (n_in // 32) * 96 > 96 * 1024:
+        raise ValueError(f"basalt_q5k_head: unsupported shape (n_in {n_in}, ncols {ncols})")
+    return {"NC": str(ncols)}
+
+
+def basalt_q5k_head_grid(n_out: int, *, sm_count: int = Q5K_TOP1_SM_COUNT, per_sm: int = Q5K_TOP1_PER_SM,
+                         cap: int = Q5K_TOP1_MAX_BLOCKS) -> int:
+    """basalt's grid rule (q5k_head.cu:353-354, 375-386): min(ceil(n_out / 8), sm_count * per_sm, cap) threadgroups of
+    256 threads. The top-1's probability sums in this order, so its last bits follow ``sm_count`` and ``per_sm``
+    (mtp.cpp:1007-1008); the defaults are basalt's on its measured GPU. The plain head's values do not depend on the
+    grid (basalt sizes it with the head kernel's own occupancy; the cap is the top-1's). The rows' loop steps an int
+    by 8 per threadgroup, as basalt's (q5k_head.cu:191-192, 249), so a grid whose last step would pass INT_MAX
+    (n_out > 2^31 - 8 * grid) is refused."""
+    if n_out <= 0 or sm_count <= 0 or per_sm <= 0:
+        raise ValueError(f"basalt_q5k_head: n_out, sm_count and per_sm must be positive")
+    grid = min(-(-n_out // 8), sm_count * per_sm, cap)
+    if n_out > 2 ** 31 - 8 * grid:
+        raise ValueError(f"basalt_q5k_head: n_out {n_out} with {grid} threadgroups steps a row past INT_MAX")
+    return grid
+
+
+def basalt_q5k_head_params(n_in: int, n_out: int, has_map: bool = False, n_blocks: int = 0) -> bytes:
+    """``Q5kHeadParams``: n_in, n_out (basalt's int: 1..INT_MAX), whether a map is bound, and for the top-1's merge
+    the first dispatch's threadgroup count."""
+    if not 0 < n_out < 2 ** 31:
+        raise ValueError(f"basalt_q5k_head: n_out must be in 1..INT_MAX, got {n_out}")
+    return struct.pack("<IIII", n_in, n_out, int(has_map), n_blocks)
+
+
+# basalt's 2-bit proxy of the head's rows (head_proxy.cuh:17-28; q5k_head.cu:500-535)
+PX_THREADS_PACK = 128       # q5k_proxy_pack: one thread per 32-weight group
+PX_THREADS_SCORE = 128      # px::score_kernel: four SIMD-groups per tile of 32 rows
+PX_THREADS_FINAL = 512      # q5k_proxy_final_kernel: one threadgroup
+
+
+def basalt_q5k_proxy_tiles(n: int) -> int:
+    """``px::tiles``: tiles of 32 rows."""
+    return (n + 31) // 32
+
+
+def basalt_q5k_proxy_bytes(n_cap: int) -> int:
+    """``q5k_proxy_bytes``: a 16-byte word per (tile, 64 weights, row), then two fp16 scales per word."""
+    return basalt_q5k_proxy_tiles(n_cap) * 40 * 32 * (16 + 4)
+
+
+def basalt_q5k_proxy_scratch_bytes(n_cap: int) -> int:
+    """``q5k_proxy_scratch_bytes``: the score's 4 candidates per tile, then its (max, sum) per tile, float2 each."""
+    return basalt_q5k_proxy_tiles(n_cap) * (4 + 1) * 8
+
+
+def basalt_q5k_proxy_params(n_cap: int, *, row0: int = 0, n: int = 0, n_rows: Optional[int] = None) -> bytes:
+    """``PxParams`` (row0, n, n_cap, n_rows): a pack's (rows row0 .. row0 + n - 1 of a copy sized for n_cap; n_rows
+    None) or the score's and top-1's (the first n_rows rows). basalt's API refuses n_rows outside 1..n_cap
+    (q5k_head.cu:518), and n_rows is its int (at most INT_MAX); the port also refuses a pack past n_cap, which would
+    store outside the copy, and an n_cap past the 32-bit field (basalt's int64_t: a copy of 2^32 rows is 3.4 TB)."""
+    if (not 0 < n_cap < 2 ** 32 or row0 < 0 or n < 0 or row0 + n > n_cap
+            or (n_rows is not None and not 0 < n_rows <= min(n_cap, 2 ** 31 - 1))):
+        raise ValueError(f"basalt_q5k_proxy: rows out of range (row0 {row0}, n {n}, n_rows {n_rows}, n_cap {n_cap})")
+    return struct.pack("<IIII", row0, n, n_cap, n_rows or 0)
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

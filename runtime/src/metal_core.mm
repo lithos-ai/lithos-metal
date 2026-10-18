@@ -135,6 +135,7 @@ RunResult Queue::run(const std::vector<Dispatch>& dispatches, bool concurrent) {
       for (auto& b : d.buffers) [en setBuffer:b.buffer->impl->buf offset:b.offset atIndex:b.index];
       for (auto& b : d.bytes) [en setBytes:b.bytes.data() length:b.bytes.size() atIndex:b.index];
       for (auto& t : d.threadgroup_memory) [en setThreadgroupMemoryLength:t.second atIndex:t.first];
+      for (auto* b : d.uses) [en useResource:b->impl->buf usage:MTLResourceUsageRead];
       if (concurrent && d.barrier_before) [en memoryBarrierWithScope:MTLBarrierScopeBuffers];   // the same semantics as the ICB flag
       [en dispatchThreadgroups:MTLSizeMake(d.grid[0], d.grid[1], d.grid[2]) threadsPerThreadgroup:MTLSizeMake(d.threadgroup[0], d.threadgroup[1], d.threadgroup[2])];
     }
@@ -186,6 +187,7 @@ std::vector<std::pair<double, double>> Queue::profile(const std::vector<Dispatch
       for (auto& b : d.buffers) [en setBuffer:b.buffer->impl->buf offset:b.offset atIndex:b.index];
       for (auto& b : d.bytes) [en setBytes:b.bytes.data() length:b.bytes.size() atIndex:b.index];
       for (auto& t : d.threadgroup_memory) [en setThreadgroupMemoryLength:t.second atIndex:t.first];
+      for (auto* b : d.uses) [en useResource:b->impl->buf usage:MTLResourceUsageRead];
       [en dispatchThreadgroups:MTLSizeMake(d.grid[0], d.grid[1], d.grid[2]) threadsPerThreadgroup:MTLSizeMake(d.threadgroup[0], d.threadgroup[1], d.threadgroup[2])];
       [en endEncoding];
     }

@@ -33,6 +33,9 @@
 //   __vsubss4 and __vsub4 as exact integer arithmetic; iq4_table_lookup: the IQ4 codebook's two-stage byte lookup
 //   (native_mmvq.cu:441-457; dense_tc.cu:79-84 computes the same bytes).
 // - h2f, f16_bits: fp16 bits to fp32 and back; GrpPtr: an address in basalt's grp_ptr table.
+// - cuda_nan, cuda_nan_f16: a stored float's or fp16 value's NaN as sm_120's, 0x7fffffff and 0x7fff, where this GPU's
+//   arithmetic gives 0x7fc00000 and its half() 0x7e00 (docs/research/basalt-nvcc/nan.md); every other value keeps
+//   its bits. Each port kernel applies them at the stores a NaN can reach.
 // - q8_d, q8_s, q8_w: a q8_1 block's scale, sum and code words; q2_0_load, q2_0_sumi: the Q2_0 decode and its exact
 //   integer dot, shared by native_mmvq and the routed experts; q5k_load, q5k_dot: the Q5_K decode and dot, shared by
 //   native_mmvq and the Q5_K head.
@@ -110,6 +113,17 @@ static inline float h2f(ushort h) { return float(as_type<half>(h)); }
 // the zero of its sign (basalt's f16_from_f32, f16_bits.hpp:36-65, and __float2half;
 // docs/research/basalt-nvcc/s2_experts.md section 1). A NaN's payload is the GPU's.
 static inline ushort f16_bits(float x) { return as_type<ushort>(half(x)); }
+
+// x with a NaN as sm_120's: every FADD, FMUL, FFMA, MUFU.RCP, MUFU.EX2 and div.rn.f32 that makes or passes a NaN, and
+// FMNMX of two NaNs, gives the canonical 0x7fffffff, where this GPU's arithmetic gives 0x7fc00000 and fabs, negation,
+// round and fmax keep an operand's bits (nan.md). Applied to a float the kernel stores.
+static inline float cuda_nan(float x) {
+    return (as_type<uint>(x) & 0x7fffffffu) > 0x7f800000u ? as_type<float>(0x7fffffffu) : x;
+}
+// fp16 bits h with a NaN as sm_120's hardware conversion stores it: __float2half (F2F.F16.F32, F2FP.F16.F32.PACK_AB)
+// takes every NaN to 0x7fff, where half() gives 0x7e00 (nan.md). Applied to f16_bits' result where basalt converts
+// with __float2half; basalt's software f16_from_f32 gives sign | 0x7E00 instead.
+static inline ushort cuda_nan_f16(ushort h) { return (h & 0x7fffu) > 0x7c00u ? ushort(0x7fffu) : h; }
 
 // one entry of basalt's grp_ptr table: a blob's 64-bit GPU address (MSL takes no pointer-to-pointer kernel argument)
 struct GrpPtr { device const ushort* p; };

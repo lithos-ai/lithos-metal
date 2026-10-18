@@ -13,7 +13,8 @@
 // adds fma(bf(w_lo), x.x, acc) then fma(bf(w_hi), x.y, acc) from +0; each SIMD-group reduces with basalt's XOR
 // butterfly; with more than one SIMD-group, lane 0 of each stores its sum into a zeroed 32-slot array and SIMD-group 0
 // runs the butterfly over all 32 slots; thread 0 writes. The float steps are the ones nvcc compiles
-// (docs/research/basalt-nvcc/bf16.md): FFMA.FTZ and FADD.FTZ, written as fma_ftz and add_ftz.
+// (docs/research/basalt-nvcc/bf16.md): FFMA.FTZ and FADD.FTZ, written as fma_ftz and add_ftz. A NaN is stored as
+// sm_120's (cuda_nan; docs/research/basalt-nvcc/nan.md).
 //
 // Macros: BLOCK threads per threadgroup (basalt's mmvf_block_size: 32, 64, ..., 256); NT accumulator rows (1, 4 or
 // 8). monolith/kernels.py's basalt_mmvf_macros picks both as basalt's launchers do. Grid: n_out threadgroups of BLOCK
@@ -65,5 +66,5 @@ kernel void basalt_mmvf(device const float2* x [[buffer(0)]], device const uint*
 #endif
     if (t == 0)
         for (uint k = 0; k < NT; ++k)
-            if (k < p.n_tok) y[ulong(k) * p.ldy + o] = acc[k];
+            if (k < p.n_tok) y[ulong(k) * p.ldy + o] = cuda_nan(acc[k]);
 }

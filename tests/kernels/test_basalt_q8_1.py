@@ -11,7 +11,8 @@
   (:466); overflowed blocks finite with codes in +-127, exactly three of them: ``g_fail += bad + (clamped != 3);``
   (:480).
 - Bit for bit against the numpy emulation of what nvcc compiles (tests/kernels/basalt_emu.py, matvec.md sections 1-3),
-  on normal data and on planted edge blocks (zeros, subnormals, overflow, NaN, a scale that flushes).
+  on normal data and on planted edge blocks (zeros, subnormals, overflow, NaN, a scale that flushes); a NaN scale or
+  sum is sm_120's fp16 0x7fff (docs/research/basalt-nvcc/nan.md).
 - How often the native sequence's quotient through the correctly rounded reciprocal, fl(xi * fl(1 / d)), differs from
   the correctly rounded quotient fl(xi / d), and how often that changes a code (printed; run with -s)."""
 
@@ -105,15 +106,10 @@ def test_quantizers_match_the_emulation_bit_for_bit():
     nan_blocks = np.isnan(x.reshape(-1, 32)).any(axis=1)
     for kind, emulate in (("native", emu.q8_1_native), ("ieee", emu.q8_1_ieee)):
         got, want = gpu.q8_1(x, kind).reshape(-1, 36), emulate(x).reshape(-1, 36)
-        # a NaN's fp16 payload is the GPU's; its codes, its other half and every other block are bit for bit
-        diff = np.any(got != want, axis=1)
-        assert not np.any(diff & ~nan_blocks), (kind, np.flatnonzero(diff & ~nan_blocks)[:8])
-        assert np.array_equal(got[nan_blocks, 4:], want[nan_blocks, 4:]), kind
-        isnan_h = lambda h: (h & 0x7C00) == 0x7C00 and (h & 0x3FF) != 0
-        for g, w in zip(got[nan_blocks], want[nan_blocks]):
-            for k in (0, 2):
-                gh, wh = int(g[k:k + 2].view(np.uint16)[0]), int(w[k:k + 2].view(np.uint16)[0])
-                assert gh == wh or (isnan_h(gh) and isnan_h(wh)), kind
+        # every block bit for bit, a NaN half as sm_120's 0x7fff (nan.md): the NaN lane's block's sum, the all-NaN
+        # block's scale and sum
+        assert np.array_equal(got, want), (kind, np.flatnonzero(np.any(got != want, axis=1))[:8])
+        assert np.count_nonzero(got[nan_blocks, :4].copy().view(np.uint16) == 0x7FFF) == 3, kind
 
 
 def test_reciprocal_division_against_the_correctly_rounded_quotient():

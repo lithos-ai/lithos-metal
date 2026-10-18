@@ -20,7 +20,7 @@
 // FMUL and FADD, nothing flushed (no subnormal reaches them). Basalt stages the tile in shared memory; staging is not
 // arithmetic, so the weights are read from device memory (two 16-bit loads a word where a block is only 2-byte
 // aligned). Rows past n_out read row n_out - 1 and columns at or past ncols get zero codes and d8 = 0; neither is
-// stored.
+// stored. A NaN is stored as sm_120's (cuda_nan; docs/research/basalt-nvcc/nan.md).
 //
 // Macros: DTC_TYPE the ggml type id (11 Q3_K, 12 Q4_K, 13 Q5_K, 14 Q6_K, 23 IQ4_XS, 42 Q2_0); DTC_ORDER 0 one, 1 tile,
 // 2 s with KS 1, 3 s with KS 2 (monolith/kernels.py basalt_dense_tc_macros); DTC_TYPE0 / DTC_TYPE1 the pair's
@@ -341,7 +341,7 @@ kernel void basalt_dense_tc(device const uchar* w [[buffer(0)]], device const ui
     threadgroup_barrier(mem_flags::mem_threadgroup);
     const int tid = 32 * int(sg) + int(lane), row = tid >> 3, col = tid & 7;
     if (tid < 128 && col < ncols && row0 + row < n_out)
-        y[col * n_out + row0 + row] = tree<DTC_ORDER>(red + row * 8 + col);
+        y[col * n_out + row0 + row] = cuda_nan(tree<DTC_ORDER>(red + row * 8 + col));
 }
 
 // dense_tc_pair (dense_tc.cu:704-931): two matrices of one input, the first matrix's tiles (n_out rows) then the
@@ -363,5 +363,5 @@ kernel void basalt_dense_tc_pair(device const uchar* w0 [[buffer(0)]], device co
     threadgroup_barrier(mem_flags::mem_threadgroup);
     const int tid = 32 * int(sg) + int(lane), row = tid >> 3, col = tid & 7;
     if (tid < 128 && col < ncols && row0 + row < n_out)
-        (second ? y1 : y0)[col * n_out + row0 + row] = tree<1>(red + row * 8 + col);
+        (second ? y1 : y0)[col * n_out + row0 + row] = cuda_nan(tree<1>(red + row * 8 + col));
 }

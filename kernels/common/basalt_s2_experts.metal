@@ -16,7 +16,8 @@
 // hardware path is the plain operation (fma() where SASS has FFMA), and every compare that a subnormal could reach is
 // on bits. Contraction is off (basalt_fp.metal's pragma). A NaN can come only from FFMA, FADD, FMUL and div.rn.f32 (or
 // pass through them), each of which gives sm_120's canonical 0x7fffffff, so every float the gate/up, SwiGLU and down
-// kernels store goes through cuda_nan (this GPU's NaN is 0x7fc00000).
+// kernels store goes through basalt_fp.metal's cuda_nan (this GPU's NaN is 0x7fc00000;
+// docs/research/basalt-nvcc/nan.md).
 //
 // The plan (basalt's): n_groups[0] groups; group g's blob starts at grp_ptr[g] (a table of 64-bit GPU addresses, one a
 // group, each 2-byte aligned and inside a buffer the dispatch makes resident, so the blobs may sit in several buffers)

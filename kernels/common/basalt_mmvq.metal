@@ -15,7 +15,8 @@
 // block once and `apply` runs the format's dot product per column; SIMD-groups 1..NW-1 store their partial sums, SIMD-
 // group 0 adds them in SIMD-group order and reduces with basalt's XOR butterfly; lane i writes row row0 + i. The float
 // steps are the ones nvcc compiles (docs/research/basalt-nvcc/matvec.md): fma() exactly where SASS has FFMA.FTZ, the
-// rest .FTZ adds and multiplies. Integer steps are basalt's, as exact int32 arithmetic.
+// rest .FTZ adds and multiplies. Integer steps are basalt's, as exact int32 arithmetic. A NaN is stored as sm_120's
+// (cuda_nan; docs/research/basalt-nvcc/nan.md).
 //
 // Macros: MMVQ_TYPE the ggml type id (2 Q4_0, 6 Q5_0, 8 Q8_0, 11 Q3_K, 12 Q4_K, 13 Q5_K, 14 Q6_K, 20 IQ4_NL,
 // 23 IQ4_XS, 42 Q2_0); NCOLS 1..8; ROWS rows per threadgroup; NW SIMD-groups per threadgroup (BPI' = BPI * NW / 4).
@@ -300,7 +301,7 @@ kernel void basalt_mmvq(device const ushort* w [[buffer(0)]], device const uint*
             float t = tmp[j][i];
             for (int l = 0; l < NW - 1; ++l) t = add_ftz(t, partial[l][j][i][lane]);
             t = warp_sum_ftz(t);
-            if (int(lane) == i && row0 + i < n_out) y[j * n_out + row0 + i] = t;
+            if (int(lane) == i && row0 + i < n_out) y[j * n_out + row0 + i] = cuda_nan(t);
         }
     }
 }

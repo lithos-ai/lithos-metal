@@ -76,9 +76,14 @@ def roundf(x):
 
 
 def half_bits(x):
-    """float32 to fp16 bits, round to nearest even (CUDA's __float2half, Metal's half())."""
+    """float32 to fp16 bits, round to nearest even (CUDA's __float2half, Metal's half()); a NaN's bits are numpy's."""
     with np.errstate(over="ignore"):
         return np.asarray(x, F32).astype(np.float16).view(np.uint16)
+
+
+def cuda_half_bits(x):
+    """half_bits with a NaN as sm_120's conversion stores it, 0x7fff (docs/research/basalt-nvcc/nan.md)."""
+    return np.where(np.isnan(np.asarray(x, F32)), np.uint16(0x7FFF), half_bits(x)).astype(np.uint16)
 
 
 def h2f(bits):
@@ -111,8 +116,8 @@ def q8_1_codes(q, amax):
 
 def q8_1_pack(d, s, codes):
     out = np.zeros((len(d), 36), np.uint8)
-    out[:, 0:2] = half_bits(q8_1_finite(d)).view(np.uint8).reshape(-1, 2)
-    out[:, 2:4] = half_bits(q8_1_finite(s)).view(np.uint8).reshape(-1, 2)
+    out[:, 0:2] = cuda_half_bits(q8_1_finite(d)).view(np.uint8).reshape(-1, 2)
+    out[:, 2:4] = cuda_half_bits(q8_1_finite(s)).view(np.uint8).reshape(-1, 2)
     out[:, 4:] = codes.view(np.uint8)
     return out.reshape(-1)
 

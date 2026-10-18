@@ -14,7 +14,8 @@
 // is one or two correctly rounded multiplies, FMUL in SASS, no .FTZ: fl(h(d) * f(k)) (IQ4_NL, Q2_0) and
 // fl(fl(h(d) * f(s - 32)) * f(k)) (Q3_K, IQ4_XS). Every factor is an fp16 value or a small integer, so no product is
 // subnormal (the smallest nonzero one is 2^-24) and this GPU's flushing changes nothing; the products are not exact
-// in general, so the rounding is the multiply's own, as CUDA's.
+// in general, so the rounding is the multiply's own, as CUDA's. A NaN (a NaN scale, or an infinite one times a zero
+// factor) is stored as sm_120's (cuda_nan; docs/research/basalt-nvcc/nan.md).
 #pragma STDC FP_CONTRACT OFF
 
 #ifndef DQ_TYPE
@@ -35,8 +36,8 @@ kernel void basalt_dequant_f32(device const ushort* vx [[buffer(0)]], device flo
     const float d = h2f(x[0]);
     for (int j = 0; j < 4; ++j) {
         const uint q = uint(w_u8(x, 2 + 4 * il + j));
-        yo[j + 0] = d * float(KVALUES_IQ4NL[q & 0xfu]);
-        yo[j + 16] = d * float(KVALUES_IQ4NL[q >> 4]);
+        yo[j + 0] = cuda_nan(d * float(KVALUES_IQ4NL[q & 0xfu]));
+        yo[j + 16] = cuda_nan(d * float(KVALUES_IQ4NL[q >> 4]));
     }
 #elif DQ_TYPE == 11
     // dq_q3_k (:2025-2045): one 110-byte block (hmask[32], qs[64], scales[12], d) per superblock
@@ -57,7 +58,7 @@ kernel void basalt_dequant_f32(device const ushort* vx [[buffer(0)]], device flo
         device float* yo = yy + 128 * n + 32 * j;
         for (int l = l0; l < l0 + 4; ++l) {
             const int q = int((w_u8(x, 32u + uint(32 * n + l)) >> shift) & 3u) - ((w_u8(x, uint(l)) & m) ? 0 : 4);
-            yo[l] = dl * float(q);
+            yo[l] = cuda_nan(dl * float(q));
         }
     }
 #elif DQ_TYPE == 23
@@ -69,8 +70,8 @@ kernel void basalt_dequant_f32(device const ushort* vx [[buffer(0)]], device flo
     const float d = h2f(x[0]) * float(ls - 32);
     for (int j = 0; j < 4; ++j) {
         const uint q = uint(w_u8(x, 8u + uint(16 * ib + 4 * il + j)));
-        yo[j + 0] = d * float(KVALUES_IQ4NL[q & 0xfu]);
-        yo[j + 16] = d * float(KVALUES_IQ4NL[q >> 4]);
+        yo[j + 0] = cuda_nan(d * float(KVALUES_IQ4NL[q & 0xfu]));
+        yo[j + 16] = cuda_nan(d * float(KVALUES_IQ4NL[q >> 4]));
     }
 #elif DQ_TYPE == 42
     // dq_q2_0 (:2058-2069): 4 blocks of 18 bytes (d, qs[16] of 2-bit codes) per superblock, value d * (code - 1)
@@ -80,7 +81,7 @@ kernel void basalt_dequant_f32(device const ushort* vx [[buffer(0)]], device flo
     for (int j = 0; j < 8; ++j) {
         const int i = part * 8 + j;
         const int code = int((w_u8(x, 2u + uint(i / 4)) >> ((i % 4) * 2)) & 3u);
-        yy[b * 64 + i] = d * float(code - 1);
+        yy[b * 64 + i] = cuda_nan(d * float(code - 1));
     }
 #else
 #error "basalt_dequant: unsupported DQ_TYPE"

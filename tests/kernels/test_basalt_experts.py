@@ -307,7 +307,7 @@ def test_swiglu_q8_1_edges():
     subnormal; gates past -88.72, where the exponential overflows and the quotient is -0; large positive gates, zeros,
     multiples of 2^-48 (the GEMV's grid), and N(0, 4) gates; non-finite gates and ups (a weight row with a non-finite
     fp16 scale), whose IEEE products are NaN: five in a finite block (its sum NaN) and a whole block of inf * 0 (its
-    scale and sum NaN; a NaN's fp16 payload is the GPU's, as in test_basalt_q8_1). Entries [1, 5) of a 6-entry
+    scale and sum NaN, each stored as sm_120's fp16 0x7fff, as in test_basalt_q8_1). Entries [1, 5) of a 6-entry
     scratch, so the dispatch must leave entry 0's and entry 5's q8_1 blocks as they were."""
     rng = np.random.default_rng(10)
     n_ff, ents = 640, 4
@@ -336,8 +336,8 @@ def test_swiglu_q8_1_edges():
     nan_h = ((wh & 0x7C00) == 0x7C00) & ((wh & 0x3FF) != 0)
     assert nan_h[nf // 32, 1] and nan_h[nf // 32 + 1].all() and nan_h.sum() == 3        # the planted NaN halves
     assert np.array_equal(got[:, 4:], want[:, 4:])                     # every code bit for bit
-    assert np.array_equal(gh[~nan_h], wh[~nan_h]) and np.all((gh[nan_h] & 0x7C00) == 0x7C00) \
-        and np.all(gh[nan_h] & 0x3FF), np.flatnonzero(np.any((gh != wh) & ~nan_h, axis=1))
+    # every half bit for bit, the NaN ones sm_120's 0x7fff (nan.md)
+    assert np.array_equal(gh, wh) and np.all(gh[nan_h] == 0x7FFF), np.flatnonzero(np.any(gh != wh, axis=1))
     with np.errstate(over="ignore", under="ignore", invalid="ignore"):
         h = (g / (F32(1) + gpu_expf_neg(g))) * up
     sub = np.count_nonzero((h != 0) & (np.abs(h) < F32(2.0 ** -126)))

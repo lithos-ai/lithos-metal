@@ -8,7 +8,8 @@
 // basalt's q8_1 activation quantizers. A q8_1 block is 36 bytes: the fp16 scale d (bytes 0-1), the fp16 sum s of the
 // block's 32 raw values (bytes 2-3), 32 int8 codes (bytes 4-35); column j's blocks follow column j - 1's, so a vector
 // of ncols * n_in values (n_in % 32 == 0) is ncols columns. One thread per value, 256 per threadgroup, SIMD-group =
-// block (whole SIMD-groups past the end return). Needs basalt_fp.metal ahead of it.
+// block (whole SIMD-groups past the end return). Needs basalt_fp.metal ahead of it. A NaN in d or s is stored as
+// sm_120's fp16 0x7fff (cuda_nan_f16; docs/research/basalt-nvcc/nan.md); a NaN quotient's code is 0, as on sm_120.
 //
 // - native_quantize_q8_1: the sequence nvcc compiles for native_mmvq.cu (--use_fast_math; matvec.md section 1):
 //   flush-to-zero abs, max and add; d = fl(amax * fl(1/127)) (ptxas replaces the approximate division by 127 with
@@ -37,11 +38,12 @@ static inline char q8_1_code(float q) {
     return isnan(q) ? char(0) : char(int(q > 127.0f ? 127.0f : q < -127.0f ? -127.0f : q));
 }
 
+// q8_1_ds (q8_1_finite.hpp:29-31): make_half2(__float2half(...)), F2FP.F16.F32.PACK_AB on sm_120, whose NaN is 0x7fff
 static inline void q8_1_put(device uchar* y, uint i, char code, float d, float sum) {
     y[36u * (i / 32u) + 4u + i % 32u] = as_type<uchar>(code);
     if (i % 32u == 0u) {
-        *(device uint*) (y + 36u * (i / 32u)) =
-            uint(f16_bits(q8_1_finite(d))) | (uint(f16_bits(q8_1_finite(sum))) << 16);
+        *(device uint*) (y + 36u * (i / 32u)) = uint(cuda_nan_f16(f16_bits(q8_1_finite(d))))
+                                                | (uint(cuda_nan_f16(f16_bits(q8_1_finite(sum)))) << 16);
     }
 }
 
@@ -204,13 +206,6 @@ static inline float ieee_div(float a, float b) {
 static inline float warp_sum_ieee(float x) {
     for (ushort o = 16; o > 0; o >>= 1) x = ieee_add(x, shfl_xor(x, o));
     return x;
-}
-
-// x with a NaN as sm_120's: every FADD, FMUL, FFMA and div.rn.f32 that makes a NaN gives the canonical 0x7fffffff,
-// where this GPU gives 0x7fc00000. A port kernel whose NaN can only come from such operations (or pass through them)
-// applies it to the float it stores.
-static inline float cuda_nan(float x) {
-    return (as_type<uint>(x) & 0x7fffffffu) > 0x7f800000u ? as_type<float>(0x7fffffffu) : x;
 }
 
 static inline void q8_1_store_ieee(float xi, device uchar* y, uint i) {

@@ -104,7 +104,8 @@ ones this pack runs.
    nvcc compiles, read from basalt's sm_120 PTX and SASS and recorded per kernel and site in
    `docs/research/basalt-nvcc/` (`matvec.md` for the q8_1 quantizers and `native_mmvq`, `dequant.md` for the GGUF
    dequantizers, `experts.md` for the routed experts, `bf16.md` for the BF16 GEMVs, `dense_tc.md` for the window
-   projections): which multiply-adds fuse and
+   projections, `q5k_head.md` for the Q5_K head, `s2_experts.md` for the drafter's experts, `nan.md` for the NaN
+   each store holds): which multiply-adds fuse and
    with which operands, the operand order of each `a * b - c * d`, where `.FTZ` flushes subnormals, and each
    approximate instruction. The source alone does not settle it: nvcc's default `--fmad=true` fuses where the source
    writes no FMA, `ptxas` fuses further than the PTX (the Q4_K and Q5_K returns, `matvec.md` section 5) and replaces an
@@ -138,7 +139,15 @@ ones this pack runs.
    `hc_fused_parity`'s window checks) stay bitwise equal on Metal. Where `MUFU.RCP` is not correctly rounded, where
    basalt approximates an exponential or a square root (`ex2.approx`, `rsqrtf`), and where it calls `log1pf` or the
    library `expf`, the Metal result can therefore differ from CUDA's last bits. Basalt's tolerances accept that, and
-   invariant 1 still holds, because each Metal kernel rounds the same way at every window width.
+   invariant 1 still holds, because each Metal kernel rounds the same way at every window width. A stored NaN carries
+   sm_120's canonical encoding: the `FADD`, `FMUL`, `FFMA`, `MUFU` and division sequences that make or pass a NaN give
+   0x7fffffff, and its hardware fp16 conversion (`__float2half`) gives 0x7fff, where this GPU's arithmetic gives
+   0x7fc00000 and its `half()` 0x7e00 (`nan.md`; measured on sm_75, inferred for sm_120, whose PTX ISA leaves the
+   single-precision NaN unspecified). So every store a NaN can reach rewrites it with `cuda_nan` (fp32) or, where basalt
+   converts with `__float2half`, `cuda_nan_f16` (fp16, `kernels/common/basalt_fp.metal`), integer operations that leave
+   every other value's bits unchanged. basalt's software conversion `f16_from_f32` maps a NaN to `sign | 0x7E00`
+   instead, so a port that stores through it, as the fp16 KV append does, keeps that encoding (`nan.md`, the note on
+   `f16_from_f32`).
 
 ### How this departs from the repository-wide contract
 

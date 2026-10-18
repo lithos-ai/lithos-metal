@@ -29,6 +29,7 @@
 //   elects the last block with an atomic counter and merges there (q5k_head.cu:303-334); Metal documents no ordering
 //   that makes the other threadgroups' partials visible to the elected one, so the merge is a second dispatch, ordered
 //   after the first by the dispatch boundary (q5k_head.md section 3). Same arithmetic, same order.
+// Every float stored that a NaN can reach carries sm_120's NaN (cuda_nan; docs/research/basalt-nvcc/nan.md).
 #pragma STDC FP_CONTRACT OFF
 
 #ifndef NC
@@ -74,7 +75,7 @@ kernel void basalt_q5k_head(device const ushort* w [[buffer(0)]], device const u
         float t[NC];
         q5k_row<NC>(w + ulong(row) * ulong(bpr * Q5K_USHORTS), x, n_in / 32, bpr, int(lane), t);
         if (lane == 0)
-            for (int j = 0; j < NC; ++j) y[ulong(j) * ulong(n_out) + ulong(row)] = t[j];
+            for (int j = 0; j < NC; ++j) y[ulong(j) * ulong(n_out) + ulong(row)] = cuda_nan(t[j]);
     }
 }
 
@@ -126,16 +127,16 @@ kernel void basalt_q5k_head_top1(device const ushort* w [[buffer(0)]], device co
         // a row whose id is negative holds no token: it never wins and adds nothing to the sum
         if (p.has_map != 0u && map[row] < 0) t[0] = neg_inf();
         else top_take(top, t[0], row);
-        if (lane == 0) y[row] = t[0];
+        if (lane == 0) y[row] = cuda_nan(t[0]);
     }
     if (lane == 0) wt[sg] = top;
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (tid == 0) {
         Top b = wt[0];
         for (int i = 1; i < Q5K_WPB; ++i) top_merge(b, wt[i]);
-        part[3 * tg] = b.m;
+        part[3 * tg] = b.m;                                             // never NaN: l > m is false for a NaN l
         part[3 * tg + 1] = as_type<float>(b.idx);
-        part[3 * tg + 2] = b.s;
+        part[3 * tg + 2] = cuda_nan(b.s);
     }
 }
 
@@ -158,7 +159,7 @@ kernel void basalt_q5k_head_top1_merge(device const float* part [[buffer(0)]], d
         for (int i = 1; i < Q5K_WPB; ++i) top_merge(b, wt[i]);
         const int id = b.idx < int(p.n_out) ? b.idx : 0;
         *out_id = p.has_map != 0u ? map[id] : id;
-        *out_prob = rcp_ftz(b.s);
+        *out_prob = cuda_nan(rcp_ftz(b.s));
     }
 }
 
@@ -309,7 +310,7 @@ kernel void basalt_q5k_proxy_score(device const uint4* proxy [[buffer(0)]], devi
     const float e = warp_sum_ftz(v > neg_inf() ? expf_ftz(add_ftz(v, -m)) : 0.0f);
     device float2* cand = scratch;
     device float2* part = scratch + ntc * PX_PER;
-    if (lane == 0) part[tile] = float2(m, e);
+    if (lane == 0) part[tile] = float2(cuda_nan(m), cuda_nan(e));
     for (int k = 0; k < PX_PER; ++k) {          // the tile's best, then the next: a butterfly argmax, ties to the lower row
         float bv = v;
         int bi = lane;
@@ -318,7 +319,8 @@ kernel void basalt_q5k_proxy_score(device const uint4* proxy [[buffer(0)]], devi
             const int oi = simd_shuffle_xor(bi, o);
             if (ov > bv || (ov == bv && oi < bi)) { bv = ov; bi = oi; }
         }
-        if (lane == 0) cand[tile * uint(PX_PER) + uint(k)] = float2(bv, as_type<float>(int(tile) * 32 + bi));
+        if (lane == 0)
+            cand[tile * uint(PX_PER) + uint(k)] = float2(cuda_nan(bv), as_type<float>(int(tile) * 32 + bi));
         if (int(lane) == bi) v = neg_inf();
     }
 }

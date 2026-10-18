@@ -20,7 +20,8 @@
 // depend on gy). Every float step is the one nvcc compiles for iq_kernels.cu (nvcc's IEEE defaults;
 // docs/research/basalt-nvcc/experts.md): fma() exactly at its FFMA sites, plain multiplies and adds elsewhere. No
 // subnormal can reach the matrix-vector parts (every value is a multiple of 2^-48), so the GPU's operations are
-// CUDA's there; the SwiGLU product can be subnormal and goes through ieee_mul, then the IEEE q8_1 store.
+// CUDA's there; the SwiGLU product can be subnormal and goes through ieee_mul, then the IEEE q8_1 store. A NaN is
+// stored as sm_120's (cuda_nan, and the q8_1 store's cuda_nan_f16; docs/research/basalt-nvcc/nan.md).
 //
 // - basalt_expert_gu: gate/up. GU2 1: native_gu2_kernel<42> (gu2.cuh:338-357, n_embd 2560 only): 16 rows a
 //   threadgroup, rows 16b + 2w and + 1 on SIMD-group w. GU2 0: native_gu_multi_kernel<42> (iq_kernels.cu:1125-1171):
@@ -101,8 +102,8 @@ static inline void rows2(device const ushort* rowA, uint row_halves, int r, int 
             }
             sA[c] = warp_sum(sA[c]);
             sB[c] = warp_sum(sB[c]);
-            if (lane == 2 * c) dst[(e + c) * n_ff + r] = sA[c];
-            if (lane == 2 * c + 1) dst[(e + c) * n_ff + r + 1] = sB[c];
+            if (lane == 2 * c) dst[(e + c) * n_ff + r] = cuda_nan(sA[c]);
+            if (lane == 2 * c + 1) dst[(e + c) * n_ff + r + 1] = cuda_nan(sB[c]);
         }
     }
 }
@@ -163,19 +164,19 @@ kernel void basalt_expert_gu(device const GrpPtr* grp_ptr [[buffer(1)]],
                 const int off1[1] = {ent_tok[e] * xb};
                 float s1[1];
                 row_dot_multi<1, true>(wr, xq, off1, 1, nb, lane, s1);
-                if (lane == 0) dst[e * n_ff + r] = s1[0];
+                if (lane == 0) dst[e * n_ff + r] = cuda_nan(s1[0]);
             } else if (n == 2) {
                 const int off2[2] = {ent_tok[e] * xb, ent_tok[e + 1] * xb};
                 float s2[2];
                 row_dot_multi<2, true>(wr, xq, off2, 2, nb, lane, s2);
-                if (lane < 2) dst[(e + int(lane)) * n_ff + r] = s2[lane];
+                if (lane < 2) dst[(e + int(lane)) * n_ff + r] = cuda_nan(s2[lane]);
             } else {
                 int off[GRP_NC];
                 for (int c = 0; c < GRP_NC; ++c) off[c] = ent_tok[e + min(c, n - 1)] * xb;
                 float s[GRP_NC];
                 row_dot_multi<GRP_NC, false>(wr, xq, off, n, nb, lane, s);
                 for (int c = 0; c < GRP_NC; ++c)
-                    if (c < n && int(lane) == c) dst[(e + c) * n_ff + r] = s[c];
+                    if (c < n && int(lane) == c) dst[(e + c) * n_ff + r] = cuda_nan(s[c]);
             }
         }
     }
@@ -261,19 +262,19 @@ kernel void basalt_expert_down(device const GrpPtr* grp_ptr [[buffer(1)]],
                     const int off1[1] = {0};
                     float s1[1];
                     row_dot_20_sub16<1, true>(wr, s_hq, off1, 1, t, s1);
-                    if (t == 0) out[ent_dst[e] * n_embd + r] = s1[0];
+                    if (t == 0) out[ent_dst[e] * n_embd + r] = cuda_nan(s1[0]);
                 } else if (n == 2) {
                     const int off2[2] = {0, 20};
                     float s2[2];
                     row_dot_20_sub16<2, true>(wr, s_hq, off2, 2, t, s2);
-                    if (t < 2) out[ent_dst[e + t] * n_embd + r] = t == 0 ? s2[0] : s2[1];
+                    if (t < 2) out[ent_dst[e + t] * n_embd + r] = cuda_nan(t == 0 ? s2[0] : s2[1]);
                 } else {
                     int off[GRP_NC];
                     for (int c = 0; c < GRP_NC; ++c) off[c] = min(c, n - 1) * 20;
                     float s[GRP_NC];
                     row_dot_20_sub16<GRP_NC, false>(wr, s_hq, off, n, t, s);
                     for (int c = 0; c < GRP_NC; ++c)
-                        if (c < n && t == c) out[ent_dst[e + c] * n_embd + r] = s[c];
+                        if (c < n && t == c) out[ent_dst[e + c] * n_embd + r] = cuda_nan(s[c]);
                 }
             }
         }
@@ -294,7 +295,7 @@ kernel void basalt_expert_down(device const GrpPtr* grp_ptr [[buffer(1)]],
                 float s[GRP_NC];
                 row_dot_multi<GRP_NC, false>(wr, hq, off, n, nb, lane, s);
                 for (int c = 0; c < GRP_NC; ++c)
-                    if (c < n && int(lane) == c) out[ent_dst[e + c] * n_embd + r] = s[c];
+                    if (c < n && int(lane) == c) out[ent_dst[e + c] * n_embd + r] = cuda_nan(s[c]);
             }
         }
     }

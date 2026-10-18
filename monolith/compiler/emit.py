@@ -5,7 +5,8 @@ IR declares), a barrier on every op unless the barrier pass proves it independen
 ``rmsnorm_stat`` → ``norm_apply`` → plain GEMV (the fuse pass
 that hoists the statistic into the producer's epilogue comes next), kernels specialized to the program's static ``T``
 (a prefill program at ``T = P`` and a decode program at ``T = 1`` share their buffers by name), weights and constants
-mapped straight from the pack file in page-aligned windows (no copy). The op handlers below are the only place an op
+mapped straight from the pack file in page-aligned windows (no copy), or from a ``.basalt`` file through
+:class:`~monolith.packs.basalt.BasaltSource` (``basalt_windows``). The op handlers below are the only place an op
 kind meets a kernel source; a new op kind adds a handler and a kernel, nothing else.
 
 Row counts. A value's leading dimension is the ``T`` symbol (the step's tokens, ``StepState.t_this_step``), the
@@ -16,10 +17,13 @@ compiles to that count.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from ..backends.metal.context import dispatch, current_backend
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 from .. import kernels
 from ..core.dtypes import DType
@@ -30,6 +34,7 @@ from ..core.step_state import StepStateLayout
 from ..formats import FORMATS
 from ..formats.blm import PackInfo
 from ..nn.module import Model
+from ..packs.basalt import BasaltSource
 from ..packs.packer import ALIGN, PackFile
 from ..runtime.program import BufferSpec, KernelSpec, OpSpec, Program
 from .barriers import place_barriers
@@ -47,7 +52,7 @@ FALLBACK_THRESHOLD = 0.5            # the confident-prefix threshold when no cos
 @dataclass
 class _Ctx:
     program: Program
-    packs: List[PackFile]
+    packs: List[Union[PackFile, BasaltSource]]
     layout: StepStateLayout
     t: int
     n_sg: int
@@ -214,11 +219,71 @@ def _size_stat(ctx: _Ctx, name: str) -> None:
     ctx.program.buffers[name] = BufferSpec(max(rows * ctx.stat_parts[name] * 4, 16), None, "arena")
 
 
+def basalt_windows(src: BasaltSource, values: Iterable[Value], t: int = 1
+                   ) -> Tuple[Dict[str, BufferSpec], Dict[str, Tuple[str, int]]]:
+    """``(buffers, {value name: (buffer, byte offset)})`` for the weight and constant values ``src`` holds: read-only
+    windows of the file over only the entries these values bind (a program maps none of the bytes it never reads), one
+    per run of 16 KiB pages they touch, cut at every whole page none touches and wherever a window would pass
+    ``WINDOW_BYTES``. Each window starts and ends on a page inside the file (the file's last partial page is never
+    mapped) and is named by a digest of the file's resolved path, its offset and its size, so programs that share a
+    session's buffers by name share only identical ranges. Refuses a value its entry refuses (``BasaltSource.bind``),
+    an entry not at a multiple of 16 bytes (windows start on pages, so this is the binding offset's alignment, which
+    covers every kernel's), and an entry whose pages pass ``WINDOW_BYTES`` or the end of the file. With
+    ``src.copy`` each entry is instead a buffer of exactly its bytes, bound at 0 (the test mode)."""
+    want: Dict[str, Any] = {}
+    for v in values:
+        if (v.is_weight or v.is_const) and v.name in src:
+            e = src.bind(v.name, v.format if v.is_weight else v.dtype.short, bind(v.shape, step_bindings(t)))
+            if e.offset % 16:
+                raise ValueError(f"emit: {v.name!r} lies at {e.offset} in {src.path}, not a multiple of 16 bytes")
+            lo, hi = e.offset - e.offset % ALIGN, -(-(e.offset + e.nbytes) // ALIGN) * ALIGN
+            if hi - lo > WINDOW_BYTES:
+                raise ValueError(f"emit: {v.name!r} spans {hi - lo} bytes of pages; a window holds at most {WINDOW_BYTES}")
+            if hi > src.file_bytes:
+                raise ValueError(f"emit: {v.name!r} ends in the last page of {src.path}, which runs past the end of the "
+                                 f"file ({src.file_bytes} bytes); a window ends on a page inside it")
+            want[v.name] = e
+
+    def name(prefix: str, offset: int, nbytes: int) -> str:
+        return f"{prefix}.{hashlib.sha256(json.dumps([src.path, offset, nbytes]).encode()).hexdigest()[:16]}"
+
+    buffers: Dict[str, BufferSpec] = {}
+    bound: Dict[str, Tuple[str, int]] = {}
+    if src.copy:
+        for vname, e in want.items():
+            b = name("basalt.copy", e.offset, e.nbytes)
+            buffers[b] = BufferSpec(e.nbytes, src.read(e), "weights")
+            bound[vname] = (b, 0)
+        return buffers, bound
+    runs: List[Tuple[int, int, List[str]]] = []                                # (first page, end page, value names)
+    for vname, e in sorted(want.items(), key=lambda kv: (kv[1].offset, kv[1].nbytes)):
+        lo, hi = e.offset - e.offset % ALIGN, -(-(e.offset + e.nbytes) // ALIGN) * ALIGN
+        if runs and lo <= runs[-1][1] and max(hi, runs[-1][1]) - runs[-1][0] <= WINDOW_BYTES:
+            runs[-1] = (runs[-1][0], max(hi, runs[-1][1]), runs[-1][2] + [vname])
+        else:
+            runs.append((lo, hi, [vname]))
+    for lo, hi, members in runs:
+        b = name("basalt", lo, hi - lo)
+        buffers[b] = BufferSpec(hi - lo, None, "weights", src.path, lo)
+        for vname in members:
+            bound[vname] = (b, want[vname].offset - lo)
+    return buffers, bound
+
+
 def _pack_windows(ctx: _Ctx) -> None:
     """Group each pack's slabs, row-scale tables and aux entries into ≤ 2 GiB file-backed windows (the target's pack
-    first, then a drafter's; entry names are distinct across them)."""
+    first, then a drafter's; entry names are distinct across them); a ``.basalt`` source maps only the values the
+    graph binds (``basalt_windows``)."""
     n_win = 0
     for pk in ctx.packs:
+        if isinstance(pk, BasaltSource):
+            buffers, bound = basalt_windows(pk, ctx.values.values(), ctx.t)
+            for name in bound:
+                if name in ctx.windows:
+                    raise ValueError(f"emit: the packs both hold an entry named {name!r}")
+            ctx.program.buffers.update(buffers)
+            ctx.windows.update(bound)
+            continue
         path = pk.dir / pk.manifest["pack"]
         entries: List[Tuple[int, int, str, str]] = []                       # (offset, nbytes, kind, name)
         for s in pk.manifest["slabs"]:
@@ -1368,7 +1433,7 @@ HANDLERS = {"embed": _embed, "rmsnorm_stat": _rmsnorm_stat, "norm_apply": _norm_
 
 
 @dispatch("emit")
-def emit_program(g: Graph, *, pack: Union[PackFile, Sequence[PackFile]], profile: Profile, t: Optional[int] = None, dynamic_t: bool = False,
+def emit_program(g: Graph, *, pack: Union[PackFile, BasaltSource, Sequence[Union[PackFile, BasaltSource]]], profile: Profile, t: Optional[int] = None, dynamic_t: bool = False,
                  layout: Optional[StepStateLayout] = None, eos: Union[int, Sequence[int]] = -1, ring_capacity: int = 4096, tg: int = 384, tuner: Any = None,
                  tail: Optional[str] = "advance", token: Optional[Value] = None, speculative: bool = False, barriers: str = "minimal",
                  attention: Optional[str] = None, accelerator: Optional[str] = None, t_min: int = 1, commute_norm: bool = True,
@@ -1377,7 +1442,7 @@ def emit_program(g: Graph, *, pack: Union[PackFile, Sequence[PackFile]], profile
     ``T = t`` (kernels specialized, T from params), or with ``dynamic_t`` for any T ≤ ``t`` read from StepState
     at run time. The dynamic bound defaults to ``layout.t_max``; an explicit smaller ``t`` lets programs share
     a StepState ABI without sharing their activation sizes. ``pack`` is the pack (or the packs: the target's, then a drafter's)
-    the graph's weights and constants come from. ``tail="advance"`` appends the step's advance on ``token`` (the
+    the graph's weights and constants come from; a :class:`BasaltSource` serves as one. ``tail="advance"`` appends the step's advance on ``token`` (the
     sampled tokens); ``None`` leaves the closing op to the graph (a program with the DSpark round emits its own
     ``accept_scan``). ``barriers``: ``"minimal"`` keeps an ICB barrier only where a dependency needs one (the
     barrier pass), ``"all"`` after every op (v0; the A/B baseline). The profile's ``sibling_order`` decides whether a
@@ -1387,7 +1452,7 @@ def emit_program(g: Graph, *, pack: Union[PackFile, Sequence[PackFile]], profile
     static T=8, matching GDN shapes and a complete native MLP normalization boundary.
     Set it false to retain original dispatches; dynamic/speculative programs are unchanged."""
     layout = layout or StepStateLayout()
-    packs = [pack] if isinstance(pack, PackFile) else list(pack)
+    packs = [pack] if isinstance(pack, (PackFile, BasaltSource)) else list(pack)
     if dynamic_t and t is None:
         t = layout.t_max
     if t is None or t < 1 or t > layout.t_max:

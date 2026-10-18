@@ -3,6 +3,7 @@
 #import <Metal/Metal.h>
 #include <mach/mach_time.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdexcept>
@@ -72,6 +73,17 @@ Buffer::Buffer(const Device& d, const std::string& path, uint64_t offset, size_t
   if (offset % page || nbytes % page) throw std::runtime_error("mmap buffers need page-aligned offset and length");
   int fd = open(path.c_str(), O_RDONLY);
   if (fd < 0) throw std::runtime_error("open failed: " + path);
+  // A mapped page wholly past the end of the file faults only when the GPU or the host touches it, and then kills the
+  // process with SIGBUS. Refuse any window that runs past the end, from the file's own size (packs pad their file to
+  // whole pages, and the .basalt planner never maps the file's last partial page).
+  struct stat st;
+  if (fstat(fd, &st) != 0) { close(fd); throw std::runtime_error("fstat failed: " + path); }
+  const uint64_t file_bytes = (uint64_t)st.st_size;
+  if (offset > file_bytes || nbytes > file_bytes - offset) {
+    close(fd);
+    throw std::runtime_error("mmap window [" + std::to_string(offset) + ", " + std::to_string(offset + nbytes) +
+                             ") runs past the end of " + path + " (" + std::to_string(file_bytes) + " bytes)");
+  }
   // Immutable weights need no private copy-on-write mapping. MAP_PRIVATE
   // makes Metal's first residency preparation expensive even for cached file
   // pages; shared read-only mappings avoid that work across layout switches.

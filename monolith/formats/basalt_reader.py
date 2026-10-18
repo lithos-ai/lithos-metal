@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import struct
@@ -302,7 +303,7 @@ class BasaltFile:
             raise ValueError(f"meta.tensors[{name!r}] is malformed (a shape of rank {len(ne)})")
         if off + nbytes > g.nbytes:
             raise ValueError(f"meta.tensors[{name!r}] runs past the gguf section")
-        if type_id in GGML_TYPES and nbytes != ggml_row_bytes(type_id, ne[0]) * int(np.prod(ne[1:], dtype=np.int64)):
+        if type_id in GGML_TYPES and nbytes != ggml_row_bytes(type_id, ne[0]) * math.prod(ne[1:]):  # exact, no int64 wrap
             raise ValueError(f"meta.tensors[{name!r}]: {nbytes} bytes do not match type {type_id} and shape {list(ne)}")
         return GgufTensor(name, type_id, ne, g.offset + off, nbytes)
 

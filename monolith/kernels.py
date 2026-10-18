@@ -276,6 +276,11 @@ def basalt_q8_1_params(n_values: int) -> bytes:
     return struct.pack("<IIII", n_values, 0, 0, 0)
 
 
+def basalt_q8_1_grid(n_values: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup) of a q8_1 quantizer over ``n_values`` values: one thread per value."""
+    return -(-n_values // Q8_1_THREADS), Q8_1_THREADS
+
+
 # basalt's iteration traits per ggml type (native_mmvq.cu:897-1098): values per block (DIV), threads per block (T),
 # blocks per iteration with four SIMD-groups (BPI)
 MMVQ_TRAITS = {2: (32, 2, 64), 6: (32, 2, 64), 8: (32, 4, 32), 20: (32, 2, 64), 11: (256, 16, 8), 12: (256, 16, 8),
@@ -516,6 +521,12 @@ def basalt_mmvf_params(n_in: int, n_out: int, n_tok: int = 1, ldx: Optional[int]
                        ldy: Optional[int] = None) -> bytes:
     """``MmvfParams``: n_in, n_out, n_tok, ldx and ldy (defaults n_in and n_out)."""
     return struct.pack("<8I", n_in, n_out, n_tok, n_in if ldx is None else ldx, n_out if ldy is None else ldy, 0, 0, 0)
+
+
+def basalt_mmvf_grid(macros: Mapping[str, str], n_out: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup) for a ``basalt_mmvf_macros`` launch: one threadgroup of BLOCK threads
+    per output row."""
+    return n_out, int(macros["BLOCK"])
 
 
 def basalt_mmvf_cols(ncols: int) -> List[Tuple[int, int]]:

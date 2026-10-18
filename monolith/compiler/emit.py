@@ -39,6 +39,7 @@ from ..packs.packer import ALIGN, PackFile
 from ..runtime.program import BufferSpec, KernelSpec, OpSpec, Program
 from .barriers import place_barriers
 from .coverage import check_coverage
+from .emit_basalt import BASALT_HANDLERS
 from .passes import DEFAULT_PASSES
 
 WINDOW_BYTES = 2 << 30          # pack windows: ICB bind offsets are 32-bit (design §5.1)
@@ -1429,7 +1430,7 @@ HANDLERS = {"embed": _embed, "rmsnorm_stat": _rmsnorm_stat, "norm_apply": _norm_
             "gqa_decode": _gqa, "gqa_merge": _gqa_merge, "gdn_mixer": _gdn, "gdn_commit": _gdn, "gdn_norm": _gdn_norm, "argmax": _argmax,
             "sample": _sample,
             "tap_concat": _tap_concat, "draft_attn": _draft_attn, "confidence": _confidence, "verify_select": _verify_select,
-            "accept_scan": _accept_scan}
+            "accept_scan": _accept_scan, **BASALT_HANDLERS}
 
 
 @dispatch("emit")

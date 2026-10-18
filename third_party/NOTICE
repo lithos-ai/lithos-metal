@@ -181,6 +181,15 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   top-1's grid rule (`basalt_q5k_head_grid`), and the proxy's `tiles`, `bytes` and `scratch_bytes`
   (`basalt_q5k_proxy_tiles`, `basalt_q5k_proxy_bytes`, `basalt_q5k_proxy_scratch_bytes`). License:
   `third_party/BASALT-LICENSE`.
+- `monolith/compiler/emit_basalt.py` — adapted from `src/kernels/cuda/native_mmvq.cu:1465-1475`, `:1490-1494`,
+  `:1549-1552` and `:1563-1568`, `src/kernels/cuda/dense_tc.cu:1077-1082` and `:1107-1113`,
+  `src/kernels/cuda/native_bf16.cu:139-171` and `src/kernels/cuda/iq_kernels.cu:2450-2455` (MIT): the launchers'
+  checks its handlers make at emit time (`validate_shape`'s whole 32-value blocks and 1 to 8 columns,
+  `validate_pointer`'s 4-byte alignment, `dense_tc`'s and `dense_tc_pair`'s pointer checks, the BF16 GEMVs' pointer
+  checks and their `ldy >= n_out` routing, the IEEE quantizer's unchecked column count); `monolith/kernels.py`'s
+  `basalt_q8_1_grid` and `basalt_mmvf_grid` transcribe the quantizers' and the BF16 GEMVs' grids
+  (`native_mmvq.cu:1556-1558`, `iq_kernels.cu:2453`, `native_bf16.cu:147-150`, `:174`). License:
+  `third_party/BASALT-LICENSE`.
 - `tests/kernels/test_basalt_q5k_head.py` — adapted from `src/kernels/q5k_head_parity.cpp` (MIT): its weights and
   activations, row counts, maps, rescaling, planted rows and trials, and the pass criteria. License:
   `third_party/BASALT-LICENSE`.

@@ -9,15 +9,18 @@
 #include <cstring>
 #include <stdexcept>
 #include "basalt_cpu.h"
+#include "basalt_cpu_expf.h"
 #include "metal_core.h"
 
 namespace nb = nanobind;
 using namespace monolith;
 
-// ---- basalt's two CPU Q2_0 kernels (basalt_cpu.h) ------------------------------------------------------------
-// Caller-owned numpy arrays, ActQ-shaped and C-contiguous: nanobind refuses a wrong dtype, rank or layout (the
-// arguments are .noconvert(), so it cannot quietly write into a copy), and these checks refuse a short buffer - a
-// kernel here reads and writes raw pointers, so the binding is where "every store is inside its binding" is kept.
+// ---- basalt's CPU kernels (basalt_cpu.h, basalt_cpu_expf.h) ---------------------------------------------------
+// Caller-owned numpy arrays, C-contiguous and of the shape each kernel reads: nanobind refuses a wrong dtype, rank
+// or layout (the arguments are .noconvert(), so it cannot quietly write into a copy), and these checks refuse a
+// short buffer - a kernel here reads and writes raw pointers, so the binding is where "every store is inside its
+// binding" is kept. The float32 arrays also keep a bit pattern intact on the way in: a scalar argument would cross
+// Python as a double, and float -> double -> float quiets a signalling NaN.
 namespace bc = monolith::basalt_cpu;
 using F32In1 = nb::ndarray<const float, nb::ndim<1>, nb::c_contig, nb::device::cpu>;
 using U8In1 = nb::ndarray<const uint8_t, nb::ndim<1>, nb::c_contig, nb::device::cpu>;
@@ -30,6 +33,14 @@ using F32Out2 = nb::ndarray<float, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
 
 static void need(bool ok, const char* what) {
   if (!ok) throw std::invalid_argument(what);
+}
+
+// An elementwise kernel writes out[i] from in[i], so it is well defined when the two are the same buffer and not
+// when they merely overlap: a shifted view (x = a[:-1], out = a[1:]) is contiguous and passes every other check,
+// and the store to out[i] would change the value read as x[i+1]. Refused rather than copied, because a copy would
+// quietly give a different answer than the docstring states where the caller meant the arrays to be distinct.
+static void no_partial_overlap(const float* in, const float* out, size_t n, const char* what) {
+  need(in == out || in + n <= out || out + n <= in, what);
 }
 
 NB_MODULE(_native, m) {
@@ -170,4 +181,53 @@ NB_MODULE(_native, m) {
   }, nb::arg("w").noconvert(), nb::arg("row_bytes"), nb::arg("nblocks"), nb::arg("q").noconvert(),
      nb::arg("scale").noconvert(), nb::arg("hx").noconvert(), nb::arg("out").noconvert(), nb::arg("r0"), nb::arg("r1"),
      "basalt's q2_0_gguf_rows_multi on ARM NEON: writes out[t][r] for r0 <= r < r1 and nothing else");
+
+  m.def("basalt_expf", [](F32In1 x, F32Out1 out) {
+    need(out.shape(0) == x.shape(0), "basalt_expf: out must hold as many floats as x");
+    const size_t n = x.shape(0);
+    const float* xp = x.data();
+    float* op = out.data();
+    no_partial_overlap(xp, op, n, "basalt_expf: out may be x itself but must not partly overlap it");
+    nb::gil_scoped_release unlock;
+    for (size_t i = 0; i < n; ++i) op[i] = bc::expf_glibc(xp[i]);
+  }, nb::arg("x").noconvert(), nb::arg("out").noconvert(),
+     "glibc's expf, element by element: out[i] = expf_glibc(x[i])");
+
+  m.def("basalt_swiglu", [](F32In1 g, F32In1 u, F32Out1 out) {
+    need(u.shape(0) == g.shape(0) && out.shape(0) == g.shape(0),
+         "basalt_swiglu: g, u and out must hold the same number of floats");
+    const size_t n = g.shape(0);
+    const float* gp = g.data();
+    const float* up = u.data();
+    float* op = out.data();
+    no_partial_overlap(gp, op, n, "basalt_swiglu: out may be g itself but must not partly overlap it");
+    no_partial_overlap(up, op, n, "basalt_swiglu: out may be u itself but must not partly overlap it");
+    nb::gil_scoped_release unlock;
+    for (size_t i = 0; i < n; ++i) op[i] = bc::swiglu(gp[i], up[i]);
+  }, nb::arg("g").noconvert(), nb::arg("u").noconvert(), nb::arg("out").noconvert(),
+     "basalt's CPU SwiGLU (pool.cpp:434): out[i] = (g[i] / (1.f + expf_glibc(-g[i]))) * u[i]");
+
+  // The acceptance oracle sweeps all 2^32 float32 arguments, which no Python loop can hash in reasonable time and
+  // which would be 16 GB as an array. The digest runs here instead, over one range of bit patterns per call: the
+  // FNV-1a of the result bits in increasing argument order, the rule tests/kernels/fixtures/expf_digests.txt
+  // records glibc's own output under.
+  m.def("basalt_expf_digest", [](uint32_t first_bits, uint32_t count) {
+    // Refused rather than wrapped: a range that runs off the end of the bit patterns would silently digest a
+    // different set of arguments than the caller named.
+    need(uint64_t(first_bits) + count <= (uint64_t(1) << 32),
+         "basalt_expf_digest: first_bits + count must not run past 2^32");
+    uint64_t h = 0xCBF29CE484222325ull;
+    nb::gil_scoped_release unlock;
+    for (uint32_t i = 0; i < count; ++i) {
+      const uint32_t bits = first_bits + i;
+      float x;
+      std::memcpy(&x, &bits, sizeof x);
+      const float y = bc::expf_glibc(x);
+      uint32_t yb;
+      std::memcpy(&yb, &y, sizeof yb);
+      h = (h ^ yb) * 0x100000001B3ull;
+    }
+    return h;
+  }, nb::arg("first_bits"), nb::arg("count"),
+     "FNV-1a over the result bits of expf_glibc at `count` consecutive float32 bit patterns from `first_bits`");
 }

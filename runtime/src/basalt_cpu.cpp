@@ -116,6 +116,8 @@
 // the port reproduces the kernel this path runs, not basalt's debugging options.
 #include "basalt_cpu.h"
 
+#include "basalt_x86.h"
+
 #if !defined(__ARM_NEON)
 #error "basalt_cpu.cpp is an ARM NEON transcription of basalt's AVX-512 CPU kernels; build it on Apple silicon."
 #endif
@@ -129,6 +131,8 @@
 
 namespace monolith::basalt_cpu {
 namespace {
+using namespace x86;
+
 
 /// MAXPS(SRC1, SRC2) per lane, exactly: "IF ((SRC1 = 0.0) and (SRC2 = 0.0)) THEN DEST := SRC2; ELSE IF (SRC1 = NaN)
 /// THEN DEST := SRC2; ... ELSE IF (SRC2 = NaN) THEN DEST := SRC2; ... ELSE IF (SRC1 > SRC2) THEN DEST := SRC1; ELSE
@@ -191,46 +195,7 @@ inline void group_scales(const uint8_t* row, int b0, int nb, float d[8]) {
     vst1q_f32(d + 4, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(sc + 4))));
 }
 
-// ---- THE NaN PATH: x86's NaN rules, applied scalar and lane-exact ------------------------------------------------
-//
-// Each helper selects the NaN by an explicit bit test, in the operand order of the instruction GCC emits at that
-// site, and returns the indefinite for a NaN the operation itself created. No NEON NaN rule is consulted.
-
-inline uint32_t to_bits(float f) {
-    uint32_t b;
-    std::memcpy(&b, &f, 4);
-    return b;
-}
-inline float from_bits(uint32_t b) {
-    float f;
-    std::memcpy(&f, &b, 4);
-    return f;
-}
-inline bool is_nan(float x) { return (to_bits(x) & 0x7F800000u) == 0x7F800000u && (to_bits(x) & 0x007FFFFFu) != 0; }
-inline float quiet(float x) { return from_bits(to_bits(x) | 0x00400000u); }   // an SNaN keeps its payload, bit 22 set
-
-/// VMULPS, VADDPS, VADDSS and VSUBSS: SRC1's NaN if it has one, else SRC2's, each quieted ([S] Intel SDM Vol. 1
-/// Table 4-8; [M] ground-truth:134-136); a NaN the operation CREATES (inf * 0, inf - inf) is the floating-point
-/// indefinite 0xffc00000 (4.8.3.7).
-inline float x86_src1_first(float src1, float src2, float computed) {
-    if (is_nan(src1)) return quiet(src1);
-    if (is_nan(src2)) return quiet(src2);
-    return is_nan(computed) ? from_bits(0xFFC00000u) : computed;
-}
-inline float x86_mul(float src1, float src2) { return x86_src1_first(src1, src2, src1 * src2); }
-inline float x86_add(float src1, float src2) { return x86_src1_first(src1, src2, src1 + src2); }
-inline float x86_sub(float src1, float src2) { return x86_src1_first(src1, src2, src1 - src2); }
-
-/// VFMADD231PS: the first NaN in the order first multiplicand, second multiplicand, addend, quieted ([S] Vol. 1
-/// Table 14-17; [M] ground-truth:137-141). A QNaN addend therefore survives an inf * 0 product, where FMLA
-/// discards it for the default NaN.
-inline float x86_fma(float m1, float m2, float addend) {
-    if (is_nan(m1)) return quiet(m1);
-    if (is_nan(m2)) return quiet(m2);
-    if (is_nan(addend)) return quiet(addend);
-    const float r = std::fma(m1, m2, addend);
-    return is_nan(r) ? from_bits(0xFFC00000u) : r;
-}
+// The x86 NaN rules these kernels apply live in basalt_x86.h, shared with the expert pool's SwiGLU.
 
 /// _mm512_reduce_add_ps as GCC 14.3's build emits it for a ONE-token job: SRC1 is the high half at levels 1 and 2,
 /// the {2,3,0,1} shuffle at level 3 and lane 0 at level 4 ("hhs0" for both trees, ground-truth:270; level 3 is the

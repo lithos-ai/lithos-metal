@@ -119,6 +119,16 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   bits each) and its code extraction `(qs[m / 4] >> 2 * (m % 4)) & 3`, re-implemented. The `- 1` that centres a code
   reaches the result through basalt's own correction term, not through a dequantization. License: `third_party/GGML-LICENSE`.
 
+## Arm optimized-routines (ARM-software/optimized-routines, MIT OR Apache-2.0 WITH LLVM-exception; taken under MIT)
+
+- `runtime/src/basalt_cpu_expf.cpp` — adapted from `math/expf.c`, `math/exp2f_data.c`, `math/math_errf.c` and
+  `math/math_config.h` @ `f67e7daa5457646fad9f75580263dba654c988aa`: `expf`'s algorithm operation for operation,
+  the `exp2f_data` table, polynomial and constants for `EXP2F_TABLE_BITS = 5` copied, `xflowf`'s error returns and
+  the `asuint` / `asdouble` / `opt_barrier_float` helpers. glibc's generic `expf` is this same source
+  (`sysdeps/ieee754/flt-32/e_expf.c` since 2017), which is why basalt's CPU SwiGLU reaches it; the transcription
+  takes the MIT copy rather than glibc's LGPL one, and selects the build glibc makes (the `!TOINT_INTRINSICS`
+  branch, `WANT_ERRNO_UFLOW`). License: `third_party/ARM-OPTIMIZED-ROUTINES-LICENSE`.
+
 ## basalt (jesdga95/basalt @ `b4c63b55754637f4c72ad53a0f791d425f71eb36`, MIT)
 
 - `monolith/formats/basalt_reader.py` — adapted from `tools/model_file.py` (MIT): the layout constants and the
@@ -218,6 +228,13 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   pre-fills, and the pass criteria. License: `third_party/BASALT-LICENSE`.
 - `tests/kernels/test_basalt_q8_1.py` — adapted from `src/kernels/iq_multi_parity.cpp`'s `check_q8_1_finite` (MIT): the
   planted blocks, the host transcription of the quantization formula and the pass criterion. License:
+  `third_party/BASALT-LICENSE`.
+- `runtime/src/basalt_cpu_expf.cpp`, `tests/kernels/test_basalt_cpu_expf.py` — adapted from
+  `src/kernels/cpu/pool.cpp:434` (MIT): the CPU expert pool's SwiGLU, `(g / (1.f + std::exp(-g))) * u`, in its
+  order of operations, which is the only arithmetic the pool itself performs. License:
+  `third_party/BASALT-LICENSE`.
+- `tests/kernels/fixtures/swiglu_vectors.txt` — the recorded output of `src/kernels/cpu/pool.cpp:425-434` (MIT),
+  built as basalt builds it and run on x86-64: measured values, not source. License:
   `third_party/BASALT-LICENSE`.
 - `tests/kernels/test_basalt_platform.py` — the contraction check's pass criterion of
   `src/kernels/elementwise_parity.cpp` (MIT). License: `third_party/BASALT-LICENSE`.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -75,6 +76,15 @@ class Engine:
                 buf.fill(0)
             self.buffers[name] = buf
         self.pipelines = compile_pipelines(program, self.dev, fast_math=fast_math, cache=pipeline_cache)
+        for key, pso in self.pipelines.items():               # the crews and butterflies take 32-lane SIMD-groups
+            if pso.thread_execution_width != 32:
+                raise ValueError(f"kernel {key}: SIMD-groups of {pso.thread_execution_width} lanes; the kernels "
+                                 "assume 32")
+        for o in program.ops:                                 # a larger threadgroup would not run as encoded
+            limit = self.pipelines[o.kernel].max_threads_per_threadgroup
+            if math.prod(o.threadgroup) > limit:
+                raise ValueError(f"op {o.name or o.kernel}: a threadgroup of {math.prod(o.threadgroup)} threads; its "
+                                 f"pipeline takes at most {limit}")
         self.ops = []
         for o in program.ops:
             d = nt.Dispatch().pipeline(self.pipelines[o.kernel]).grid(*o.grid).threadgroup(*o.threadgroup).barrier(o.barrier_before)

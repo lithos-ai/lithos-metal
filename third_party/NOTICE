@@ -137,6 +137,14 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `src/core/mtp.cpp`. The test writer in `tests/contract/test_basalt_reader.py` follows `tools/model_file.py`'s
   `ModelWriter`. `tests/contract/test_gguf_formats.py` compiles basalt's references only from a checkout the user points
   `BASALT_SRC` at. License: `third_party/BASALT-LICENSE`.
+- `monolith/packs/basalt_hc8.py` — adapted from `src/kernels/cuda/hc_fused.cu:1171-1227` (MIT): `hc8_quant_kernel`'s
+  arithmetic re-implemented in numpy and `hc8_make`'s layout; the `BASALTH8` table of
+  `include/basalt/core/model_file.hpp:126-149` as `hc8_write` writes it (`src/core/model_file.cpp:438-485`); the matrix
+  lists of `src/core/verify.cpp:566-581` and `src/core/mtp.cpp:215-218`, `:488-503`, in the order `hc8_dump` writes
+  them (`src/core/verify.cpp:638-640`, `src/core/mtp.cpp:516-521`). License: `third_party/BASALT-LICENSE`.
+- `tests/basalt_hc_ref.py`, `tests/contract/test_basalt_hc8.py` — adapted from `src/kernels/cuda/hc_fused.cu:1171-1197`,
+  `src/core/model_file.cpp:487-513` and `src/kernels/hc8_parity.cpp:69-99` (MIT): a scalar transcription of
+  `hc8_quant_kernel`, `hc8_read`'s checks and hc8_parity's matrices. License: `third_party/BASALT-LICENSE`.
 - `kernels/common/basalt_fp.metal` — adapted from `src/kernels/cuda/native_mmvq.cu`, `src/kernels/cuda/iq_kernels.cu`,
   `include/basalt/kernels/dp4a.hpp` and `include/basalt/kernels/q8_1_finite.hpp` (MIT): `warp_sum`, `warp_max`,
   `load_int_b2`, the `DP4A` helper and the IQ4 table lookup (`native_mmvq.cu:441-457`), with the flush-to-zero and reciprocal helpers that write out the arithmetic nvcc

@@ -1,7 +1,8 @@
 // Copyright (c) 2023-2026 The ggml authors (MIT)
 // Copyright (c) 2026 Jesús Gulfo (MIT)
 // Adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
-// src/kernels/cuda/q5k_head.cu, include/basalt/kernels/dp4a.hpp and include/basalt/kernels/q8_1_finite.hpp
+// src/kernels/cuda/q5k_head.cu, src/kernels/cuda/dequant_bf16.cu, src/prefill/kernels.cu,
+// include/basalt/kernels/dp4a.hpp and include/basalt/kernels/q8_1_finite.hpp
 // @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE),
 // which adapt ggml-org/llama.cpp ggml/src/ggml-cuda/{quantize.cu,vecdotq.cuh,mmvq.cu,common.cuh} @
 // 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
@@ -36,6 +37,10 @@
 // - cuda_nan, cuda_nan_f16: a stored float's or fp16 value's NaN as sm_120's, 0x7fffffff and 0x7fff, where this GPU's
 //   arithmetic gives 0x7fc00000 and its half() 0x7e00 (docs/research/basalt-nvcc/nan.md); every other value keeps
 //   its bits. Each port kernel applies them at the stores a NaN can reach.
+// - f2bf, bf16_rne_nonan: fp32 to BF16 bits by integer round to nearest even, with and without basalt's NaN case.
+//   f2bf (dequant_bf16.cu's) keeps a NaN a quiet NaN: the dequantizers' BF16 stores take it. bf16_rne_nonan
+//   (prefill/kernels.cu's bf) rounds a NaN's bits like any others: the prompt path's BF16 operand images take it.
+//   Both take the float, carrying sm_120's NaN (cuda_nan) as basalt's arithmetic leaves it.
 // - q8_d, q8_s, q8_w: a q8_1 block's scale, sum and code words; q2_0_load, q2_0_sumi: the Q2_0 decode and its exact
 //   integer dot, shared by native_mmvq and the routed experts; q5k_load, q5k_dot: the Q5_K decode and dot, shared by
 //   native_mmvq and the Q5_K head.
@@ -124,6 +129,25 @@ static inline float cuda_nan(float x) {
 // takes every NaN to 0x7fff, where half() gives 0x7e00 (nan.md). Applied to f16_bits' result where basalt converts
 // with __float2half; basalt's software f16_from_f32 gives sign | 0x7E00 instead.
 static inline ushort cuda_nan_f16(ushort h) { return (h & 0x7fffu) > 0x7c00u ? ushort(0x7fffu) : h; }
+
+// basalt src/kernels/cuda/dequant_bf16.cu:20-27 `f2bf`, which follows ggml's ggml_compute_fp32_to_bf16
+// (ggml/src/ggml-impl.h): fp32 to BF16 bits, round to nearest even in integer arithmetic; a finite value at or above
+// 0x7f7f8000 in magnitude carries into the infinity of its sign; an fp32 subnormal rounds by its bits (as_type keeps
+// them); a NaN stays a NaN, its sign and top payload bits with the quiet bit set. A float parameter, as basalt's: a
+// uint argument would be converted by value, not reinterpreted.
+static inline ushort f2bf(float f) {
+    uint u = as_type<uint>(f);
+    if ((u & 0x7fffffffu) > 0x7f800000u) return ushort((u >> 16) | 64u);
+    u += 0x7fffu + ((u >> 16) & 1u);
+    return ushort(u >> 16);
+}
+// basalt src/prefill/kernels.cu:31-35 `bf`: f2bf without the NaN case, so a NaN's bits round like any others (32-bit
+// wrap-around): sm_120's 0x7fffffff gives 0x8000 (-0), 0xffffffff 0x0000, 0x7f800001 0x7f80 (+inf), 0x7fc00000 0x7fc0.
+static inline ushort bf16_rne_nonan(float f) {
+    uint u = as_type<uint>(f);
+    u += 0x7fffu + ((u >> 16) & 1u);
+    return ushort(u >> 16);
+}
 
 // one entry of basalt's grp_ptr table: a blob's 64-bit GPU address (MSL takes no pointer-to-pointer kernel argument)
 struct GrpPtr { device const ushort* p; };

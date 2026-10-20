@@ -11,6 +11,7 @@ from typing import List, Dict, Mapping, Optional, Sequence, Tuple, Union
 
 from .formats import FORMATS
 from .formats.blm import PackInfo
+from .formats.gguf import ggml_row_bytes
 from .backends.metal.context import current_backend
 
 from .resources import kernel_root
@@ -699,6 +700,60 @@ def basalt_q5k_proxy_params(n_cap: int, *, row0: int = 0, n: int = 0, n_rows: Op
             or (n_rows is not None and not 0 < n_rows <= min(n_cap, 2 ** 31 - 1))):
         raise ValueError(f"basalt_q5k_proxy: rows out of range (row0 {row0}, n {n}, n_rows {n_rows}, n_cap {n_cap})")
     return struct.pack("<IIII", row0, n, n_cap, n_rows or 0)
+
+
+# ---- basalt's prompt path: group dequantizers (kernels/common/basalt_dequant16.metal; docs/research/basalt-nvcc/dequant_bf16.md)
+# The type table and launch rules below are adapted from basalt (jesdga95/basalt) src/kernels/cuda/dequant_bf16.cu
+# :190-240 @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE).
+
+DEQUANT16_TYPES = (2, 6, 8, 11, 12, 13, 14, 20, 23, 42)   # the GGUF types Gemm::native dequantizes on this pack
+DEQUANT16_OUT = {"f32": 0, "f16": 1, "bf16": 2}           # DQ_OUT: put's float, H16 and BF16 stores (:28-31)
+DEQUANT16_THREADS = 256                                   # threads per threadgroup, one per 32-value group (:221-222)
+
+
+def basalt_dequant16_source() -> str:
+    """basalt's ``dequant_kernel`` (dequant_bf16.cu:168-188) as ``basalt_dequant_g32``, one thread per 32-value group:
+    ``basalt_dequant16_grid`` threadgroups of 256 threads, 1-D. Bindings: 0 the matrix's blocks from its row 0, at
+    least (row0 + rows) * row bytes at any byte offset, of which rows [row0, row0 + rows) are read; 1 the output,
+    exactly rows * cols values, row-major (float for "f32", fp16 or BF16 bits for "f16" and "bf16"); 2 the
+    ``basalt_dequant16_params`` record."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_dequant16.metal")
+
+
+def basalt_dequant16_macros(type_id: int, out: str) -> Dict[str, str]:
+    """``DQ_TYPE`` (the ggml type id) and ``DQ_OUT`` (``out``: "f32", "f16" or "bf16", as dequant_f32, dequant_f16 and
+    dequant_bf16 store). basalt also takes Q5_1 (dequant_bf16.cu:194) and hands the i-quant types of ``iq_only`` to
+    iq_kernels.cu (:251, :261-265, :270-274); no tensor of this pack has them, so a type outside ``DEQUANT16_TYPES``
+    is refused."""
+    if type_id not in DEQUANT16_TYPES:
+        raise ValueError(f"basalt_dequant16: unsupported ggml type {type_id}")
+    if out not in DEQUANT16_OUT:
+        raise ValueError(f"basalt_dequant16: unsupported output {out!r}")
+    return {"DQ_TYPE": str(type_id), "DQ_OUT": str(DEQUANT16_OUT[out])}
+
+
+def basalt_dequant16_params(type_id: int, row0: int, rows: int, cols: int) -> bytes:
+    """``DequantG32Params`` (row bytes, row0, rows, groups per row: basalt's int64_t arguments, dequant_bf16.cu:171-172)
+    for rows [row0, row0 + rows) of ``cols`` values of type ``type_id``. Refused: a type ``basalt_dequant16_macros``
+    refuses; basalt's cols not whole blocks and rows <= 0 (:210-214) and its failed launch (``basalt_dequant16_grid``);
+    row0 < 0, the port's own (a load before the binding)."""
+    if type_id not in DEQUANT16_TYPES:
+        raise ValueError(f"basalt_dequant16: unsupported ggml type {type_id}")
+    if rows <= 0 or row0 < 0:
+        raise ValueError(f"basalt_dequant16: rows must be positive and row0 non-negative, got {rows} and {row0}")
+    row_bytes = ggml_row_bytes(type_id, cols)
+    basalt_dequant16_grid(rows, cols)
+    return struct.pack("<qqqq", row_bytes, row0, rows, cols // 32)
+
+
+def basalt_dequant16_grid(rows: int, cols: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup): ceil(rows * cols / 32 / 256) threadgroups of 256 (dequant_bf16.cu:216,
+    :221-222). A grid of no threadgroup or of more than ``CUDA_GRID_X`` is refused: basalt's launch fails on either
+    and it exits (:238-239)."""
+    grid = -(-(rows * (cols // 32)) // DEQUANT16_THREADS)
+    if not 0 < grid <= CUDA_GRID_X:
+        raise ValueError(f"basalt_dequant16: {rows} x {cols} values need {grid} threadgroups, outside 1..{CUDA_GRID_X}")
+    return grid, DEQUANT16_THREADS
 
 
 # ---- the other decode kernels -------------------------------------------------------------------------------

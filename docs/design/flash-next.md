@@ -103,11 +103,11 @@ ones this pack runs.
    (`src/program/generate.cpp:1889-1893`), including its rounding sequence. The authority for that sequence is what
    nvcc compiles, read from basalt's sm_120 PTX and SASS and recorded per kernel and site in
    `docs/research/basalt-nvcc/` (`matvec.md` for the q8_1 quantizers and `native_mmvq`, `hc_fused.md` for the
-   hyper-connection read, its router and the int8 copies, `dequant.md` for the GGUF
-   dequantizers, `experts.md` for the routed experts, `bf16.md` for the BF16 GEMVs, `dense_tc.md` for the window
-   projections, `q5k_head.md` for the Q5_K head, `s2_experts.md` for the drafter's experts, `nan.md` for the NaN
-   each store holds; the CPU expert tier runs on the host rather than the GPU, so its authority is glibc and gcc
-   instead, recorded in `docs/research/basalt-cpu-expf.md`): which multiply-adds fuse and
+   hyper-connection read, its router and the int8 copies, `dequant.md` for the GGUF dequantizers, `dequant_bf16.md`
+   for the prompt path's group dequantizers, `experts.md` for the routed experts, `bf16.md` for the BF16 GEMVs,
+   `dense_tc.md` for the window projections, `q5k_head.md` for the Q5_K head, `s2_experts.md` for the drafter's
+   experts, `nan.md` for the NaN each store holds; the CPU expert tier runs on the host rather than the GPU, so its
+   authority is glibc and gcc instead, recorded in `docs/research/basalt-cpu-expf.md`): which multiply-adds fuse and
    with which operands, the operand order of each `a * b - c * d`, where `.FTZ` flushes subnormals, and each
    approximate instruction. The source alone does not settle it: nvcc's default `--fmad=true` fuses where the source
    writes no FMA, `ptxas` fuses further than the PTX (the Q4_K and Q5_K returns, `matvec.md` section 5) and replaces an
@@ -384,6 +384,7 @@ counters that must move, repeats that must be bitwise identical (`qsa_dec_attn_p
 | `prefill_cpu_share_test` | the CPU pool's experts and MMQ against a double reference, the CPU path's RMS and worst-row errors at most 1.5 times MMQ's (3 times when the activations carry a few large values); a row alone against its row in the expert's job | `if (ec.rms > lim * em.rms \|\| ec.worst > lim * em.worst)` (`:379`), with `const double lim = outliers ? 3.0 : 1.5;` (`:378`); `if (std::memcmp(y_one.data(), y_cpu.data(), y_cpu.size() * 4) != 0)` (`:329`) | CPU share |
 | `dequant_f16_parity` (not registered) | the fp16 dequantizers the prompt path's GEMMs read | `const bool ok = bad_f32 == 0 && bad_scalar == 0 && bad_cpu == 0;` (`:98`) | prompt |
 | `dequant_bf16_test` (not registered) | the BF16 dequantizers against the CPU's | `const double tol = 1e-6 * std::fabs((double) ref[i]) + 1e-30;` (`:91`); `const bool ok = bad_f == 0 && bad_h == 0;` (`:99`) | prompt |
+| `elementwise_parity` (its `dequant_bf16` check, `:438-467`) | the BF16 dequantizer's NaN store and a finite block beside it | `if (!((q[(size_t) j] & 0x7FFFu) > 0x7F80u)) ++dq_wrong;` (`:459`); `if (wrong \|\| dq_wrong) ++bad;` (`:467`) | prompt |
 | `pool_stress` | the CPU pool's liveness: every job written, no 10-second stall | `if (now - since > std::chrono::seconds(10)) {` (`src/kernels/cpu/pool_stress.cpp:60`) | CPU share |
 
 These basalt tests do not run on this pack's path:
@@ -405,7 +406,8 @@ These basalt tests do not run on this pack's path:
 - `elementwise_parity`: `gdn_gate`, `silu_inplace`, `rms_norm_weighted`, the S-form `embedding_gather` and
   `f32_to_bf16_bulk`. Under the forced native flags neither verify nor the drafter calls them
   (`src/core/verify.cpp:1341-1342`, `:1715-1717`; `src/core/mtp.cpp:946`), and the Q3_K embedding runs
-  `iq_embed_rows` (`src/kernels/cuda/iq_kernels.cu:2478-2483`).
+  `iq_embed_rows` (`src/kernels/cuda/iq_kernels.cu:2478-2483`). Its `dequant_bf16` check (`:438-467`) runs the prompt
+  path's dequantizer and is in the table above.
 - The Q8_0 and Q8_K halves of `quantize_act_parity` (`:93`, `:190`): `quantize_q8_0` and `quantize_q8_K`, which this
   path does not call. The drafter's experts quantize with `quantize_q8_0_scaled` (`src/core/mtp.cpp:933`;
   `src/kernels/cuda/s2_expert_grouped.cu:1111`), listed below.

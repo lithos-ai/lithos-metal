@@ -89,6 +89,10 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   semantics and the IQ4 table lookup. License: `third_party/GGML-LICENSE`.
 - `kernels/common/basalt_q8_1.metal` — through basalt's `native_mmvq.cu` and `iq_kernels.cu` (below), which adapt
   `ggml/src/ggml-cuda/quantize.cu` (MIT): the q8_1 block and its quantization rule. License: `third_party/GGML-LICENSE`.
+- `kernels/common/basalt_gr_post.metal` and `tests/basalt_hc_ref.py` — through basalt's
+  `src/kernels/cuda/native_gr_postops.cu` (below), which adapts
+  `ggml/src/ggml-cuda/{dsv4-hc.cu,scale.cu,unary.cu,unary.cuh}` (MIT): `native_gr_post`'s elementwise arithmetic, in
+  `tests/basalt_hc_ref.py` re-implemented in numpy (`gr_post_emulation`). License: `third_party/GGML-LICENSE`.
 - `kernels/common/basalt_mmvq.metal` — through basalt's `src/kernels/cuda/native_mmvq.cu` (below), which adapts
   `ggml/src/ggml-cuda/{vecdotq.cuh,mmvq.cu,common.cuh}` and `ggml/src/ggml-common.h` (MIT): the block structs, the
   `vec_dot_*_q8_1` integer dot products and their scale arithmetic, and mmvq's thread-to-block mapping and cross-warp
@@ -142,9 +146,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `include/basalt/core/model_file.hpp:126-149` as `hc8_write` writes it (`src/core/model_file.cpp:438-485`); the matrix
   lists of `src/core/verify.cpp:566-581` and `src/core/mtp.cpp:215-218`, `:488-503`, in the order `hc8_dump` writes
   them (`src/core/verify.cpp:638-640`, `src/core/mtp.cpp:516-521`). License: `third_party/BASALT-LICENSE`.
-- `tests/basalt_hc_ref.py`, `tests/contract/test_basalt_hc8.py` — adapted from `src/kernels/cuda/hc_fused.cu:1171-1197`,
-  `src/core/model_file.cpp:487-513` and `src/kernels/hc8_parity.cpp:69-99` (MIT): a scalar transcription of
-  `hc8_quant_kernel`, `hc8_read`'s checks and hc8_parity's matrices. License: `third_party/BASALT-LICENSE`.
+- `tests/basalt_hc_ref.py`, `tests/contract/test_basalt_hc8.py`, `tests/kernels/test_basalt_gr_post.py` — adapted from
+  `src/kernels/cuda/hc_fused.cu:1171-1197`, `src/core/model_file.cpp:487-513` and `src/kernels/hc8_parity.cpp:69-99`
+  (MIT): a scalar transcription of `hc8_quant_kernel`, `hc8_read`'s checks and hc8_parity's matrices; and from
+  `src/kernels/gr_parity.cpp:136-156`, `:433-454`, `:620-692` (MIT): the double write, its metrics, fixture and pass
+  criteria; and from `src/kernels/cuda/native_gr_postops.cu:65-74` (MIT): `native_gr_post`'s arithmetic as nvcc compiles
+  it (`gr_post_emulation`; `docs/research/basalt-nvcc/native_gr_postops.md`). License: `third_party/BASALT-LICENSE`.
 - `kernels/common/basalt_fp.metal` — adapted from `src/kernels/cuda/native_mmvq.cu`, `src/kernels/cuda/iq_kernels.cu`,
   `include/basalt/kernels/dp4a.hpp` and `include/basalt/kernels/q8_1_finite.hpp` (MIT): `warp_sum`, `warp_max`,
   `load_int_b2`, the `DP4A` helper and the IQ4 table lookup (`native_mmvq.cu:441-457`), with the flush-to-zero and reciprocal helpers that write out the arithmetic nvcc
@@ -206,13 +213,15 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `third_party/BASALT-LICENSE`.
 - `monolith/compiler/emit_basalt.py` — adapted from `src/kernels/cuda/native_mmvq.cu:1465-1475`, `:1490-1494`,
   `:1549-1552` and `:1563-1568`, `src/kernels/cuda/dense_tc.cu:1077-1082` and `:1107-1113`,
-  `src/kernels/cuda/native_bf16.cu:139-171` and `src/kernels/cuda/iq_kernels.cu:2450-2455` (MIT): the launchers'
-  checks its handlers make at emit time (`validate_shape`'s whole 32-value blocks and 1 to 8 columns,
-  `validate_pointer`'s 4-byte alignment, `dense_tc`'s and `dense_tc_pair`'s pointer checks, the BF16 GEMVs' pointer
-  checks and their `ldy >= n_out` routing, the IEEE quantizer's unchecked column count); `monolith/kernels.py`'s
-  `basalt_q8_1_grid` and `basalt_mmvf_grid` transcribe the quantizers' and the BF16 GEMVs' grids
-  (`native_mmvq.cu:1556-1558`, `iq_kernels.cu:2453`, `native_bf16.cu:147-150`, `:174`). License:
-  `third_party/BASALT-LICENSE`.
+  `src/kernels/cuda/native_bf16.cu:139-171`, `src/kernels/cuda/iq_kernels.cu:2450-2455` and
+  `src/kernels/cuda/native_gr_postops.cu:75-82` (MIT): the launchers' checks its handlers make at emit time
+  (`validate_shape`'s whole 32-value blocks and 1 to 8 columns, `validate_pointer`'s 4-byte alignment, `dense_tc`'s and
+  `dense_tc_pair`'s pointer checks, the BF16 GEMVs' pointer checks and their `ldy >= n_out` routing, the IEEE
+  quantizer's unchecked column count, `native_gr_post`'s launcher checks (non-null four-byte aligned pointers, positive
+  bounded dimensions)); `monolith/kernels.py`'s `basalt_q8_1_grid` and `basalt_mmvf_grid` transcribe the quantizers' and
+  the BF16 GEMVs' grids (`native_mmvq.cu:1556-1558`, `iq_kernels.cu:2453`, `native_bf16.cu:147-150`, `:174`), and its
+  `basalt_gr_post_params` and `basalt_gr_post_grid` transcribe `native_gr_post`'s `check_shape`, `THREADS` and `blocks`
+  (`native_gr_postops.cu:35`, `:79-83`). License: `third_party/BASALT-LICENSE`.
 - `tests/kernels/test_basalt_q5k_head.py` — adapted from `src/kernels/q5k_head_parity.cpp` (MIT): its weights and
   activations, row counts, maps, rescaling, planted rows and trials, and the pass criteria. License:
   `third_party/BASALT-LICENSE`.
@@ -268,6 +277,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   as the AVX-512 semantics they are written in, and the shape of the per-token independence check of
   `src/kernels/cpu/expert_multi_test.cpp:56-72`, which exercises a kernel off this pack's path: the pattern
   transfers, not its code. License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_gr_post.metal` — adapted from `src/kernels/cuda/native_gr_postops.cu:35-41`, `:65-74`,
+  `:107-114` (MIT): `native_gr_post`, written in the rounding sequence nvcc compiles for it
+  (`docs/research/basalt-nvcc/native_gr_postops.md`). License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

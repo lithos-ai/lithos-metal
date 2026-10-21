@@ -6,7 +6,7 @@ down items (`cn_x`, `cn_dot`, `cn_lo`), the up items (`hc_up_pre`, `hc_up_main_m
 (`hc_q8_1_store_native`, `hc_up_q8`), the router items (`hc_router_rows`, `warp_sum16_ftz`, the IEEE `hc_q8_1_store`)
 and the top-10 item (`hc_top10`), read from the sm_120 PTX and SASS, with the Metal form the port writes at each site.
 This page is the authority the Metal kernels follow (`docs/design/flash-next.md`, invariant 5), as `matvec.md` is for
-the q8_1 quantizers and `bf16.md` for MMVF; `native_gr_postops.md` (not yet on main) covers the hyper-connection write.
+the q8_1 quantizers and `bf16.md` for MMVF; `native_gr_postops.md` covers the hyper-connection write.
 
 Basalt paths are relative to commit `b4c63b55754637f4c72ad53a0f791d425f71eb36`; `path:a-b` means lines a to b there,
 and a bare `:N` is a line of `src/kernels/cuda/hc_fused.cu` unless another file was named last.

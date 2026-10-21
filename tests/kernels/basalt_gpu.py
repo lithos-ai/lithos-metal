@@ -446,3 +446,32 @@ def q5k_proxy_top1(proxy, q5, xq, n_rows, n_cap, map_):
     ntc, t = kernels.basalt_q5k_proxy_tiles(n_cap), kernels.basalt_q5k_proxy_tiles(n_rows)
     return (int(np.frombuffer(bid.read(0, 4), np.int32)[0]), np.frombuffer(bpr.read(0, 4), np.float32)[0],
             s[: 8 * t].reshape(t, 4, 2), s[8 * ntc: 8 * ntc + 2 * t].reshape(t, 2))
+
+
+def gr_post(R, bo, inj, T, n_embd, hc, *, in_place=True, fill=0xFF):
+    """``basalt_gr_post`` (basalt's ``native_gr_post``) over the first ``T`` token rows of ``R`` ([T][hc][n_embd]),
+    ``bo`` ([T][n_embd]) and ``inj`` ([T][hc]), each copied into a buffer of 8 rows whose rows from ``T`` on are
+    ``fill`` bytes. ``in_place``: basalt's call, the residual's buffer at slots 0 and 3; else the program's binding, a
+    separate 8-row output of ``fill`` bytes. Returns the output's, ``bo``'s and ``inj``'s buffers after the run as
+    float32 ([8, hc, n_embd], [8, n_embd], [8, hc])."""
+    dev = device()
+
+    def buf(a, width):
+        v = np.full(4 * 8 * width, fill, np.uint8)
+        v[: 4 * T * width] = np.ascontiguousarray(a, np.float32).reshape(-1)[: T * width].view(np.uint8)
+        return nt.Buffer(dev, v.tobytes())
+
+    b_r, b_bo, b_inj = buf(R, hc * n_embd), buf(bo, n_embd), buf(inj, hc)
+    b_out = b_r
+    if not in_place:
+        b_out = nt.Buffer(dev, 4 * 8 * hc * n_embd)
+        b_out.fill(fill)
+    grid, threads = kernels.basalt_gr_post_grid(n_embd, hc, T)
+    d = nt.Dispatch().pipeline(pipeline(kernels.basalt_gr_post_source(), "basalt_gr_post"))
+    for k, b in enumerate((b_r, b_bo, b_inj, b_out)):
+        d = d.buffer(k, b)
+    d = d.bytes(4, kernels.basalt_gr_post_params(n_embd, hc, T)).grid(grid).threadgroup(threads)
+    r = nt.Queue(dev).run([d])
+    assert not r.error, r.error
+    f32 = lambda b: np.frombuffer(b.read(0, b.nbytes), np.float32)
+    return f32(b_out).reshape(8, hc, n_embd), f32(b_bo).reshape(8, n_embd), f32(b_inj).reshape(8, hc)

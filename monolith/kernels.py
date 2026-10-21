@@ -701,6 +701,31 @@ def basalt_q5k_proxy_params(n_cap: int, *, row0: int = 0, n: int = 0, n_rows: Op
     return struct.pack("<IIII", row0, n, n_cap, n_rows or 0)
 
 
+# ---- basalt's hyper-connection write (kernels/common/basalt_gr_post.metal;
+# docs/research/basalt-nvcc/native_gr_postops.md)
+# The shape check and grid below are adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_gr_postops.cu:35
+# and :79-83 @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE).
+
+def basalt_gr_post_source() -> str:
+    """basalt's ``native_gr_post`` (``basalt_gr_post``): the hyper-connection write of T tokens' residual stacks."""
+    return PRELUDE + template("basalt_fp.metal") + template("basalt_gr_post.metal")
+
+
+def basalt_gr_post_params(n_embd: int, hc: int, t: int) -> bytes:
+    """``basalt_gr_post``'s record (n_embd, hc, T, 0): positive dimensions with n_embd * hc at most INT_MAX, basalt's
+    ``check_shape`` (native_gr_postops.cu:79-82), any T >= 1, and T * hc * n_embd below 2^32, the kernel's 32-bit
+    element index."""
+    if n_embd < 1 or hc < 1 or t < 1 or n_embd * hc > 2 ** 31 - 1 or t * hc * n_embd >= 2 ** 32:
+        raise ValueError(f"basalt_gr_post: unsupported shape (n_embd {n_embd}, hc {hc}, T {t})")
+    return struct.pack("<IIII", n_embd, hc, t, 0)
+
+
+def basalt_gr_post_grid(n_embd: int, hc: int, t: int) -> Tuple[int, int]:
+    """(threadgroups, threads per threadgroup): one thread per element of the T rows, in threadgroups of 256 (basalt's
+    ``THREADS`` and ``blocks``, native_gr_postops.cu:35, :83)."""
+    return -(-t * hc * n_embd // 256), 256
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

@@ -6,11 +6,12 @@ q8_1 rows feed only the routed experts; outputs are contiguous columns); a stati
 
 # The launcher checks are adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu:1465-1475, :1490-1494,
 # :1549-1552 and :1563-1568, src/kernels/cuda/dense_tc.cu:1077-1082 and :1107-1113,
-# src/kernels/cuda/native_bf16.cu:139-171 and src/kernels/cuda/iq_kernels.cu:2450-2455 @
-# b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE).
+# src/kernels/cuda/native_bf16.cu:139-171, src/kernels/cuda/iq_kernels.cu:2450-2455 and
+# src/kernels/cuda/native_gr_postops.cu:75-82 @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE).
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Dict, Sequence, Tuple
 
 from .. import kernels
@@ -68,6 +69,17 @@ def _bind(ctx: _Ctx, op: Op, slot: int, v: Value, align: int) -> Tuple[int, str,
         raise ValueError(f"{op.kind}: {v.name!r} binds at byte {off} of {buf}; slot {slot} needs {align}-byte "
                          "alignment")
     return slot, buf, off
+
+
+def _disjoint(ctx: _Ctx, op: Op, outs: Sequence[Value], ins: Sequence[Value]) -> None:
+    """Refuse an output whose bytes overlap another output's or an input's (the same buffer, intersecting byte ranges;
+    a view binds rows of its base's buffer). Two inputs may share bytes."""
+    spans = [(*ctx.buf(v), math.prod(ctx.shape(v)) * v.dtype.itemsize, v.name) for v in (*outs, *ins)]
+    for i, (b0, o0, n0, v0) in enumerate(spans[:len(outs)]):
+        for b1, o1, n1, v1 in spans[i + 1:]:
+            if b0 == b1 and o0 < o1 + n1 and o1 < o0 + n0:
+                raise ValueError(f"{op.kind}: {v0!r} and {v1!r} overlap in {b0}; a store of this op would "
+                                 "land in bytes it reads or another of its outputs holds")
 
 
 def _q8_1(ctx: _Ctx, op: Op) -> None:
@@ -172,5 +184,26 @@ def _mmvf(ctx: _Ctx, op: Op) -> None:
             (grid, 1, 1), (threads, 1, 1), f"{op.kind}:{w.name}", writes=[2])
 
 
+def _gr_post(ctx: _Ctx, op: Op) -> None:
+    t = _columns(ctx, op)                                    # no other T bound: native_gr_post takes any count
+    (r, block_out, inject), (r_out,) = op.inputs, op.outputs
+    n_embd, hc = ctx.shape(block_out)[-1], ctx.shape(inject)[-1]
+    record = kernels.basalt_gr_post_params(n_embd, hc, t)    # check_shape's refusals, a dimension of 0 among them
+    _expect(ctx, op, r, (t, hc * n_embd), DType.F32, f"{hc} streams of the block output's {n_embd} values")
+    _expect(ctx, op, block_out, (t, n_embd), DType.F32, "the block output's columns")
+    _expect(ctx, op, inject, (t, hc), DType.F32, "one injection per stream of each column")
+    _expect(ctx, op, r_out, (t, hc * n_embd), DType.F32, "the residual's columns")
+    # basalt allows only output == residual (native_gr_postops.hpp:22-26): here a view of r over bytes r's other
+    # readers may still read, so that alias is refused too
+    _disjoint(ctx, op, (r_out,), (r, block_out, inject))
+    k = ctx.kernel("basalt_gr_post", kernels.basalt_gr_post_source(), "basalt_gr_post", {})
+    prm = ctx.params("basalt_gr_post", record)
+    grid, threads = kernels.basalt_gr_post_grid(n_embd, hc, t)
+    ctx.add(k, [_bind(ctx, op, 0, r, 4), _bind(ctx, op, 1, block_out, 4), _bind(ctx, op, 2, inject, 4),
+                _bind(ctx, op, 3, r_out, 4), (4, prm, 0)], (grid, 1, 1), (threads, 1, 1),
+            f"{op.kind}:{block_out.name}", writes=[3])
+
+
 BASALT_HANDLERS: Dict[str, object] = {"basalt_q8_1": _q8_1, "basalt_mmvq": _mmvq, "basalt_dense_tc": _dense_tc,
-                                      "basalt_dense_tc_pair": _dense_tc_pair, "basalt_mmvf": _mmvf}
+                                      "basalt_dense_tc_pair": _dense_tc_pair, "basalt_mmvf": _mmvf,
+                                      "basalt_gr_post": _gr_post}

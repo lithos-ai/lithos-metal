@@ -63,8 +63,9 @@ def device_facts(info: Any, *, target_gb: float = 21.0, nominal_gbps: Optional[f
 def measure(*, shape: Tuple[int, int] = (17408, 5120), formats: Sequence[str] = DEFAULT_FORMATS, ts: Sequence[int] = COST_TS,
             tms: Sequence[int] = TILE_TMS, copies: Optional[int] = None, reps: int = 3, accelerator: bool = True,
             attention: Optional[Tuple[int, int, int]] = DEFAULT_ATTENTION, ctxs: Sequence[int] = (1024, 4096), attn_ts: Sequence[int] = (1, 4),
-            log: Callable[[str], None] = print) -> Dict[str, Any]:
-    """Run the harnesses and return the measurement mapping ``monolith.backends.metal.calibration.decide`` reads."""
+            lane_order: Optional[str] = None, log: Callable[[str], None] = print) -> Dict[str, Any]:
+    """Run the harnesses and return the measurement mapping ``monolith.backends.metal.calibration.decide`` reads.
+    ``lane_order`` pins the pack layout the later measurements run on (both orders are still measured and recorded)."""
     b = gemv_bench.Bench()
     n, k = shape
     m: Dict[str, Any] = {"family": f"Apple{b.info.apple_family}", "chip": b.info.name, "shape": f"{n}x{k}", "copies": copies, "reps": reps}
@@ -76,7 +77,7 @@ def measure(*, shape: Tuple[int, int] = (17408, 5120), formats: Sequence[str] = 
         r = b.run(ref, n, k, t=1, lane_order=order, copies=copies, reps=reps)
         m["lane_order_gbps"][order] = r["gbps"]
         log(f"lane order {order:13s} {ref} T=1: {r['ms']:.3f} ms {r['gbps']:.0f} GB/s{'' if r['ok'] in (None, True) else '  ORACLE FAIL'}")
-    lane = max(m["lane_order_gbps"], key=lambda o: m["lane_order_gbps"][o])
+    lane = lane_order or max(m["lane_order_gbps"], key=lambda o: m["lane_order_gbps"][o])
     m["lane_order_measured_with"] = lane
     # 1b. the scale placement: a format with block scales at T = 1, the scales inline in the unit or in the block's
     # region — on a K = 4096 stripe, where a lane's scales are one word (the packer keeps wider runs inline anyway)
@@ -169,6 +170,8 @@ def main(argv=None) -> int:
     ap.add_argument("--target-gb", type=float, default=21.0, help="the target model's resident weight bytes for hosts_target_model")
     ap.add_argument("--name", help="the profile name (default <chip>-<cores>c)")
     ap.add_argument("--out", type=Path, help="write here instead of the registered backend configuration")
+    ap.add_argument("--lane-order", choices=("interleaved16", "contiguous"),
+                    help="pin the pack lane order (a paired A/B across shapes settled it) instead of the single T = 1 point")
     ap.add_argument("--dry-run", action="store_true", help="measure and print; write nothing")
     a = ap.parse_args(argv)
     n, k = (int(x) for x in a.shape.lower().split("x"))
@@ -196,8 +199,12 @@ def main(argv=None) -> int:
     print(f"{info.name}: {info.gpu_cores} cores, Apple{info.apple_family}; profile {name} ({'merging ' + str(src) if existing else 'new'}) -> {path}", flush=True)
     t0 = time.time()
     m = measure(shape=(n, k), formats=formats, ts=ts, tms=tms, copies=copies, reps=reps, accelerator=not a.no_accelerator,
-                attention=attention, ctxs=ctxs, attn_ts=attn_ts, log=lambda s: print(s, flush=True))
+                attention=attention, ctxs=ctxs, attn_ts=attn_ts, lane_order=a.lane_order, log=lambda s: print(s, flush=True))
     engine, notes = decide(m, existing.get("engine") if existing else None)
+    if a.lane_order:
+        engine["lane_order"] = a.lane_order
+        notes["lane_order"] = (f"pinned to {a.lane_order} (--lane-order); the T = 1 point measured "
+                               + ", ".join(f"{o} {g:.0f} GB/s" for o, g in m["lane_order_gbps"].items()))
     device = device_facts(info, target_gb=a.target_gb, nominal_gbps=a.nominal_gbps)
     doc = merge_profile(existing, device=device, engine=engine, measurements=m, notes=notes, written=time.strftime("%Y-%m-%d"),
                         command="python " + " ".join(sys.argv))

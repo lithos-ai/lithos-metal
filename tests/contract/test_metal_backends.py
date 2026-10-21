@@ -22,6 +22,7 @@ from monolith.runtime.program import KernelSpec, OpSpec, Program
     ('Apple M4 Pro', 20, 9, 'm4_pro'), ('Apple M4 Max', 32, 9, 'm4_max'),
     ('Apple M4 Max', 40, 9, 'm4_max'), ('Apple M5 Pro', 20, 10, 'm5_pro'),
     ('Apple M5 Max', 32, 10, 'm5_max_32c'), ('Apple M5 Max', 40, 10, 'm5_max_40c'),
+    ('Apple M5 Ultra', 64, 10, 'm5_ultra_64c'),
 ])
 def test_exact_device_selection(name, cores, family, backend):
     config = config_for_device(cores, family, name)
@@ -70,6 +71,19 @@ def test_m3_ultra_60c_is_its_own_device():
     assert get_backend('m3_ultra_60c').serving_context_limit(drafter=True) is None
     assert get_backend('m3_ultra_60c').serving_prefill_chunk({}) == 512
     assert get_backend('m4_pro').serving_prefill_chunk({}) is None
+
+
+def test_m5_ultra_64c_is_its_own_device():
+    assert config_for_device(64, 10, 'Apple M5 Ultra').backend == 'm5_ultra_64c'
+    for name, cores, family in (('Apple M5 Ultra', 80, 10), ('Apple M5 Max', 64, 10), ('Apple M5 Ultra', 32, 10),
+                                ('Apple M5 Ultra', 64, 9)):
+        assert config_for_device(cores, family, name) is None
+    config = load_configs()['apple-m5-ultra-64c']
+    with pytest.raises(ValueError, match='64 GPU cores'):
+        get_backend(config.backend).validate_device(config,
+            SimpleNamespace(name='Apple M5 Ultra', gpu_cores=80, apple_family=10))
+    assert not config.gdn_mixer_fusion
+    assert get_backend('m5_ultra_64c').serving_context_limit(drafter=True) is None
 
 
 @pytest.mark.parametrize('backend', sorted(BACKENDS))

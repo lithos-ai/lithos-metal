@@ -1,0 +1,468 @@
+# chip: Apple M5 Ultra   gpu-cores: 64   ram: 96 GB
+# os: macOS 27.0.1 (26A434)   date: 2026-10-21T21:09:53Z   on-battery: 0
+
+################ p1_limits ################
+device: Apple M5 Ultra
+hasUnifiedMemory=1  recommendedMaxWorkingSetSize=83.49 GB  maxBufferLength=62.62 GB
+maxThreadgroupMemoryLength=32768 bytes
+maxThreadsPerThreadgroup=1024 x 1024 x 1024
+argumentBuffersSupport tier=1  maxArgumentBufferSamplerCount=500000
+supportsFunctionPointers=1 supportsDynamicLibraries=1 supports32BitFloatFiltering=1
+  MTLGPUFamilyApple1: 1
+  MTLGPUFamilyApple2: 1
+  MTLGPUFamilyApple3: 1
+  MTLGPUFamilyApple4: 1
+  MTLGPUFamilyApple5: 1
+  MTLGPUFamilyApple6: 1
+  MTLGPUFamilyApple7: 1
+  MTLGPUFamilyApple8: 1
+  MTLGPUFamilyApple9: 1
+  MTLGPUFamilyApple10: 1
+  MTLGPUFamilyApple11: 0
+  MTLGPUFamilyApple12: 0
+  MTLGPUFamilyMetal3(5001): 1   Metal4(5002): 1
+  MSL 3.0: OK
+  MSL 3.1: OK
+  MSL 3.2: OK
+  MSL 4.0: OK
+  MSL 4.1: OK
+threadExecutionWidth=32 maxTotalThreadsPerThreadgroup=1024 staticThreadgroupMemoryLength=0
+
+################ p2_sync ################
+=== PING-PONG handoff via device atomic (rounds=20000 per side, max_spin=200000) ===
+same SIMD-group        (tid 0 vs 1,   one TG of 64)       : A done=1 B done=0 timeouts=1/1  gpu=179.48 ms
+diff SIMD-group, same TG (tid 0 vs 32, one TG of 64)      : A done=20000 B done=20000 timeouts=0/0  gpu=102.32 ms  => 2558 ns/handoff (avg spins/wait A=2.0 B=2.0, max=2)
+diff SIMD-group, same TG (tid 0 vs 512, one TG of 1024)   : A done=20000 B done=20000 timeouts=0/0  gpu=60.01 ms  => 1500 ns/handoff (avg spins/wait A=2.0 B=2.0, max=2)
+diff threadgroups       (tid 0 vs 64,  two TGs of 64)     : A done=20000 B done=20000 timeouts=0/0  gpu=62.69 ms  => 1567 ns/handoff (avg spins/wait A=2.0 B=2.0, max=3)
+diff threadgroups       (tid 0 vs 32,  two TGs of 32)     : A done=20000 B done=20000 timeouts=0/0  gpu=34.21 ms  => 855 ns/handoff (avg spins/wait A=2.0 B=2.0, max=3)
+diff threadgroups far   (TG0 vs TG15, 16 TGs of 384)      : A done=20000 B done=20000 timeouts=0/0  gpu=36.50 ms  => 913 ns/handoff (avg spins/wait A=1.0 B=2.6, max=5)
+
+=== CHECK-IN: how many threadgroups of one dispatch are concurrently resident? (max_spin=3,000,000) ===
+G=   2 threadgroups x   32 threads (    64 threads): all-present seen by    2, timed out    0, max spins among ok=0, gpu=0.01 ms
+G=   4 threadgroups x   32 threads (   128 threads): all-present seen by    4, timed out    0, max spins among ok=0, gpu=0.01 ms
+G=   8 threadgroups x   32 threads (   256 threads): all-present seen by    8, timed out    0, max spins among ok=0, gpu=0.02 ms
+G=  16 threadgroups x   32 threads (   512 threads): all-present seen by   16, timed out    0, max spins among ok=0, gpu=0.02 ms
+G=  32 threadgroups x   32 threads (  1024 threads): all-present seen by   32, timed out    0, max spins among ok=0, gpu=0.02 ms
+G=  64 threadgroups x   32 threads (  2048 threads): all-present seen by   64, timed out    0, max spins among ok=0, gpu=0.02 ms
+G= 128 threadgroups x   32 threads (  4096 threads): all-present seen by  128, timed out    0, max spins among ok=0, gpu=0.01 ms
+G= 256 threadgroups x   32 threads (  8192 threads): all-present seen by  256, timed out    0, max spins among ok=1, gpu=0.01 ms
+G= 512 threadgroups x   32 threads ( 16384 threads): all-present seen by  512, timed out    0, max spins among ok=2, gpu=0.01 ms
+G=   8 threadgroups x  384 threads (  3072 threads): all-present seen by    8, timed out    0, max spins among ok=0, gpu=0.00 ms
+G=  16 threadgroups x  384 threads (  6144 threads): all-present seen by   16, timed out    0, max spins among ok=0, gpu=0.02 ms
+G=  32 threadgroups x  384 threads ( 12288 threads): all-present seen by   32, timed out    0, max spins among ok=0, gpu=0.00 ms
+G=  64 threadgroups x  384 threads ( 24576 threads): all-present seen by   64, timed out    0, max spins among ok=0, gpu=0.00 ms
+G=   8 threadgroups x 1024 threads (  8192 threads): all-present seen by    8, timed out    0, max spins among ok=0, gpu=0.02 ms
+G=  16 threadgroups x 1024 threads ( 16384 threads): all-present seen by   16, timed out    0, max spins among ok=0, gpu=0.02 ms
+G=  32 threadgroups x 1024 threads ( 32768 threads): all-present seen by   32, timed out    0, max spins among ok=0, gpu=0.02 ms
+G=  64 threadgroups x 1024 threads ( 65536 threads): all-present seen by   64, timed out    0, max spins among ok=0, gpu=0.02 ms
+
+################ p3_residency ################
+=== (a) FULL RESIDENCY: all S simd-groups (x32 lanes, all spinning) must be alive at once; max_spin=60000 ===
+S=   32 simd-groups (  1024 threads, TG=1024): ok=   32 timeout=    0 max_spins_ok=      1 gpu=    0.04 ms 
+S=   32 simd-groups (  1024 threads, TG=  32): ok=   32 timeout=    0 max_spins_ok=     19 gpu=    0.02 ms 
+S=  128 simd-groups (  4096 threads, TG=1024): ok=  128 timeout=    0 max_spins_ok=      2 gpu=    0.09 ms 
+S=  128 simd-groups (  4096 threads, TG=  32): ok=  128 timeout=    0 max_spins_ok=     16 gpu=    0.04 ms 
+S=  512 simd-groups ( 16384 threads, TG=1024): ok=  512 timeout=    0 max_spins_ok=      7 gpu=    0.09 ms 
+S=  512 simd-groups ( 16384 threads, TG=  32): ok=  512 timeout=    0 max_spins_ok=     21 gpu=    0.08 ms 
+S= 1024 simd-groups ( 32768 threads, TG=1024): ok= 1024 timeout=    0 max_spins_ok=     17 gpu=    0.26 ms 
+S= 1024 simd-groups ( 32768 threads, TG=  32): ok= 1024 timeout=    0 max_spins_ok=     44 gpu=    0.21 ms 
+S= 1536 simd-groups ( 49152 threads, TG=1024): ok= 1536 timeout=    0 max_spins_ok=     20 gpu=    0.24 ms 
+S= 1536 simd-groups ( 49152 threads, TG=  32): ok= 1536 timeout=    0 max_spins_ok=     33 gpu=    0.26 ms 
+S= 2048 simd-groups ( 65536 threads, TG=1024): ok= 2048 timeout=    0 max_spins_ok=     43 gpu=    0.41 ms 
+S= 2048 simd-groups ( 65536 threads, TG=  32): ok= 2048 timeout=    0 max_spins_ok=     44 gpu=    0.59 ms 
+
+=== (b) PHYSICAL CONCURRENCY: fixed ALU work per active simd-group (work=3,000,000 iters), dispatch of 4096 simd-groups, TG=1024 ===
+active simd-groups=    1 (    32 threads): gpu=   38.90 ms  (x1.00 vs 1 group; throughput = 1 group-equivalents)
+active simd-groups=    8 (   256 threads): gpu=   39.45 ms  (x1.01 vs 1 group; throughput = 8 group-equivalents)
+active simd-groups=   32 (  1024 threads): gpu=  106.29 ms  (x2.73 vs 1 group; throughput = 12 group-equivalents)
+active simd-groups=   64 (  2048 threads): gpu=  105.13 ms  (x2.70 vs 1 group; throughput = 24 group-equivalents)
+active simd-groups=  128 (  4096 threads): gpu=  112.56 ms  (x2.89 vs 1 group; throughput = 44 group-equivalents)
+active simd-groups=  192 (  6144 threads): gpu=  112.67 ms  (x2.90 vs 1 group; throughput = 66 group-equivalents)
+active simd-groups=  256 (  8192 threads): gpu=  120.38 ms  (x3.09 vs 1 group; throughput = 83 group-equivalents)
+active simd-groups=  384 ( 12288 threads): gpu=  117.60 ms  (x3.02 vs 1 group; throughput = 127 group-equivalents)
+active simd-groups=  512 ( 16384 threads): gpu=  120.40 ms  (x3.10 vs 1 group; throughput = 165 group-equivalents)
+active simd-groups=  768 ( 24576 threads): gpu=  120.39 ms  (x3.10 vs 1 group; throughput = 248 group-equivalents)
+active simd-groups= 1024 ( 32768 threads): gpu=  120.15 ms  (x3.09 vs 1 group; throughput = 332 group-equivalents)
+active simd-groups= 1536 ( 49152 threads): gpu=  120.38 ms  (x3.09 vs 1 group; throughput = 496 group-equivalents)
+active simd-groups= 2048 ( 65536 threads): gpu=  120.38 ms  (x3.09 vs 1 group; throughput = 662 group-equivalents)
+active simd-groups= 3072 ( 98304 threads): gpu=  200.86 ms  (x5.16 vs 1 group; throughput = 595 group-equivalents)
+active simd-groups= 4096 (131072 threads): gpu=  201.86 ms  (x5.19 vs 1 group; throughput = 789 group-equivalents)
+
+################ p4_core_model ################
+device: Apple M5 Ultra, 64 GPU cores
+baseline: 1 simd-group alone = 13.59 ms
+
+=== (1) ONE threadgroup of 1024 threads; k busy simd-groups inside it ===
+  k= 1 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 1.0)
+  k= 2 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 2.0)
+  k= 3 busy simd-groups:   13.58 ms  x1.00   (effective parallel groups = 3.0)
+  k= 4 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 4.0)
+  k= 5 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 5.0)
+  k= 6 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 6.0)
+  k= 7 busy simd-groups:   13.58 ms  x1.00   (effective parallel groups = 7.0)
+  k= 8 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 8.0)
+  k= 9 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 9.0)
+  k=10 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 10.0)
+  k=11 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 11.0)
+  k=12 busy simd-groups:   13.84 ms  x1.02   (effective parallel groups = 11.8)
+  k=13 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 13.0)
+  k=14 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 14.0)
+  k=15 busy simd-groups:   13.59 ms  x1.00   (effective parallel groups = 15.0)
+  k=16 busy simd-groups:   15.00 ms  x1.10   (effective parallel groups = 14.5)
+  k=20 busy simd-groups:   27.40 ms  x2.02   (effective parallel groups = 9.9)
+  k=24 busy simd-groups:   27.48 ms  x2.02   (effective parallel groups = 11.9)
+  k=28 busy simd-groups:   28.21 ms  x2.08   (effective parallel groups = 13.5)
+  k=32 busy simd-groups:   28.41 ms  x2.09   (effective parallel groups = 15.3)
+
+=== (2) G threadgroups, ALL simd-groups busy; vary threadgroup size (does 1 TG == 1 core?) ===
+  TG size  G=1     G=2     G=4     G=32    G=42    G=62    G=64    G=66    G=85    G=128   G=192   G=256     (cells: ms; baseline 13.6)
+  32          13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.7    13.8
+  64          13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6
+  128         13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    13.6    17.2
+  256         13.6    13.6    13.6    13.6    13.6    13.6    13.6    14.2    14.2    23.5    27.8    39.7
+  384         13.6    13.6    13.9    14.0    13.9    13.9    13.9    27.8    27.8    28.0    42.2    54.8
+  512         13.6    13.6    13.6    23.5    23.5    23.5    23.5    35.8    35.9    37.7    52.6    67.9
+  1024        35.8    35.8    35.8    37.8    37.7    38.4    40.3    64.1    68.5    68.9    97.4   125.0
+
+=== (3) same, expressed as total throughput in full-speed simd-group equivalents ===
+  TG size  G=1     G=2     G=4     G=32    G=42    G=62    G=64    G=66    G=85    G=128   G=192   G=256  
+  32           1.0     2.0     4.0    32.0    42.0    62.0    64.0    66.0    85.0   128.0   192.0   256.0
+  64           2.0     4.0     8.0    64.0    84.0   124.0   128.0   132.0   170.0   256.0   384.0   512.0
+  128          4.0     8.0    16.0   128.0   168.0   248.0   256.0   264.0   340.0   512.0   704.1   807.7
+  256          8.0    16.0    32.0   256.0   336.0   496.0   512.0   528.0   393.8   593.0   740.2   738.9
+  384         11.7    23.5    46.9   375.4   471.9   682.1   704.1   391.7   495.2   740.2   742.1   762.2
+  512         16.0    30.6    50.8   296.5   389.2   574.5   593.0   374.0   490.7   738.9   762.7   819.0
+  1024        13.8    26.9    48.5   369.4   484.9   703.0   738.9   456.5   576.9   819.6   857.4   890.6
+
+################ p5_bandwidth ################
+Streaming 3.2 GB through the GPU of Apple M5 Ultra (64 cores). TG = threads per threadgroup, SG = simd-groups used.
+
+=== fmt=0: raw u32 sum (pure bandwidth) ===
+  TG= 384 SG=   12 ( 268.4 MB/SG):   119.3 ms  ->   27.0 GB/s
+  TG= 384 SG=  192 (  16.8 MB/SG):     8.9 ms  ->  363.5 GB/s
+  TG= 384 SG=  384 (   8.4 MB/SG):     9.2 ms  ->  351.1 GB/s
+  TG= 384 SG=  768 (   4.2 MB/SG):     9.7 ms  ->  330.5 GB/s
+  TG= 384 SG= 1536 (   2.1 MB/SG):     6.8 ms  ->  477.2 GB/s
+  TG= 384 SG= 3072 (   1.0 MB/SG):     5.0 ms  ->  640.3 GB/s
+  TG= 384 SG= 6144 (   0.5 MB/SG):     4.2 ms  ->  768.9 GB/s
+  TG= 384 SG=12288 (   0.3 MB/SG):     4.2 ms  ->  771.3 GB/s
+  TG= 384 SG=49152 (   0.1 MB/SG):     3.7 ms  ->  867.6 GB/s
+  TG=1024 SG=   12 ( 268.4 MB/SG):   119.7 ms  ->   26.9 GB/s
+  TG=1024 SG=  192 (  16.8 MB/SG):    16.8 ms  ->  191.6 GB/s
+  TG=1024 SG=  384 (   8.4 MB/SG):    12.2 ms  ->  263.9 GB/s
+  TG=1024 SG=  768 (   4.2 MB/SG):     9.7 ms  ->  331.4 GB/s
+  TG=1024 SG= 1536 (   2.1 MB/SG):     6.6 ms  ->  488.6 GB/s
+  TG=1024 SG= 3072 (   1.0 MB/SG):     5.7 ms  ->  567.7 GB/s
+  TG=1024 SG= 6144 (   0.5 MB/SG):     4.3 ms  ->  756.9 GB/s
+  TG=1024 SG=12288 (   0.3 MB/SG):     4.2 ms  ->  772.3 GB/s
+  TG=1024 SG=49152 (   0.1 MB/SG):     3.8 ms  ->  853.4 GB/s
+  TG=  32 SG=   12 ( 268.4 MB/SG):   115.5 ms  ->   27.9 GB/s
+  TG=  32 SG=  384 (   8.4 MB/SG):     9.4 ms  ->  342.2 GB/s
+  TG=  32 SG= 1536 (   2.1 MB/SG):     7.0 ms  ->  462.4 GB/s
+  TG=  32 SG= 6144 (   0.5 MB/SG):     4.5 ms  ->  715.7 GB/s
+  TG=  32 SG=49152 (   0.1 MB/SG):     3.7 ms  ->  872.3 GB/s
+
+=== fmt=1: NVFP4-like decode+dot (LUT nibble decode, per-16 block scale, half activations) ===
+  TG= 384 SG=   12 ( 268.4 MB/SG):   491.0 ms  ->    6.6 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG=  192 (  16.8 MB/SG):    30.6 ms  ->  105.3 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG=  384 (   8.4 MB/SG):    16.3 ms  ->  198.2 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG=  768 (   4.2 MB/SG):    10.5 ms  ->  307.7 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG= 1536 (   2.1 MB/SG):     8.0 ms  ->  402.6 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG= 3072 (   1.0 MB/SG):     7.5 ms  ->  428.0 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG= 6144 (   0.5 MB/SG):     7.0 ms  ->  461.9 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG=12288 (   0.3 MB/SG):     6.3 ms  ->  514.2 GB/s  (weight bytes; +12.5% scale bytes)
+  TG= 384 SG=49152 (   0.1 MB/SG):     6.3 ms  ->  508.7 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG=   12 ( 268.4 MB/SG):   494.1 ms  ->    6.5 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG=  192 (  16.8 MB/SG):    72.6 ms  ->   44.4 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG=  384 (   8.4 MB/SG):    37.5 ms  ->   86.0 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG=  768 (   4.2 MB/SG):    18.9 ms  ->  170.5 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG= 1536 (   2.1 MB/SG):     9.5 ms  ->  337.6 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG= 3072 (   1.0 MB/SG):     9.4 ms  ->  342.7 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG= 6144 (   0.5 MB/SG):     6.9 ms  ->  469.8 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG=12288 (   0.3 MB/SG):     6.3 ms  ->  514.5 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=1024 SG=49152 (   0.1 MB/SG):     6.6 ms  ->  491.3 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=  32 SG=   12 ( 268.4 MB/SG):   347.3 ms  ->    9.3 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=  32 SG=  384 (   8.4 MB/SG):    15.7 ms  ->  205.2 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=  32 SG= 1536 (   2.1 MB/SG):     8.3 ms  ->  389.4 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=  32 SG= 6144 (   0.5 MB/SG):     7.4 ms  ->  434.4 GB/s  (weight bytes; +12.5% scale bytes)
+  TG=  32 SG=49152 (   0.1 MB/SG):     6.4 ms  ->  504.9 GB/s  (weight bytes; +12.5% scale bytes)
+
+################ p5b_access_pattern ################
+Raw streaming bandwidth vs lane access pattern, 3.2 GB, Apple M5 Ultra. Crew geometry = 768 SGs (64 TG x 384).
+  striped (lane = far-apart stripe)        SG=  768:    9.9 ms ->  325.0 GB/s
+  striped (lane = far-apart stripe)        SG=12288:    4.2 ms ->  774.9 GB/s
+  interleaved (lanes share cache lines)    SG=  768:   10.1 ms ->  319.2 GB/s
+  interleaved (lanes share cache lines)    SG=12288:    2.9 ms -> 1108.8 GB/s
+  blocked 64KB (lane = 2KB sub-range)      SG=  768:    3.8 ms ->  850.2 GB/s
+  blocked 64KB (lane = 2KB sub-range)      SG=12288:    3.8 ms ->  838.6 GB/s
+  blocked 1MB (lane = 32KB sub-range)      SG=  768:    4.7 ms ->  681.6 GB/s
+
+################ p6_preemption ################
+Small dispatch on idle GPU: mean 0.637 ms, max 1.323 ms
+
+LONG dispatch on G=64 threadgroups x 384 (of 64 cores): long GPU time 1251 ms
+   1 small dispatches submitted while it ran; 1 completed before it ended: mean latency 1100.838 ms, max 1100.838 ms
+   first 6 latencies (ms): 1100.84 
+
+LONG dispatch on G=62 threadgroups x 384 (of 64 cores): long GPU time 1246 ms
+   1 small dispatches submitted while it ran; 1 completed before it ended: mean latency 1091.960 ms, max 1091.960 ms
+   first 6 latencies (ms): 1091.96 
+
+LONG dispatch on G=42 threadgroups x 384 (of 64 cores): long GPU time 1246 ms
+   1 small dispatches submitted while it ran; 1 completed before it ended: mean latency 1091.615 ms, max 1091.615 ms
+   first 6 latencies (ms): 1091.61 
+
+
+################ p6b_interleave ################
+1 command buffer  x 800 dispatches of ~1.5 ms        total 1163 ms | small dispatches on a 2nd queue meanwhile: n=1  mean 1049.59 ms  max 1049.59 ms | last sample (may straddle the end): 1049.6 ms
+8 command buffers x 100 dispatches                   total 1159 ms | small dispatches on a 2nd queue meanwhile: n=52  mean 6.14 ms  max 94.74 ms | last sample (may straddle the end): 92.4 ms
+80 command buffers x 10 dispatches (~15 ms each)     total 1150 ms | small dispatches on a 2nd queue meanwhile: n=62  mean 0.81 ms  max 7.63 ms | last sample (may straddle the end): 0.3 ms
+
+################ p7_dispatch_overhead ################
+Scenario: 1240 small dispatches per 'token' (width 5120), M3 Pro. Times are per token, median of 15.
+
+(A0) 1 cmdbuf, 1 encoder (serial): CPU encode 0.20 ms (0.16 us/dispatch) | GPU 2.08 ms (1.7 us/dispatch) | wall 3.01 ms
+(A1) 1 cmdbuf, 1 encoder (concurrent+barriers): CPU encode 0.45 ms (0.37 us/dispatch) | GPU 2.38 ms (1.9 us/dispatch) | wall 3.67 ms
+(B)  ICB one-time build of 1240 commands: 0.21 ms
+(B)  ICB replay:                       CPU encode 0.01 ms (0.010 us/dispatch) | GPU 2.60 ms (2.1 us/dispatch) | wall 2.84 ms
+(C)  ONE dispatch, in-kernel loop:     CPU encode 0.004 ms | GPU 0.004 ms (0.00 us per in-kernel op) | wall 0.22 ms
+(D)  commit+waitUntilCompleted round trip for 1 tiny dispatch: wall 0.177 ms (GPU 0.003 ms)  <- cost of each CPU<->GPU sync point
+
+################ p8_threadgroup_mem ################
+Hot small-working-set reads (8,000,000 strided reads/thread), 64 TG x 384 threads, Apple M5 Ultra:
+  working set  4096 halfs (  8.0 KB) from device buffer                     :  297.86 ms  (37.23 ns/read)
+  working set  4096 halfs (  8.0 KB) from threadgroup memory                :  290.18 ms  (36.27 ns/read)
+  working set  4096 halfs (  8.0 KB) from thread-private array (256 elems)  :  338.00 ms  (42.25 ns/read)
+  working set 16384 halfs ( 32.0 KB) from device buffer                     :  296.45 ms  (37.06 ns/read)
+  working set 16384 halfs ( 32.0 KB) from threadgroup memory                :  291.39 ms  (36.42 ns/read)
+
+################ p9_clock_warp ################
+Clock-warp probe on Apple M5 Ultra: 1 ticking simd-group + 767 worker simd-groups (64 TG x 384). Workload classes 1x..4x.
+ run 0: gpu 59.47 ms, 1745921 ticks -> 34.1 ns/tick | measured per class (ms) mean[min..max]:  2x: 28.32[28.01..29.36]  3x: 42.51[42.17..44.23]  4x: 57.06[56.68..59.45]  1x: 14.07[13.85..14.72]
+ run 1: gpu 54.25 ms, 1750017 ticks -> 31.0 ns/tick | measured per class (ms) mean[min..max]:  2x: 25.82[25.66..26.91]  3x: 38.98[38.71..39.97]  4x: 52.06[51.83..54.21]  1x: 12.69[12.63..13.35]
+ run 2: gpu 54.03 ms, 1736705 ticks -> 31.1 ns/tick | measured per class (ms) mean[min..max]:  2x: 25.97[25.67..26.89]  3x: 38.86[38.56..40.13]  4x: 52.18[51.81..54.01]  1x: 12.96[12.77..13.58]
+ run 3: gpu 54.36 ms, 1758209 ticks -> 30.9 ns/tick | measured per class (ms) mean[min..max]:  2x: 25.85[25.61..26.86]  3x: 38.89[38.64..40.53]  4x: 52.16[51.82..54.34]  1x: 12.74[12.60..13.32]
+ expected: 1x=15.2  2x=30.4  3x=45.7  4x=60.9 ms (from the ALU probe)
+
+################ p10_claim_protocol ################
+
+######## relaxed atomics on plain device pointers (no fences) ########
+Claim-protocol probe on Apple M5 Ultra (64 cores, nominal crew 768 simd-groups): 320 ops x 1924 blocks per dispatch.
+case                                           TGs    gpu ms     us/op  exactly1x  timeouts SGs used avg barrier spins/SG/op
+protocol only (empty blocks), global cursor     64    196.13    612.90        yes         0      586 0.3
+protocol only (empty blocks), static slices     64     25.65     80.15        yes         0      768 24.3
+~30us blocks, global cursor                     64    200.32    625.99        yes         0      550 16.7
+~30us blocks, static slices                     64     48.26    150.80        yes         0      768 25.2
+protocol only (empty blocks), own+steal         64     20.13     62.91        yes         0      768 0.0
+~30us blocks, own slice + steal                 64     37.88    118.39        yes         0      768 0.0
+~30us blocks, global cursor, half the crew      32    107.83    336.97        yes         0      384 15.4
+~30us blocks, own+steal, half the crew          32     64.72    202.24        yes         0      384 0.0
+~30us blocks, static slices, half the crew      32     71.20    222.51        yes         0      384 13.3
+~30us blocks, own+steal, 2x surplus TGs        128     52.46    163.95        yes         0     1536 0.0
+~30us blocks, own+steal, 4x surplus TGs        256     56.22    175.68        yes         0     3072 0.0
+protocol only, ONE DISPATCH PER OP (static)     64      0.60      1.86        yes         -      all (no in-kernel sync; 320 dispatches)
+~30us blocks, ONE DISPATCH PER OP (static)      64     25.66     80.20        yes         -      all (no in-kernel sync; 320 dispatches)
+
+######## SPEC-COMPLIANT: coherent(device) buffers + atomic_thread_fence(seq_cst, device scope) on every publish and barrier exit ########
+Claim-protocol probe on Apple M5 Ultra (64 cores, nominal crew 768 simd-groups): 320 ops x 1924 blocks per dispatch.
+case                                           TGs    gpu ms     us/op  exactly1x  timeouts SGs used avg barrier spins/SG/op
+protocol only (empty blocks), global cursor     64    208.62    651.95        yes         0      723 1.0
+protocol only (empty blocks), static slices     64      8.74     27.32        yes         0      768 8.6
+~30us blocks, global cursor                     64    204.06    637.68        yes         0      697 17.0
+~30us blocks, static slices                     64     31.06     97.08        yes         0      768 12.4
+protocol only (empty blocks), own+steal         64     11.66     36.45        yes         0      768 0.0
+~30us blocks, own slice + steal                 64     32.68    102.13        yes         0      768 0.0
+~30us blocks, global cursor, half the crew      32    109.36    341.74        yes         0      384 15.3
+~30us blocks, own+steal, half the crew          32     62.19    194.36        yes         0      384 0.0
+~30us blocks, static slices, half the crew      32     53.12    166.01        yes         0      384 15.3
+~30us blocks, own+steal, 2x surplus TGs        128     29.78     93.06        yes         0     1536 0.0
+~30us blocks, own+steal, 4x surplus TGs        256     36.62    114.44        yes         0     3072 0.0
+protocol only, ONE DISPATCH PER OP (static)     64      0.55      1.72        yes         -      all (no in-kernel sync; 320 dispatches)
+~30us blocks, ONE DISPATCH PER OP (static)      64     25.62     80.05        yes         -      all (no in-kernel sync; 320 dispatches)
+
+################ p11_interop_overlap ################
+device: Apple M5 Ultra, 64 GPU cores
+=== (1) memory-bus saturation: stream 3.2 GB (64 KB block sweep) on G of the 64 cores ===
+  G= 1 cores:  120.6 ms ->   26.7 GB/s  (26.7 GB/s per core)
+  G= 2 cores:   59.8 ms ->   53.9 GB/s  (26.9 GB/s per core)
+  G= 4 cores:   30.7 ms ->  104.9 GB/s  (26.2 GB/s per core)
+  G=21 cores:    6.5 ms ->  497.4 GB/s  (23.7 GB/s per core)
+  G=32 cores:    4.7 ms ->  680.1 GB/s  (21.3 GB/s per core)
+  G=42 cores:    4.1 ms ->  780.3 GB/s  (18.6 GB/s per core)
+  G=53 cores:    3.9 ms ->  832.9 GB/s  (15.7 GB/s per core)
+  G=64 cores:    3.8 ms ->  858.0 GB/s  (13.4 GB/s per core)
+
+=== (2) the ALU-bound op B alone (same total work): 64 cores 2.31 ms | 22 cores 6.72 ms | 11 cores 13.44 ms ===
+
+=== (3) op A (bus-bound) and op B (ALU-bound) in ONE encoder ===
+  serial    : A on all cores, then B on all cores (the design today)        6.16 ms   (A 3.75 + B 2.31)
+  no barrier: A on all cores || B on all cores (both want every core)       3.74 ms
+  no barrier: A on 53 cores || B on 11 cores                               14.10 ms   (A alone: 3.87, B alone: 13.44)
+  no barrier: A on 42 cores || B on 22 cores                               13.32 ms   (A alone: 4.13, B alone: 6.72)
+  no barrier: B on 22 cores || A on 42 cores (encoded in the other order)   6.72 ms
+
+=== (3b) robustness at full crew geometry: encode order, and how much ALU work can hide ===
+  no barrier: B on all cores || A on all cores (B encoded first)            4.70 ms
+  B = 2x work (alone 4.62 ms = 123% of A): serial   8.60 ms | no barrier   5.17 ms  -> hidden 74% of B
+  B = 4x work (alone 9.66 ms = 257% of A): serial  13.79 ms | no barrier   9.99 ms  -> hidden 39% of B
+  B = 8x work (alone 18.48 ms = 492% of A): serial  23.35 ms | no barrier  19.63 ms  -> hidden 20% of B
+
+=== (4) two BUS-bound ops: can overlapping them create bandwidth? ===
+  serial    : A1 (1.6 GB) on all cores, then A2 (1.6 GB) on all cores       3.82 ms ->  844.0 GB/s
+  no barrier: A1 on half the cores || A2 on the other half                  3.75 ms ->  859.4 GB/s
+  no barrier: A1 on all cores || A2 on all cores (2x oversubscribed)        3.87 ms ->  831.8 GB/s
+
+################ p12_stream_geometry ################
+Streaming 3.2 GB on Apple M5 Ultra (64 cores; crew geometry = 768 SIMD-groups). Cells: GB/s, min-of-3. Blocked modes use 64 KB blocks.
+
+=== (1) pattern x load width x ILP x SIMD-groups per core, threadgroups of 384 ===
+SIMD-groups per core:                            12     24     48     96    192    384
+  striped 4B                                  329.4  462.0  621.6  787.4  785.5  857.0
+  interleaved 4B                              320.0  608.5 1037.1  970.1 1137.2 1132.0
+  blocked lane-contig 4B (p5b/D8)             853.8  824.5  846.8  845.7  845.4  865.5
+  interleaved 16B                             952.6  854.9 1055.2 1148.1 1147.6 1164.0
+  interleaved 16B x4 in flight               1149.4 1138.8 1153.5 1154.0 1057.7 1154.5
+  blocked lane-contig 16B                     854.1  838.5  845.5  845.6  855.1  862.4
+  blocked lane-contig 16B, 4 streams/lane     941.2  944.2  946.3  938.0  961.1  971.6
+  blocked lane-contig 16B, 64B bursts         858.2  851.2  849.9  847.9  850.5  864.4
+  blocked lane-interleaved 16B x4            1151.3 1138.3 1154.4 1153.4 1143.9 1153.0
+
+=== (2) threadgroup size at 96 SIMD-groups per core (8 x 384 / 3 x 1024 / 12 x 256 per core) ===
+  blocked lane-contig 4B (p5b/D8)            TG= 256:  830.7 TG= 384:  845.8 TG= 512:  843.4 TG=1024:  801.1
+  interleaved 16B                            TG= 256: 1068.6 TG= 384: 1145.8 TG= 512: 1148.0 TG=1024: 1133.5
+  interleaved 16B x4 in flight               TG= 256: 1110.8 TG= 384: 1153.5 TG= 512: 1153.0 TG=1024: 1148.1
+  blocked lane-contig 16B                    TG= 256:  844.2 TG= 384:  845.5 TG= 512:  782.3 TG=1024:  857.0
+  blocked lane-contig 16B, 4 streams/lane    TG= 256:  913.2 TG= 384:  944.4 TG= 512:  944.4 TG=1024:  931.3
+  blocked lane-contig 16B, 64B bursts        TG= 256:  845.1 TG= 384:  844.9 TG= 512:  848.8 TG=1024:  805.7
+  blocked lane-interleaved 16B x4            TG= 256: 1095.8 TG= 384: 1147.3 TG= 512: 1123.8 TG=1024: 1136.9
+
+=== (3) block size for the blocked modes, at 12 and 48 SIMD-groups per core ===
+  blocked lane-contig 16B                     12 SG/core:    16 KB:  865.0    64 KB:  845.7   256 KB:  794.8  1024 KB:  740.3
+  blocked lane-contig 16B                     48 SG/core:    16 KB:  864.2    64 KB:  844.7   256 KB:  779.9  1024 KB:  696.2
+  blocked lane-contig 16B, 4 streams/lane     12 SG/core:    16 KB: 1072.2    64 KB:  939.2   256 KB:  864.3  1024 KB:  795.2
+  blocked lane-contig 16B, 4 streams/lane     48 SG/core:    16 KB: 1039.4    64 KB:  943.6   256 KB:  853.9  1024 KB:  792.9
+  blocked lane-contig 16B, 64B bursts         12 SG/core:    16 KB:  876.0    64 KB:  857.7   256 KB:  802.7  1024 KB:  688.6
+  blocked lane-contig 16B, 64B bursts         48 SG/core:    16 KB:  865.2    64 KB:  845.1   256 KB:  785.2  1024 KB:  678.1
+  blocked lane-interleaved 16B x4             12 SG/core:    16 KB: 1151.6    64 KB: 1143.9   256 KB: 1149.7  1024 KB: 1140.5
+  blocked lane-interleaved 16B x4             48 SG/core:    16 KB: 1061.4    64 KB: 1147.3   256 KB: 1149.6  1024 KB: 1129.0
+
+=== (4) p11 (1) again: cores needed to saturate the bus with ONE 384-thread threadgroup per core, best ILP kernels ===
+  cores:                                          1      2      4     21     32     42     53     64
+  blocked lane-contig 4B (p5b/D8)              26.3   53.3  102.7  491.6  675.0  776.0  825.6  853.2
+  blocked lane-contig 16B, 4 streams/lane      43.9   87.6  173.0  802.1  982.8  971.5  890.0  937.7
+  blocked lane-contig 16B, 64B bursts          36.2   71.6  139.4  591.3  754.7  823.6  835.7  858.3
+  blocked lane-interleaved 16B x4              60.5  119.9  232.8  959.4 1144.6 1137.2 1065.3 1110.0
+
+=== (5) p11 (3b) again: ALU-bound op B hidden inside the SATURATING bus-bound op A (mode 8, crew geometry), no barrier, both on all cores ===
+  A alone: 2.88 ms (1117.2 GB/s)
+  B = 1x work (alone  2.40 ms =  83% of A): serial   5.46 ms | no barrier A,B   5.16 ms (hidden  13% of B) | B,A   3.36 ms (hidden  88%)
+  B = 2x work (alone  4.76 ms = 165% of A): serial   7.72 ms | no barrier A,B   7.81 ms (hidden  -2% of B) | B,A   4.80 ms (hidden  61%)
+  B = 4x work (alone  9.53 ms = 330% of A): serial  12.28 ms | no barrier A,B  12.28 ms (hidden  -0% of B) | B,A   9.63 ms (hidden  28%)
+  B = 8x work (alone 18.90 ms = 655% of A): serial  22.05 ms | no barrier A,B  21.73 ms (hidden   2% of B) | B,A  19.70 ms (hidden  12%)
+
+=== (6) p11 (4) again: two SATURATING bus-bound ops, 1.6 GB each ===
+  serial    : A1 then A2, all cores each                    2.81 ms -> 1146.4 GB/s
+  no barrier: A1 || A2, all cores each (2x oversubscribed)   2.83 ms -> 1136.2 GB/s
+
+################ p13_decode_gemv ################
+Decode GEMV on Apple M5 Ultra (64 cores, crew = 768 SIMD-groups): y[T][17408] = x[T][5120] . W^T. Each measurement streams ~2.1 GB of packed weights
+(NCOPY identical matrices, one dispatch each, one command buffer, min-of-3). GB/s counts useful weight (+scale) bytes. err = max |y - y_ref| / max |y_ref|.
+
+=== FP8 E4M3, per-tensor scale: 89.1 MB packed per matrix (89.1 useful), 24 copies ===
+R   T  layout             | crew: 1 TG(384)/core [blocks/SG, tail eff] | 2 TG(384)/core         | 1 block/SG, TG=384     | 1 block/SG, TG=64      | err
+32  1  lane-contiguous    |  0.152 ms  584.5 GB/s [ 0.7,  71%] |  0.146 ms  609.3 GB/s |  0.159 ms  559.5 GB/s |  0.143 ms  625.1 GB/s | 9.0e-08
+16  1  lane-contiguous    |  0.166 ms  536.5 GB/s [ 1.4,  71%] |  0.150 ms  593.4 GB/s |  0.150 ms  594.2 GB/s |  0.147 ms  607.6 GB/s | 9.0e-08
+8   1  lane-contiguous    |  0.138 ms  646.6 GB/s [ 2.8,  94%] |  0.126 ms  707.0 GB/s |  0.127 ms  704.4 GB/s |  0.139 ms  639.5 GB/s | 9.0e-08
+4   1  lane-contiguous    |  0.140 ms  635.6 GB/s [ 5.7,  94%] |  0.123 ms  721.8 GB/s |  0.127 ms  702.7 GB/s |  0.124 ms  721.0 GB/s | 9.0e-08
+16  2  lane-contiguous    |  0.172 ms  517.3 GB/s [ 1.4,  71%] |  0.158 ms  564.4 GB/s |  0.158 ms  565.2 GB/s |  0.154 ms  577.7 GB/s | 1.2e-07
+8   4  lane-contiguous    |  0.172 ms  516.9 GB/s [ 2.8,  94%] |  0.160 ms  558.0 GB/s |  0.161 ms  553.6 GB/s |  0.161 ms  555.3 GB/s | 1.2e-07
+8   8  lane-contiguous    |  0.408 ms  218.2 GB/s [ 2.8,  94%] |  0.459 ms  194.0 GB/s |  0.464 ms  192.0 GB/s |  0.454 ms  196.2 GB/s | 1.2e-07
+32  1  lane-interleaved   |  0.173 ms  516.6 GB/s [ 0.7,  71%] |  0.172 ms  517.4 GB/s |  0.173 ms  516.6 GB/s |  0.168 ms  529.1 GB/s | 9.0e-08
+16  1  lane-interleaved   |  0.182 ms  488.6 GB/s [ 1.4,  71%] |  0.103 ms  864.3 GB/s |  0.103 ms  865.4 GB/s |  0.097 ms  914.2 GB/s | 9.0e-08
+8   1  lane-interleaved   |  0.137 ms  650.4 GB/s [ 2.8,  94%] |  0.110 ms  810.9 GB/s |  0.117 ms  765.0 GB/s |  0.100 ms  894.5 GB/s | 9.0e-08
+4   1  lane-interleaved   |  0.142 ms  626.8 GB/s [ 5.7,  94%] |  0.087 ms 1026.6 GB/s |  0.095 ms  937.2 GB/s |  0.107 ms  834.2 GB/s | 9.0e-08
+16  2  lane-interleaved   |  0.181 ms  492.6 GB/s [ 1.4,  71%] |  0.112 ms  792.8 GB/s |  0.112 ms  794.4 GB/s |  0.104 ms  857.9 GB/s | 1.2e-07
+8   4  lane-interleaved   |  0.186 ms  479.2 GB/s [ 2.8,  94%] |  0.144 ms  616.8 GB/s |  0.128 ms  697.7 GB/s |  0.139 ms  642.8 GB/s | 1.2e-07
+8   8  lane-interleaved   |  0.409 ms  217.8 GB/s [ 2.8,  94%] |  0.449 ms  198.6 GB/s |  0.450 ms  197.9 GB/s |  0.440 ms  202.7 GB/s | 1.2e-07
+
+=== NVFP4 (E2M1 + E4M3 scale per 16), 96 B per lane-row incl. 6 B pad: 53.5 MB packed per matrix (50.1 useful), 40 copies ===
+R   T  layout             | crew: 1 TG(384)/core [blocks/SG, tail eff] | 2 TG(384)/core         | 1 block/SG, TG=384     | 1 block/SG, TG=64      | err
+32  1  lane-contiguous    |  0.160 ms  313.2 GB/s [ 0.7,  71%] |  0.156 ms  322.0 GB/s |  0.156 ms  321.6 GB/s |  0.143 ms  349.7 GB/s | 9.3e-08
+16  1  lane-contiguous    |  0.159 ms  314.5 GB/s [ 1.4,  71%] |  0.148 ms  339.7 GB/s |  0.148 ms  339.1 GB/s |  0.125 ms  401.6 GB/s | 9.3e-08
+8   1  lane-contiguous    |  0.124 ms  405.1 GB/s [ 2.8,  94%] |  0.113 ms  443.2 GB/s |  0.119 ms  422.4 GB/s |  0.123 ms  408.0 GB/s | 9.3e-08
+4   1  lane-contiguous    |  0.121 ms  413.3 GB/s [ 5.7,  94%] |  0.117 ms  429.6 GB/s |  0.115 ms  434.3 GB/s |  0.117 ms  430.2 GB/s | 9.3e-08
+16  2  lane-contiguous    |  0.180 ms  279.1 GB/s [ 1.4,  71%] |  0.170 ms  295.4 GB/s |  0.170 ms  295.7 GB/s |  0.147 ms  340.3 GB/s | 9.6e-08
+8   4  lane-contiguous    |  0.203 ms  246.7 GB/s [ 2.8,  94%] |  0.212 ms  236.7 GB/s |  0.218 ms  229.7 GB/s |  0.213 ms  235.8 GB/s | 1.1e-07
+8   8  lane-contiguous    |  0.457 ms  109.8 GB/s [ 2.8,  94%] |  0.944 ms   53.1 GB/s |  0.948 ms   52.9 GB/s |  0.966 ms   51.9 GB/s | 1.2e-07
+32  1  lane-interleaved   |  0.163 ms  307.2 GB/s [ 0.7,  71%] |  0.164 ms  306.3 GB/s |  0.163 ms  306.8 GB/s |  0.154 ms  325.7 GB/s | 9.3e-08
+16  1  lane-interleaved   |  0.163 ms  306.8 GB/s [ 1.4,  71%] |  0.146 ms  343.6 GB/s |  0.148 ms  338.4 GB/s |  0.115 ms  435.5 GB/s | 9.3e-08
+8   1  lane-interleaved   |  0.125 ms  402.3 GB/s [ 2.8,  94%] |  0.102 ms  489.5 GB/s |  0.112 ms  449.3 GB/s |  0.111 ms  450.9 GB/s | 9.3e-08
+4   1  lane-interleaved   |  0.124 ms  403.8 GB/s [ 5.7,  94%] |  0.111 ms  451.2 GB/s |  0.104 ms  481.0 GB/s |  0.101 ms  497.3 GB/s | 9.3e-08
+16  2  lane-interleaved   |  0.186 ms  269.9 GB/s [ 1.4,  71%] |  0.174 ms  287.5 GB/s |  0.174 ms  287.5 GB/s |  0.128 ms  391.8 GB/s | 9.6e-08
+8   4  lane-interleaved   |  0.199 ms  252.5 GB/s [ 2.8,  94%] |  0.205 ms  244.4 GB/s |  0.205 ms  244.4 GB/s |  0.204 ms  245.9 GB/s | 1.1e-07
+8   8  lane-interleaved   |  0.444 ms  113.0 GB/s [ 2.8,  94%] |  0.952 ms   52.7 GB/s |  0.943 ms   53.2 GB/s |  0.976 ms   51.4 GB/s | 1.2e-07
+
+################ p14_tensor_ops ################
+matmul2d probe on Apple M5 Ultra (64 cores, Apple10 = 1): y[TM][17408] = x[TM][5120] . W^T; TM = T tokens (padded), TN rows of W per threadgroup, TK-wide K tiles, S SIMD-groups per threadgroup.
+
+=== gemm_fp8: FP8 weights dequantized tile by tile into threadgroup memory, then matmul2d: 89.1 MB per matrix, 24 copies per measurement (min-of-3); GB/s = weight (+scale) bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.190     470.3      7.53 | 1.6e-06
+  8   64  128 4  |     0.165     540.0      8.64 | 1.6e-06
+  8   32  64  2  |     0.179     497.8      7.96 | 1.6e-06
+  8   64  64  2  |     0.260     342.5      5.48 | 1.6e-06
+  8   64  64  1  |     0.429     208.0      3.33 | 1.6e-06
+  16  64  64  4  |     0.194     459.0     14.69 | 1.6e-06
+  32  64  64  4  |     0.211     422.0     27.01 | 1.6e-06
+  32  64  128 4  |     0.186     478.9     30.65 | 1.6e-06
+  32  128 64  4  |     0.305     292.5     18.72 | 1.6e-06
+  64  64  64  4  |     0.267     333.9     42.74 | 1.6e-06
+
+=== gemm_nvfp4: NVFP4 nibbles x E4M3 block scales dequantized into threadgroup memory, then matmul2d: 50.1 MB per matrix, 42 copies per measurement (min-of-3); GB/s = weight (+scale) bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.158     317.0      9.02 | 1.3e-06
+  8   64  128 4  |     0.159     314.3      8.94 | 1.3e-06
+  8   32  64  2  |     0.144     347.4      9.88 | 1.3e-06
+  8   64  64  2  |     0.195     257.7      7.33 | 1.3e-06
+  8   64  64  1  |     0.307     163.5      4.65 | 1.3e-06
+  16  64  64  4  |     0.160     313.1     17.81 | 1.3e-06
+  32  64  64  4  |     0.174     288.7     32.85 | 1.3e-06
+  32  64  128 4  |     0.175     285.7     32.51 | 1.3e-06
+  32  128 64  4  |     0.235     213.4     24.28 | 1.3e-06
+  64  64  64  4  |     0.277     180.7     41.13 | 1.3e-06
+
+=== gemm_half: half weights straight from device memory (accelerator upper bound): 178.3 MB per matrix, 12 copies per measurement (min-of-3); GB/s = weight (+scale) bytes streamed; TFLOP/s counts 2*TM*N*K ===
+  TM  TN  TK  S  | ms/matrix GB/s      TFLOP/s   | err (8 real rows)
+  8   64  64  4  |     0.261     683.8      5.47 | 1.6e-06
+  8   64  128 4  |     0.261     682.9      5.46 | 1.6e-06
+  8   32  64  2  |     0.235     759.1      6.07 | 1.6e-06
+  8   64  64  2  |     0.237     751.5      6.01 | 1.6e-06
+  8   64  64  1  |     0.245     727.5      5.82 | 1.6e-06
+  16  64  64  4  |     0.266     670.9     10.73 | 1.6e-06
+  32  64  64  4  |     0.239     746.0     23.87 | 1.6e-06
+  32  64  128 4  |     0.238     747.5     23.92 | 1.6e-06
+  32  128 64  4  |     0.241     740.7     23.70 | 1.6e-06
+  64  64  64  4  |     0.250     713.8     45.68 | 1.6e-06
+
+################ p15_frame_pacing ################
+p15: 64 cores; ALU dispatch calibrated to 1.00 ms (work=70041)
+p15: streaming dispatch of 252 MB: 0.28 ms (897 GB/s)
+vsync period from the baseline: 8.33 ms (120 Hz)
+
+=== heavy queue: ALU-bound (aluwork ~1 ms) dispatches, 3 command buffers in flight ===
+L ms     heavy queue                  frames  mean ms   p99 ms   max ms  late>=2vs        fps
+0        idle                            456     8.77    12.50    16.67      0.9%     114.0
+8        500 buffers, 8.0 ms each        652     6.17     8.33     8.33      0.0%     162.1
+16       251 buffers, 16.1 ms each       651     6.19     8.33     8.33      0.0%     161.6
+33       123 buffers, 33.1 ms each       660     6.18     8.33     8.33      0.0%     161.8
+66       63 buffers, 66.2 ms each        680     6.13     8.33     8.33      0.0%     163.0
+133      32 buffers, 133.5 ms each       693     6.16     8.33     8.33      0.0%     162.4
+
+=== heavy queue: bus-bound (streaming read of ~240 MB per dispatch) dispatches, 3 command buffers in flight ===
+L ms     heavy queue                  frames  mean ms   p99 ms   max ms  late>=2vs        fps
+0        idle                            397    10.03    16.67    20.84      4.8%      99.7
+8        612 buffers, 6.5 ms each        599     6.69    12.50    12.50      0.0%     149.4
+16       314 buffers, 12.8 ms each       613     6.58     8.33     8.33      0.0%     152.0
+33       153 buffers, 26.6 ms each       591     6.87    12.50    12.50      0.0%     145.6
+66       76 buffers, 54.0 ms each        531     7.72    12.50    12.50      0.0%     129.5
+133      40 buffers, 107.9 ms each       559     7.74    12.50    12.50      0.0%     129.2

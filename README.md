@@ -89,6 +89,7 @@ see the [model adapter design](docs/design/models.md) for supported structures a
 | M4 Pro, 16 GPU cores | Unmeasured native fallback |
 | M4 Max, 32 or 40 GPU cores | Unmeasured native fallback |
 | M5 Max, 32 GPU cores | Independent, unmeasured native fallback |
+| M5 Ultra, 64 GPU cores | Measured profile with the M5 matrix tile (NVFP4/INT4 from 2 rows, FP8/BF16 from 4) |
 
 Backend selection uses the chip name, GPU family, and core count. Unmeasured backends have no automatic
 megakernel fusion and keep the tensor accelerator disabled. See [chip backends](monolith/backends/metal/README.md)

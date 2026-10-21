@@ -15,6 +15,7 @@ configuration or autotuning cache.
 | `m5_pro` | [20 cores](m5_pro/config.json) | Existing measured settings preserved |
 | `m5_max_32c` | [32 cores](m5_max_32c/config.json) | Unmeasured native fallback |
 | `m5_max_40c` | [40 cores](m5_max_40c/config.json) | Measured GDN default and explicit attention/MLP/draft recipes preserved |
+| `m5_ultra_64c` | [64 cores](m5_ultra_64c/config.json) | Measured (`profile_writer` and probes, 96 GB): the matrix tile from 2 rows for NVFP4/INT4 and from 4 for FP8/BF16, v3 attention, lane order pinned by a paired A/B; no fusion recipes or kernel choices yet |
 
 A configuration can ship measured kernel choices (`kernel_choices`, a file beside it): the autotuner's cache
 entries from that chip for its decode programs, plus the prompt pass's 32-row tile geometry measured in the prompt
@@ -39,6 +40,7 @@ monolith/backends/metal/
   m4_pro/backend.py        # chip-owned Python hooks
   m5_pro/backend.py
   m5_max_32c/backend.py
+  m5_ultra_64c/backend.py
   m5_max_40c/
     backend.py, scheduling.py, validation.py
     config.json
@@ -52,6 +54,7 @@ kernels/
   m5_pro/
   m5_max_32c/
   m5_max_40c/
+  m5_ultra_64c/
 ```
 
 `Session` selects by chip name, GPU family **and** core count. A mismatched

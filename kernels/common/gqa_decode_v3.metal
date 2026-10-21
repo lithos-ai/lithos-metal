@@ -19,10 +19,11 @@
 // plain decode and an LM drafter's chain step); v2 keeps T > 1 and v1 the 32-row passes (decode-kernels.md §11).
 //
 // Macros: D (head dim, multiple of 32), NSG3 (SIMD-groups per threadgroup, D / (4·NSG3) slices per SIMD-group in the
-// fold: 32 → 1024 threads), STEP_STATE, LM_MODE / CHAIN_I as v1, PERM_OUT (the consumer tile's order). Params as v1
-// with n_sg = the threadgroups dispatched and pad1 = the gate rows' stride (0: out_stride). Buffers: 0 projection,
-// 1–2 caches, 3–4 RoPE tables, 5–6 norms, 7 out, 9 params, 10 the gate value [T, heads·D] (read when has_gate),
-// 15 StepState.
+// fold: 32 → 1024 threads), STEP_STATE, LM_MODE / CHAIN_I as v1, PERM_OUT (the consumer tile's order), EXACT_SUB (a
+// T-row prompt pass reproduces EXACT_SUB-row passes: each row pairs its keys only before its sub-pass's boundary).
+// Params as v1 with n_sg = the threadgroups dispatched and pad1 = the gate rows' stride (0: out_stride). Buffers: 0
+// projection, 1–2 caches, 3–4 RoPE tables, 5–6 norms, 7 out, 9 params, 10 the gate value [T, heads·D] (read when
+// has_gate), 15 StepState.
 #ifndef NSG3
 #define NSG3 32u
 #endif
@@ -30,6 +31,28 @@
 #define SINGLE_BLOCK 0
 #endif
 #define MRG_STRIDE (D + 4u)          // floats per partial in the fold buffer: o[D], m, d, then padding to 16 bytes
+
+#if EXACT_SUB
+// A T-row pass reproduces EXACT_SUB-row passes bit for bit (the compiler's exact_attention): the keys before this
+// row's sub-pass boundary [position, position + s0) are earlier sub-passes' new keys, so they come from this pass's
+// projection — the values those passes appended — and fold with the cached prefix, in the sub-pass's pairing.
+static inline void load_exact_k(device const ushort* qkvg, device const ushort* k_cache, device const float* k_norm,
+                                device const ushort* cos_t, device const ushort* sin_t, constant GqaParams& p,
+                                uint key, uint position, uint j, uint lane, thread float* kf) {
+  if (key < position) {
+    load_dl(k_cache + (key * p.kv_heads + j) * D + lane * DL, kf);
+  } else {
+    const uint tk = key - position;
+    load_dl(qkvg + tk * p.in_stride + p.k_off + j * D + lane * DL, kf);
+    norm_rope(kf, k_norm, cos_t + key * D, sin_t + key * D, p.eps, lane);
+  }
+}
+static inline void load_exact_v(device const ushort* qkvg, device const ushort* v_cache, constant GqaParams& p,
+                                uint key, uint position, uint j, uint lane, thread float* vf) {
+  if (key < position) load_dl(v_cache + (key * p.kv_heads + j) * D + lane * DL, vf);
+  else load_dl(qkvg + (key - position) * p.in_stride + p.v_off + j * D + lane * DL, vf);
+}
+#endif
 
 kernel void gqa_decode_v3(device const ushort* qkvg [[buffer(0)]], device ushort* k_cache [[buffer(1)]], device ushort* v_cache [[buffer(2)]],
                           device const ushort* cos_t [[buffer(3)]], device const ushort* sin_t [[buffer(4)]],
@@ -85,15 +108,27 @@ kernel void gqa_decode_v3(device const ushort* qkvg [[buffer(0)]], device ushort
     for (uint e = 0; e < DL; e++) o_run[e] = 0.0f;
     uint key = sgi;
 
+    // A prompt pass of EXACT_SUB-row sub-passes: the row folds as the sub-pass that would hold it. Cached keys
+    // pair only before that sub-pass's start and the rest of the pass's own keys follow one at a time.
+#if EXACT_SUB
+    const uint pos_r = position + (t / EXACT_SUB) * EXACT_SUB;
+#else
+    const uint pos_r = position;
+#endif
+
     // Two cached keys share one rescaling of the previous softmax state. Keep
     // score/probability BF16 boundaries; the tail and new causal keys follow below.
-    for (; key + NSG3 < position; key += 2u * NSG3) {
+    for (; key + NSG3 < pos_r; key += 2u * NSG3) {
       float scores[2u];
       float m_new = m_run;
 #pragma clang loop unroll(full)
       for (uint pair = 0; pair < 2u; pair++) {
         float kf[DL];
+#if EXACT_SUB
+        load_exact_k(qkvg, k_cache, k_norm, cos_t, sin_t, p, key + pair * NSG3, position, j, lane, kf);
+#else
         load_dl(k_cache + ((key + pair * NSG3) * p.kv_heads + j) * D + lane * DL, kf);
+#endif
         float dot = 0.0f;
         for (uint e = 0; e < DL; e++) dot = fma(q[e], kf[e], dot);
         dot = simd_sum(dot);
@@ -107,16 +142,25 @@ kernel void gqa_decode_v3(device const ushort* qkvg [[buffer(0)]], device ushort
       for (uint pair = 0; pair < 2u; pair++) {
         const float pr = exp(scores[pair] - m_new), pb = round_bf16(pr);
         float vf[DL];
+#if EXACT_SUB
+        load_exact_v(qkvg, v_cache, p, key + pair * NSG3, position, j, lane, vf);
+#else
         load_dl(v_cache + ((key + pair * NSG3) * p.kv_heads + j) * D + lane * DL, vf);
+#endif
         d_run += pr;
         for (uint e = 0; e < DL; e++) o_run[e] = fma(pb, vf[e], o_run[e]);
       }
       m_run = m_new;
     }
-    for (; key < position; key += NSG3) {
+    for (; key < pos_r; key += NSG3) {
       float kf[DL], vf[DL];
+#if EXACT_SUB
+      load_exact_k(qkvg, k_cache, k_norm, cos_t, sin_t, p, key, position, j, lane, kf);
+      load_exact_v(qkvg, v_cache, p, key, position, j, lane, vf);
+#else
       load_dl(k_cache + (key * p.kv_heads + j) * D + lane * DL, kf);
       load_dl(v_cache + (key * p.kv_heads + j) * D + lane * DL, vf);
+#endif
       float dot = 0.0f;
       for (uint e = 0; e < DL; e++) dot = fma(q[e], kf[e], dot);
       dot = simd_sum(dot);

@@ -40,6 +40,17 @@ def test_exact_attention_marks_chunked_cores_and_their_folds():
         assert p.to_json() == before.to_json()
 
 
+def test_exact_attention_marks_the_v3_core_without_a_partial_workspace():
+    def attention(macros):
+        return Program({'core': KernelSpec('', 'gqa_decode_v3', dict(macros, STEP_STATE='1'))}, {},
+                       [OpSpec('core', [], (512, 1, 1), (1024, 1, 1))])
+    p = exact_attention(attention({}), 128)
+    assert p.kernels[p.ops[0].kernel].macros['EXACT_SUB'] == '128u'
+    assert 'EXACT_SUB' not in attention({}).kernels['core'].macros
+    before = attention({'LM_MODE': '2', 'CHAIN_I': '2u'})
+    assert exact_attention(copy.deepcopy(before), 128).to_json() == before.to_json()
+
+
 def test_large_projection_policy_is_chip_and_shape_specific(monkeypatch):
     from monolith.backends.metal.m5_max_40c import prefill
     monkeypatch.setattr(prefill, 'packed_nvfp4_projection', lambda *args: None)

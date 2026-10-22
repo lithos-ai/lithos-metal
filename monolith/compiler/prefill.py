@@ -505,14 +505,16 @@ def device_attention_tiles(program, *, qm=32, kn=128, ks=None, score_bf16=False)
 def exact_attention(program, rows):
     """Make a prompt program's attention reproduce passes of ``rows`` rows bit for bit: the run-time chunk rule
     (``pick_chunk``) depends on the pass's context, so the cores and folds of the chunked attention take each row's
-    chunking from the ``rows``-row pass that row would be in (``EXACT_SUB``). Fixed-chunk kernels (v2, the matrix
-    attention) already sum every row the same way; a workspace shared with any other core is left alone."""
+    chunking from the ``rows``-row pass that row would be in (``EXACT_SUB``). v3 has no chunks but pairs cached keys
+    only before its pass's start, so its kernel takes the same macro and re-roots that boundary per row. Fixed-chunk
+    kernels (v2, the matrix attention) already sum every row the same way; a workspace shared with any other core is
+    left alone."""
     cores, merges = {}, {}
     for op in program.ops:
         k = program.kernels[op.kernel]
         if k.function == 'gqa_merge':
             merges.setdefault(dict((s, n) for s, n, _ in op.bindings).get(0), []).append(op)
-        elif k.function.startswith('gqa_decode'):
+        elif k.function == 'gqa_decode':
             cores.setdefault(dict((s, n) for s, n, _ in op.bindings).get(7), []).append(op)
 
     def chunked(op, function):
@@ -531,5 +533,15 @@ def exact_attention(program, rows):
                 kernel.macros['EXACT_SUB'] = f'{rows}u'
                 program.kernels[key] = kernel
             op.kernel = key
+    # v3 is core and merge in one dispatch and has no partial workspace, so its kernel alone carries EXACT_SUB.
+    for op in program.ops:
+        if not chunked(op, 'gqa_decode_v3'):
+            continue
+        key = op.kernel+f'.exact{rows}'
+        if key not in program.kernels:
+            kernel = copy.deepcopy(program.kernels[op.kernel])
+            kernel.macros['EXACT_SUB'] = f'{rows}u'
+            program.kernels[key] = kernel
+        op.kernel = key
     program.kernels = {op.kernel: program.kernels[op.kernel] for op in program.ops}
     return program

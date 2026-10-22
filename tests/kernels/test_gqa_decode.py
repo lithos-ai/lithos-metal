@@ -27,9 +27,10 @@ def dev():
 
 
 class Cfg:
-    def __init__(self, heads, kv, d, rot, ctx_max, t_max, chunk=64, rb=4, gate=True, v2=False, n_tg=None, steal=False, v3=False, nsg3=None, mma=False, step_state=False, lm_mode=0, adaptive=False, single_block=False, qk_norm=True, direct=False):
+    def __init__(self, heads, kv, d, rot, ctx_max, t_max, chunk=64, rb=4, gate=True, v2=False, n_tg=None, steal=False, v3=False, nsg3=None, mma=False, step_state=False, lm_mode=0, adaptive=False, single_block=False, qk_norm=True, direct=False, exact_sub=0):
         self.heads, self.kv, self.d, self.rot, self.ctx_max, self.t_max = heads, kv, d, rot, ctx_max, t_max
         self.direct = direct
+        self.exact_sub = exact_sub
         self.mma, self.step_state, self.lm_mode = mma, step_state, lm_mode
         self.single_block = single_block
         self.adaptive = adaptive
@@ -76,7 +77,8 @@ class Harness:
             if cfg.direct:
                 self.p_prepare = nt.Pipeline(lib, "gqa_prepare_mma")
         elif cfg.v3:
-            lib = library(kernels.gqa_source(v3=True), dict(kernels.gqa_v3_macros(cfg.d, nsg=cfg.nsg3), SINGLE_BLOCK=str(int(cfg.single_block))))
+            lib = library(kernels.gqa_source(v3=True), dict(kernels.gqa_v3_macros(cfg.d, nsg=cfg.nsg3), SINGLE_BLOCK=str(int(cfg.single_block)),
+                                                         **({'EXACT_SUB': f"{cfg.exact_sub}u"} if cfg.exact_sub else {})))
             self.p_dec, self.p_merge = nt.Pipeline(lib, "gqa_decode_v3"), None
             assert self.p_dec.max_threads_per_threadgroup >= cfg.nsg3 * 32
         elif cfg.v2:
@@ -127,7 +129,8 @@ class Harness:
         if getattr(c, "specialize", False) and not getattr(self, "specialized", False):
             source = kernels.gqa_source(v2=c.v2, v3=c.v3, mma=c.mma)
             if c.v3:
-                macros = dict(kernels.gqa_v3_macros(c.d, nsg=c.nsg3), SINGLE_BLOCK=str(int(c.single_block)))
+                macros = dict(kernels.gqa_v3_macros(c.d, nsg=c.nsg3), SINGLE_BLOCK=str(int(c.single_block)),
+                              **({'EXACT_SUB': f"{c.exact_sub}u"} if c.exact_sub else {}))
             elif c.v2:
                 macros = kernels.gqa_v2_macros(c.d, rmax=c.rows_max, rg=c.rb)
             else:
@@ -493,6 +496,29 @@ def test_exact_sub_reproduces_shorter_passes(dev):
     proj = _random_proj(rng, cfg, t)
     sub.set_caches(k, v)
     ref = np.concatenate([sub.step(proj[s0:s0 + 64], position + s0) for s0 in range(0, t, 64)])
+    whole.set_caches(k, v)
+    got = whole.step(proj, position)
+    assert np.array_equal(got, ref)
+    for a, b in zip(whole.caches(), sub.caches()):
+        assert np.array_equal(a, b)
+
+
+@pytest.mark.parametrize("d,rot,nsg,sub_rows", [(128, 64, 32, 128), (32, 32, 8, 64)])
+def test_v3_exact_sub_reproduces_shorter_passes(dev, d, rot, nsg, sub_rows):
+    """v3's EXACT_SUB = S: a T-row pass equals T / S passes of S rows bit for bit (outputs and appended caches). Its
+    cached pairs end at the pass's start, so a row of the large pass pairs only before its own sub-pass's boundary."""
+    cfg = Cfg(heads=8, kv=2, d=d, rot=rot, ctx_max=1024, t_max=256, v3=True, nsg3=nsg)
+    ecfg = Cfg(heads=8, kv=2, d=d, rot=rot, ctx_max=1024, t_max=256, v3=True, nsg3=nsg, exact_sub=sub_rows)
+    rng = np.random.default_rng(17)
+    qn, kn = _norms(rng, cfg.d)
+    sub, whole = Harness(dev, cfg, qn, kn), Harness(dev, ecfg, qn, kn)
+    position, t = 600, 256
+    k = rbf(rng.standard_normal((cfg.ctx_max, cfg.kv, cfg.d)) * 0.5)
+    v = rbf(rng.standard_normal((cfg.ctx_max, cfg.kv, cfg.d)))
+    k[position:], v[position:] = 0, 0
+    proj = _random_proj(rng, cfg, t)
+    sub.set_caches(k, v)
+    ref = np.concatenate([sub.step(proj[s0:s0 + sub_rows], position + s0) for s0 in range(0, t, sub_rows)])
     whole.set_caches(k, v)
     got = whole.step(proj, position)
     assert np.array_equal(got, ref)

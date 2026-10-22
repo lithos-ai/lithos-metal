@@ -15,8 +15,8 @@ def _info(fmt="nvfp4", n=256, k=4096):
     return pack_spec(random_spec(fmt, n, k, np.random.default_rng(0)), PackLayout(rows=16))[1]
 
 
-@pytest.mark.parametrize("backend,layout", [("m3_pro", "apple9"), ("m3_max_30c", "apple9"), ("m4_pro", "apple9"),
-                                            ("m5_pro", "apple10"), ("m5_max_40c", "apple10")])
+@pytest.mark.parametrize("backend,layout", [("m3_pro", "apple9"), ("m3_max_30c", "apple9"), ("m3_max_40c", "apple9"),
+                                            ("m4_pro", "apple9"), ("m5_pro", "apple10"), ("m5_max_40c", "apple10")])
 def test_the_backend_picks_the_layout(backend, layout):
     with using_backend(backend):
         assert kernels.coop_layout() == layout

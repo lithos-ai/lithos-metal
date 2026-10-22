@@ -19,5 +19,5 @@ def is_available() -> bool:
 __all__ = ["is_available"]
 if _native is not None:
     from .engine import Engine, StepReport   # noqa: E402,F401
-    from .program import BufferSpec, KernelSpec, OpSpec, Program   # noqa: E402,F401
-    __all__ += ["Engine", "StepReport", "BufferSpec", "KernelSpec", "OpSpec", "Program"]
+    from .program import BufferSpec, HostPoint, KernelSpec, OpSpec, Program   # noqa: E402,F401
+    __all__ += ["Engine", "StepReport", "BufferSpec", "HostPoint", "KernelSpec", "OpSpec", "Program"]

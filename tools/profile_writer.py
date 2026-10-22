@@ -105,6 +105,8 @@ def measure(*, shape: Tuple[int, int] = (17408, 5120), formats: Sequence[str] = 
                 try:
                     r = b.run(fmt, n, k, rows=16, t=t, lane_order=lane, copies=copies, reps=reps, **geo)
                 except Exception as e:  # noqa: BLE001 — a geometry the kernel refuses (register budget) is simply not a candidate
+                    if "shader validation:" in str(e):   # an out-of-bounds access is not a refusal
+                        raise
                     log(f"shader {fmt} T={t} {name}: skipped ({e})")
                     continue
                 if r["ok"] is False:
@@ -131,6 +133,8 @@ def measure(*, shape: Tuple[int, int] = (17408, 5120), formats: Sequence[str] = 
                     m["tile_ms"][fmt][tm], m["tile_gbps"][fmt][tm] = r["ms"], r["gbps"]
                     log(f"tile   {fmt:12s} TM={tm}: {r['ms']:.3f} ms ({r['gbps']:.0f} GB/s) = {r['ms'] / m['shader_ms'][fmt][1]:.2f}x the T=1 shader pass")
         except Exception as e:  # noqa: BLE001
+            if "shader validation:" in str(e):
+                raise
             m["tile_ms"], m["tile_error"] = {}, str(e)
             log(f"tile: not available on this device ({e})")
     # 5. the attention kernels v1, v2 and v3 over the contexts and T
@@ -145,6 +149,8 @@ def measure(*, shape: Tuple[int, int] = (17408, 5120), formats: Sequence[str] = 
                         r = gqa_bench.run(b.dev, heads, kv, d, ctx, t, 64, min(4, (heads // kv) * t) if kind == "v2" else 4, reps,
                                           v2=kind == "v2", v2_tg=2, v3=kind == "v3")
                     except Exception as e:  # noqa: BLE001
+                        if "shader validation:" in str(e):
+                            raise
                         log(f"attention {kind} ctx={ctx} T={t}: skipped ({e})")
                         continue
                     m["attention_ms"][kind][(ctx, t)] = r["ms"]

@@ -6,22 +6,29 @@ scale against a block of zero activations, NaN and infinite activations) and run
 the negative control with ``cuda_nan`` and ``cuda_nan_f16`` taken out of the kernel sources (``basalt_fp.metal``, which
 defines them, unchanged). ``check`` then requires that every planted value is NaN and sm_120's, that the control
 stores another NaN there, and that the rewrite changes nothing else: the same values are NaN in both runs, and every
-other value has the same bits. The drafter experts' stores have their own tests (test_basalt_s2_experts.py)."""
+other value has the same bits. The drafter experts' stores have their own tests (test_basalt_s2_experts.py). The
+n-gram block's (basalt_gr_norm.metal, basalt_ple.metal) plant a quiet NaN in one input and also require that it reaches
+exactly the values it must (the non-finite count) and that every other value keeps the bits of the run without it."""
 
 import numpy as np
 import pytest
 
 from monolith import kernels
+from tests.basalt_ple_ref import D, EPS, H, HIST, N, ROWS, nonfinite
 from tests.kernels import basalt_emu as emu
 from tests.kernels import basalt_gpu as gpu
+from tests.kernels import basalt_ple_gpu as ple_gpu
 from tests.kernels.test_basalt_experts import Call
 from tests.kernels.test_basalt_mmvq import SCALES, weights
+from tests.kernels.test_basalt_ple import block
 from tests.kernels.test_basalt_q5k_head import weights as q5k_weights
 
 F32 = np.float32
 NAN16, INF16 = 0x7E00, 0x7C00        # an fp16 NaN and +inf, planted as weight or activation scales
+QNAN = 0x7FC00000                    # the quiet NaN planted in the n-gram block's inputs
 SOURCES = ("basalt_q8_1_source", "basalt_mmvq_source", "basalt_experts_source", "basalt_dequant_source",
-           "basalt_mmvf_source", "basalt_dense_tc_source", "basalt_q5k_head_source")
+           "basalt_mmvf_source", "basalt_dense_tc_source", "basalt_q5k_head_source", "basalt_gr_norm_source",
+           "basalt_ple_source")
 
 
 @pytest.fixture
@@ -310,3 +317,68 @@ def test_q5k_proxy_score(hw):
     at = np.zeros_like(cand, bool)
     at[1, 0, 0] = True
     check(cand, ccand, at)
+
+
+# ---- the n-gram block ----------------------------------------------------------------------------------------------
+
+def exactly(got, ctl, clean, at):
+    """``check``, then the comparison helper's non-finite count over ``got`` (``nonfinite``, ple_parity.cpp:52-57)
+    equal to the size of ``at``, and every value outside ``at`` with the bits of the run without the NaN, ``clean``.
+    Returns the count."""
+    n = check(got, ctl, at)
+    assert nonfinite(got) == n, (
+        "X-NF (spec T§8), \"The comparison helper's non-finite count over result must equal the size of that set\": "
+        f"{nonfinite(got)} non-finite values, {n} reached")
+    g, c = (np.ascontiguousarray(a, F32).view(np.uint32) for a in (got, clean))
+    assert np.array_equal(g[~at], c[~at]), "a value the NaN does not reach changed its bits"
+    return n
+
+
+@pytest.mark.parametrize("row", [0, 4, 8])
+def test_ple_conv(hw, row):
+    """The 12-row chain (basalt_ple_gpu.chain) on the synthetic fixture with history element (channel i, row ``row``)
+    a quiet NaN: only basalt_ple_conv reads the history, and row t's taps read rows t, t + 3 and t + 6 of the initial
+    history though it advances in place, so the NaN reaches exactly conv[t][i] and result[t][i] for t in {row,
+    row - 3, row - 6} ∩ [0, 12) (plan §4.8: "each count equals that set's size, and those values are 0x7fffffff")."""
+    fx, _, clean = block("synthetic")
+    i = 2 * N + 777                                                     # a channel of stream 2
+    hist = np.ascontiguousarray(fx.hist.T).ravel()                      # a copy: row r of channel c at c * 9 + r
+    hist.view(np.uint32)[i * HIST + row] = QNAN
+    run = lambda: ple_gpu.chain(fx.emb, fx.hidden, hist, fx)
+    got, ctl = run(), hw(run)
+    reached = [t for t in (row, row - 3, row - 6) if 0 <= t < ROWS]
+    at = np.zeros((ROWS, D), bool)
+    at[reached, i] = True
+    for k in ("conv", "result"):
+        assert exactly(got[k], ctl[k], clean[k], at) == len(reached), (
+            f"plan §4.8, \"each count equals that set's size\": {k}, t in {reached}")
+
+
+def test_ple_norm(hw):
+    """basalt_gr_norm at the block's call (4 groups of 2560, 4 gamma rows, eps f32(1e-6)) with element 1234 of group 2
+    a quiet NaN: the group's sum and scale are NaN, so it reaches exactly that group's 2560 outputs, and every other
+    group keeps its bits."""
+    rng = np.random.default_rng(10)
+    x, w = rng.standard_normal((H, N)).astype(F32), (1 + 0.1 * rng.standard_normal(D)).astype(F32)
+    clean = ple_gpu.gr_norm(x, w, H, N, H, EPS)
+    x.view(np.uint32)[2, 1234] = QNAN
+    run = lambda: ple_gpu.gr_norm(x, w, H, N, H, EPS)
+    got, ctl = run(), hw(run)
+    at = np.zeros((H, N), bool)
+    at[2] = True
+    assert exactly(got, ctl, clean, at) == N, (
+        "plan §4.8, \"It reaches exactly that group's 2560 outputs; every other group keeps its bits.\"")
+
+
+def test_ple_broadcast(hw):
+    """basalt_ple_broadcast with value[1234] a quiet NaN: it reaches exactly gated[s][1234] for the four streams s."""
+    rng = np.random.default_rng(11)
+    value, gate = rng.standard_normal(N).astype(F32), rng.uniform(0.1, 0.9, H).astype(F32)
+    clean = ple_gpu.broadcast(value, gate).reshape(H, N)
+    value.view(np.uint32)[1234] = QNAN
+    run = lambda: ple_gpu.broadcast(value, gate).reshape(H, N)
+    got, ctl = run(), hw(run)
+    at = np.zeros((H, N), bool)
+    at[:, 1234] = True
+    assert exactly(got, ctl, clean, at) == H, (
+        "plan §4.8, \"It reaches exactly `gated[s][j]` for the four streams s.\"")

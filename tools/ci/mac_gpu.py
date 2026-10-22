@@ -8,8 +8,10 @@
    module), the oracle and serving extras and mlx-lm. The module must import (``monolith.runtime.is_available()``).
 2. The pinned checkpoints under ``<root>/models`` (``tools/ci/provision.py``, every file re-hashed), exported as
    ``$MONOLITH_MODELS``, and the pinned reference implementations checked out afresh under ``<root>/references``
-   (``REFERENCES``). The tests run as the runner's user and can write all of these, so a run trusts nothing an earlier
-   run left behind except files whose hashes it checks.
+   (``REFERENCES``); for every tier, the n-gram block's two real-weight byte ranges fetched afresh under
+   ``<root>/fixtures/ple`` (``tests/contract/fixtures/make_basalt_ple_fixture.py --full``), exported as
+   ``$BASALT_PLE_FIXTURE``. The tests run as the runner's user and can write all of these, so a run trusts nothing an
+   earlier run left behind except files whose hashes it checks.
 3. One pytest run per tier, each writing JUnit XML. Every tier but the contract tier runs inside
    ``$LITHOS_CI_GPU_WRAPPER`` when the runner sets one: a command prefix that serializes GPU work on a shared machine.
 4. The skip audit. A test may skip only for a reason ``ALLOWED_SKIPS`` lists (the chip lacks a feature, a case the
@@ -110,6 +112,14 @@ def fetch_references(root: Path) -> Dict[str, str]:
         run(["git", "-C", str(path), "checkout", "-q", "FETCH_HEAD"])
         env[var] = str(path)
     return env
+
+
+def fetch_ple_fixture(root: Path, py: Path, repo: Path) -> Dict[str, str]:
+    """Fetch the n-gram block's two real-weight byte ranges afresh under ``<root>/fixtures/ple`` with the checkout's
+    writer (the last run's tests could write to the last copy); returns the environment pointing at them."""
+    path = fresh_dir(root, "fixtures/ple")
+    run([str(py), str(repo / "tests/contract/fixtures/make_basalt_ple_fixture.py"), "--full", str(path)])
+    return {"BASALT_PLE_FIXTURE": str(path)}
 
 
 def tier_env(models: Path, references: Dict[str, str], shader_validation: bool) -> Dict[str, str]:
@@ -236,6 +246,7 @@ def main(argv: List[str] | None = None) -> int:
             # --rehash: the last run's tests could rewrite a file and its verification record alike
             run([str(py), str(repo / "tools/ci/provision.py"), "--dest", str(models), "--rehash"])
             references = fetch_references(args.root)
+        references.update(fetch_ple_fixture(args.root, py, repo))     # every tier reads it, the contract tier too
         env = tier_env(models, references, args.shader_validation)
         for tier in tiers:
             result["tiers"].append(run_tier(tier, py, repo, env, report, args.tier_timeout))

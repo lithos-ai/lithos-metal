@@ -105,9 +105,10 @@ ones this pack runs.
    `docs/research/basalt-nvcc/` (`matvec.md` for the q8_1 quantizers and `native_mmvq`, `hc_fused.md` for the
    hyper-connection read, its router and the int8 copies, `native_gr_postops.md` for the hyper-connection write,
    `dequant.md` for the GGUF dequantizers, `experts.md` for the routed experts, `bf16.md` for the BF16 GEMVs,
-   `dense_tc.md` for the window projections, `q5k_head.md` for the Q5_K head, `s2_experts.md` for the drafter's
-   experts, `nan.md` for the NaN each store holds; the CPU expert tier runs on the host rather than the GPU, so its
-   authority is glibc and gcc instead, recorded in `docs/research/basalt-cpu-expf.md`): which multiply-adds fuse and
+   `dense_tc.md` for the window projections, `q5k_head.md` for the Q5_K head, `s2_experts.md` for the drafter's experts,
+   `ple.md` for the n-gram block, `nan.md` for the NaN each store holds; the CPU expert tier runs on the host rather
+   than the GPU, so its authority is glibc and gcc instead, recorded in `docs/research/basalt-cpu-expf.md`): which
+   multiply-adds fuse and
    with which operands, the operand order of each `a * b - c * d`, where `.FTZ` flushes subnormals, and each
    approximate instruction. The source alone does not settle it: nvcc's default `--fmad=true` fuses where the source
    writes no FMA, `ptxas` fuses further than the PTX (the Q4_K and Q5_K returns, `matvec.md` section 5) and replaces an
@@ -465,6 +466,9 @@ same rule holds for any other ported kernel whose basalt tests end in a comparis
 | The attention's output gate, `native_qsa_gate_apply`'s arithmetic, which the merge reproduces (`src/kernels/cuda/qsa_dec_attn.cu:308-319`) | only a reference side (`src/kernels/qsa_dec_attn_parity.cpp:131`); `qsa_parity`'s gate check runs the fp16 `qsa_gate_apply` (`src/kernels/qsa_parity.cpp:1142-1154`) | `shared_expert_parity`'s rule for its sigmoid gate, `rel < 2e-6` (`src/kernels/shared_expert_parity.cpp:372`) |
 | `native_qsa_rms_norm_weighted`, the query and key norms with fp16 KV (`src/core/verify.cpp:1340-1341`; drafter, `src/core/mtp.cpp:727`, `:764`, `:792`) | only a reference side (`src/kernels/qsa_dec_fused_parity.cpp:111`, `:123`, `:125`) | `qsa_parity`'s rule for the pooled keys: `if (!(worst <= 1e-6)) {` (`src/kernels/qsa_parity.cpp:611`) |
 | `native_qsa_indexer_append`, the indexer key's norm, RoPE and pooling with fp16 KV (`src/core/verify.cpp:1478-1483`), which the commit replays (`native_qsa_indexer_commit_layers`, `:2134`) | `qsa_parity` compares it bitwise with the prompt path's batched append (`src/kernels/qsa_parity.cpp:1428-1437`) and its position-0 key with the table indexer (`:1495`); only the table indexer, `indexer_key_append`, meets a double reference (`:581`, `:611`) | the pooled keys against a double-precision reference with `rope_parity`'s bound for the native rotation: `if (!(rel <= 3e-3)) ++agree_bad;` (`src/kernels/rope_parity.cpp:400`) |
+| `native_gr_rms_norm_weighted`: the n-gram block's three grouped norms (`src/kernels/cuda/native_ple_postops.cu:352-353`, `:358`) | `ple_parity`'s norm check runs the legacy `gnorm_kernel`, because the test never calls `ple_set_native_postops` (`src/kernels/ple_parity.cpp:892-912`). `ple_win_parity` runs it only as the reference side (`src/kernels/ple_win_parity.cpp:109`), and `gr_parity` sees it only downstream of a GEMV (`src/kernels/gr_parity.cpp:535`, `:752`) | against a double-precision norm: `const bool wired = le(rel, 2e-6) && nonfinite(actual_result.data(), hcd) == 0;` (`src/kernels/ple_parity.cpp:910`); also bit for bit against a numpy emulation of `ple.md` |
+| `native_ple_postops`: the n-gram gate, broadcast, convolution and residual, once per window row (`src/kernels/cuda/ple.cu:320-326`) | `ple_parity`'s block checks run the legacy chain (`src/kernels/ple_parity.cpp:740-783`), and `ple_win_parity` compares it with the window kernel (`src/kernels/ple_win_parity.cpp:109`) | per stage and per row, against a double-precision transcription of the block: `const bool ok = le(rel, 1e-4) && nf == 0;` (`src/kernels/ple_parity.cpp:1119`); also bit for bit against the numpy emulation |
+| The n-gram history's per-row snapshot and the commit's restore: `copy_from_mapped` (`src/core/verify.cpp:1123`) and `copy_indexed` (`:2137`; `src/kernels/cuda/verify_kernels.cu:506-512`) | no test runs either on the history; `copy_from_mapped` only stages another test's input (`src/kernels/qsa_dec_fused_parity.cpp:113`) | byte for byte against the source bytes and the host's nine-row shift, for every window width and every kept count, the precedent being `if (ra != rb) {` (`src/kernels/dec_commit_parity.cpp:177`) |
 
 The ported `route_window_parity` also runs the shapes this path uses, 2560 to 128 and 2560 to 512.
 

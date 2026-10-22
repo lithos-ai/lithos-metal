@@ -113,10 +113,17 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
 - `kernels/common/basalt_q5k_head.metal` — through basalt's `src/kernels/cuda/q5k_head.cu` (below), whose Q5_K dot
   repeats `native_mmvq.cu`'s, an adaptation of `ggml/src/ggml-cuda/vecdotq.cuh` and `ggml/src/ggml-common.h` (MIT): the
   Q5_K block layout, its scale unpacking and the `vec_dot_q5_K_q8_1` integer dot. License: `third_party/GGML-LICENSE`.
+- `kernels/common/basalt_gr_norm.metal` — through basalt's `src/kernels/cuda/native_gr_norm.cu` (below), which adapts
+  `ggml/src/ggml-cuda/{norm.cu,common.cuh}` (MIT): the weighted RMSNorm's per-thread squares and its warp and block
+  reductions. License: `third_party/GGML-LICENSE`.
+- `kernels/common/basalt_ple.metal` — through basalt's `src/kernels/cuda/native_ple_postops.cu` (below), which adapts
+  `ggml/src/ggml-cuda/{reduce_rows.cuh,sumrows.cu,unary.cu}` (MIT): the gate's 512-thread row sum with its eight
+  partial lanes, and the SiLU. License: `third_party/GGML-LICENSE`.
 - `tests/kernels/basalt_emu.py` — through basalt (below): the `kvalues_iq4nl` table of `ggml/src/ggml-common.h`,
-  copied, `get_scale_min_k4` of `ggml/src/ggml-quants.c`, the q8_1 rule of `ggml/src/ggml-cuda/quantize.cu` and the
-  MMVF accumulation and reductions of `ggml/src/ggml-cuda/mmvf.cu`, re-implemented in numpy (MIT). License:
-  `third_party/GGML-LICENSE`.
+  copied, `get_scale_min_k4` of `ggml/src/ggml-quants.c`, the q8_1 rule of `ggml/src/ggml-cuda/quantize.cu`, the
+  MMVF accumulation and reductions of `ggml/src/ggml-cuda/mmvf.cu`, the RMSNorm of `ggml/src/ggml-cuda/norm.cu`, the
+  row sum of `ggml/src/ggml-cuda/reduce_rows.cuh` and the SiLU of `ggml/src/ggml-cuda/unary.cu`, re-implemented in
+  numpy (MIT). License: `third_party/GGML-LICENSE`.
 - `runtime/src/basalt_cpu.h`, `runtime/src/basalt_cpu.cpp` and `tests/kernels/basalt_cpu_emu.py` — through basalt's
   `src/kernels/cpu/expert.cpp` (below), which reads `ggml/src/ggml-common.h`'s `block_q2_0` and
   `ggml/src/ggml-quants.c`'s `dequantize_row_q2_0` (MIT): the 18-byte block layout (an fp16 scale, then 64 codes two
@@ -159,7 +166,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   IEEE-built `warp_sum` and the SwiGLU's `__expf(-g)` (`expf_neg`), in the arithmetic nvcc compiles for them
   (`docs/research/basalt-nvcc/experts.md`); from `native_mmvq.cu:180-240` and `:897-937`, the Q5_K decode and dot
   (`q5k_load`, `q5k_dot`) that `native_mmvq` and `src/kernels/cuda/q5k_head.cu` share, and from `q5k_head.cu`, a
-  fast-math file's `__expf` (`expf_ftz`; `docs/research/basalt-nvcc/q5k_head.md`). License:
+  fast-math file's `__expf` (`expf_ftz`; `docs/research/basalt-nvcc/q5k_head.md`); and from
+  `src/kernels/cuda/native_gr_norm.cu:72` and `src/kernels/cuda/native_ple_postops.cu:63`, `rsqrtf` and `sqrtf` as nvcc
+  compiles them in a fast-math file (`rsqrtf_ftz`, `sqrtf_ftz`; `docs/research/basalt-nvcc/ple.md`). License:
   `third_party/BASALT-LICENSE`.
 - `kernels/common/basalt_q8_1.metal` — adapted from `src/kernels/cuda/native_mmvq.cu:146-177` (the native and SwiGLU
   quantizers), `src/kernels/cuda/iq_kernels.cu:1880-1900` (the IEEE quantizer) and `include/basalt/kernels/q8_1_finite.hpp`
@@ -199,6 +208,15 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   compiles for them (`docs/research/basalt-nvcc/bf16.md`); `monolith/kernels.py`'s `basalt_mmvf_block`,
   `basalt_mmvf_macros` and `basalt_mmvf_cols` transcribe `mmvf_block_size` and the launchers' routing and checks
   (`native_bf16.cu:124-203`). License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_gr_norm.metal` — adapted from `src/kernels/cuda/native_gr_norm.cu:37-100` (MIT):
+  `norm_warp_sum`, `weighted_rms_norm` and `native_gr_rms_norm_weighted`'s block choice, written in the rounding
+  sequence nvcc compiles for them (`docs/research/basalt-nvcc/ple.md`). License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_ple.metal` — adapted from `src/kernels/cuda/native_ple_postops.cu:37-89`,
+  `src/kernels/cuda/ple.cu:46-52`, `src/kernels/cuda/elementwise.cu:222-227` and
+  `src/kernels/cuda/verify_kernels.cu:506-512` (MIT): `gate_kernel`, `broadcast_kernel` and `conv_residual_kernel`,
+  written in the rounding sequence nvcc compiles for them (`docs/research/basalt-nvcc/ple.md`); `history_advance_kernel`
+  and `copy_from_mapped_kernel`, word for word; and `copy_indexed_kernel` with the port's bound: an index past the last
+  snapshot slot restores slot 7, where basalt's kernel has none. License: `third_party/BASALT-LICENSE`.
 - `monolith/kernels.py` — adapted from `src/kernels/cuda/dense_tc.cu:35-42`, `:52-54`, `:698-702` and `:1017-1105`
   (MIT): `Fmt<TYPE>::SB` (`DENSE_TC_SB`), and in `basalt_dense_tc_variant` the variant rule of `launch<TYPE>` with
   `one_ok`, `one_row_stride` and `one_smem_bytes<TYPE, 24>`; `dense_tc_supported` (`_dense_tc_check`) and
@@ -211,6 +229,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   top-1's grid rule (`basalt_q5k_head_grid`), and the proxy's `tiles`, `bytes` and `scratch_bytes`
   (`basalt_q5k_proxy_tiles`, `basalt_q5k_proxy_bytes`, `basalt_q5k_proxy_scratch_bytes`). License:
   `third_party/BASALT-LICENSE`.
+- `monolith/kernels.py` — adapted from `src/kernels/cuda/native_gr_norm.cu:85-100`,
+  `src/kernels/cuda/native_ple_postops.cu:36` and `:352-359`, `src/kernels/cuda/ple.cu:36` and `:210`,
+  `src/kernels/cuda/elementwise.cu:277-287`, `src/kernels/cuda/verify_kernels.cu:1086-1090`,
+  `include/basalt/kernels/ngram.hpp:30-41` and `include/basalt/kernels/verify_kernels.hpp:21` (MIT): the n-gram
+  block's constants and launch grids, the norm's block choice and argument checks, and the gate's host scale. License:
+  `third_party/BASALT-LICENSE`.
 - `monolith/compiler/emit_basalt.py` — adapted from `src/kernels/cuda/native_mmvq.cu:1465-1475`, `:1490-1494`,
   `:1549-1552` and `:1563-1568`, `src/kernels/cuda/dense_tc.cu:1077-1082` and `:1107-1113`,
   `src/kernels/cuda/native_bf16.cu:139-171`, `src/kernels/cuda/iq_kernels.cu:2450-2455` and
@@ -221,7 +245,14 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   bounded dimensions)); `monolith/kernels.py`'s `basalt_q8_1_grid` and `basalt_mmvf_grid` transcribe the quantizers' and
   the BF16 GEMVs' grids (`native_mmvq.cu:1556-1558`, `iq_kernels.cu:2453`, `native_bf16.cu:147-150`, `:174`), and its
   `basalt_gr_post_params` and `basalt_gr_post_grid` transcribe `native_gr_post`'s `check_shape`, `THREADS` and `blocks`
-  (`native_gr_postops.cu:35`, `:79-83`). License: `third_party/BASALT-LICENSE`.
+  (`native_gr_postops.cu:35`, `:79-83`); `ple_block`'s native branch and refusals (`src/kernels/cuda/ple.cu:228-356`),
+  `native_ple_postops`'s span and alias checks (`src/kernels/cuda/native_ple_postops.cu:317-361`),
+  `ple_history_advance`'s (`ple.cu:204-212`) and the verify loop's per-row order and commit restore
+  (`src/core/verify.cpp:1105-1124`, `:2137`), with the norm's, the snapshot's and the restore's launcher checks
+  (`src/kernels/cuda/native_gr_norm.cu:78-100`, `src/kernels/cuda/elementwise.cu:277-287`,
+  `src/kernels/cuda/verify_kernels.cu:1086-1090`) and the key's binding (`keep_unquantized_ple_key`,
+  `src/core/native_dense.cpp:95-102`; `index_code_bits`, `src/core/weights.cpp:129-148`). License:
+  `third_party/BASALT-LICENSE`.
 - `tests/kernels/test_basalt_q5k_head.py` — adapted from `src/kernels/q5k_head_parity.cpp` (MIT): its weights and
   activations, row counts, maps, rescaling, planted rows and trials, and the pass criteria. License:
   `third_party/BASALT-LICENSE`.
@@ -246,6 +277,15 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
 - `tests/kernels/test_basalt_q8_1.py` — adapted from `src/kernels/iq_multi_parity.cpp`'s `check_q8_1_finite` (MIT): the
   planted blocks, the host transcription of the quantization formula and the pass criterion. License:
   `third_party/BASALT-LICENSE`.
+- `tests/basalt_ple_ref.py`, `tests/contract/test_basalt_ple_refs.py`, `tests/kernels/test_basalt_ple.py` and
+  `tests/kernels/test_basalt_ple_program.py` — adapted from `src/kernels/ple_parity.cpp` and
+  `src/kernels/ple_win_parity.cpp` (MIT): their history regression, block, key and host-reference checks, fixtures,
+  guards and pass criteria, and the per-row chain comparison; with the commit record and its count refusal of
+  `src/core/verify.cpp:2732-2737` and the degenerate norm input of `src/kernels/gr_parity.cpp:167-236`. License:
+  `third_party/BASALT-LICENSE`.
+- `tests/contract/test_basalt_ple_ops.py` — adapted from `tests/core/native_dense_ple_key_test.cpp` (its key rows and
+  three cases, as the key's binding) and `src/kernels/ple_parity.cpp` (its prelaunch refusals, as the emitter's) (MIT).
+  License: `third_party/BASALT-LICENSE`.
 - `runtime/src/basalt_cpu_expf.cpp`, `tests/kernels/test_basalt_cpu_expf.py` — adapted from
   `src/kernels/cpu/pool.cpp:434` (MIT): the CPU expert pool's SwiGLU, `(g / (1.f + std::exp(-g))) * u`, in its
   order of operations, which is the only arithmetic the pool itself performs. License:
@@ -263,10 +303,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   BF16 GEMVs' (`mmvf`; `bf16_bits`: `include/basalt/kernels/bf16_bits.hpp`'s rounding;
   `docs/research/basalt-nvcc/bf16.md`), `dense_tc`'s (`docs/research/basalt-nvcc/dense_tc.md`), the Q5_K head's
   top-1 and 2-bit proxy (`src/kernels/cuda/q5k_head.cu`, `src/kernels/cuda/head_proxy.cuh`;
-  `docs/research/basalt-nvcc/q5k_head.md`) and the drafter experts' (`f16_from_f32`:
+  `docs/research/basalt-nvcc/q5k_head.md`), the drafter experts' (`f16_from_f32`:
   `include/basalt/kernels/f16_bits.hpp:36-65` transcribed; `q8_0_scaled`, `s2_dots`, `s2_swiglu`:
   `src/kernels/cuda/quantize_act.cu` and `src/kernels/cuda/s2_expert_grouped.cu`;
-  `docs/research/basalt-nvcc/s2_experts.md`). License: `third_party/BASALT-LICENSE`.
+  `docs/research/basalt-nvcc/s2_experts.md`) and the n-gram block's norm, gate, broadcast and convolution (`gr_norm`,
+  `ple_gate`, `ple_broadcast`, `ple_conv`: `src/kernels/cuda/native_gr_norm.cu`,
+  `src/kernels/cuda/native_ple_postops.cu`; `docs/research/basalt-nvcc/ple.md`). License: `third_party/BASALT-LICENSE`.
 - `runtime/src/basalt_cpu.h` and `runtime/src/basalt_cpu.cpp` — adapted from `src/kernels/cpu/expert.cpp:143-148`,
   `:336-370` and `:503-556` and `include/basalt/kernels/cpu/expert.hpp:25-61` (MIT): the `ActQ` struct and the
   geometry constants, `act_quant_q8_1`, and `q2_0_gguf_rows_multi` with `q2g_rows`, `q2g_row_multi` and
@@ -289,6 +331,11 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   pack's `meta` section names the weights' licence: Qwen Community License 1.0, copyright 2026 Qwen, quantized by ISTA
   DASLab (the source GGUF's `general.license` field reads `apache-2.0`). License: `third_party/QWEN-COMMUNITY-LICENSE`
   (basalt's `tools/convert/qwen-community-license-1.0.txt`, identical to the text in `meta`).
+- `tests/contract/fixtures/basalt_ple.safetensors` — byte ranges (95 KB: the n-gram block's slices of layer 1, key
+  row 0, the first 1024 bytes of the five dense rows and of their GGUF twins, and the whole convolution weight) of the
+  same `Qwen3.8-FN-GSQ-RCO-Q2_0.basalt` in `jesdga/Qwen3.8-Flash-Next-Basalt` @
+  `2a6a758dc12f1d027d2d35b8964110df7e80f70b`, range-read by `tests/contract/fixtures/make_basalt_ple_fixture.py`.
+  License: `third_party/QWEN-COMMUNITY-LICENSE`, as above.
 
 ## Original
 

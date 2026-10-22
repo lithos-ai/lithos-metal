@@ -18,10 +18,12 @@ one-row kernel), bf16_gemv_fp32_mmvf_multi and bf16_gemv_fp32_mmvf_cols.
   and the multi kernel (T = 2 to 8) at 2560 to 2560: the witness of halfway BF16 values (:789) against the float64
   sum over the weights' bits (:790-799), criterion quoted:
   ``const bool correct = le(rel, 2e-6) && nf == 0 && gt(separation, 1e-5);`` (:815). basalt's weights are the PLE
-  fixture's ple_value, and the test runs only with PLE_FIXTURE_DIR; here they are route_window_parity's
-  bf16(N(0, 1) * 0.05). The separation's comparand, basalt's legacy path (the activations rounded to BF16, then
-  bf16_gemv; ple.cu:315-317), is the float64 sum over the BF16-rounded witness. Each multi-kernel row takes the
-  witness shifted by its row index and meets the same criterion.
+  fixture's ple_value, and the test runs only with PLE_FIXTURE_DIR; here it runs on two: [synthetic],
+  route_window_parity's bf16(N(0, 1) * 0.05), and [real], the pack's dense blk.1.ple_value.weight
+  (tests/basalt_ple_ref.py's ``real()``, from the ranges under $BASALT_PLE_FIXTURE: unset, the case skips with a reason
+  naming the variable; set, a file missing or of the wrong size fails). The separation's comparand, basalt's legacy
+  path (the activations rounded to BF16, then bf16_gemv; ple.cu:315-317), is the float64 sum over the BF16-rounded
+  witness. Each multi-kernel row takes the witness shifted by its row index and meets the same criterion.
 - Column invariance, bitwise: each output is bit-identical to a one-row launch of its own (native_bf16.cu:75-77):
   the multi kernel at T = 1 to 8 (NT 4 and 8), _cols at T = 9 and 17 (a chunk of one runs the one-row kernel), the
   multi kernel for one row with ldy < n_out (native_bf16.cu:141), and strided ldx and ldy, whose gaps stay unread and
@@ -35,6 +37,7 @@ import numpy as np
 import pytest
 
 from monolith import kernels
+from tests.basalt_ple_ref import real
 from tests.kernels import basalt_emu as emu
 from tests.kernels import basalt_gpu as gpu
 
@@ -92,30 +95,32 @@ def gt(x, t):
     return bool(np.isfinite(x) and x > t)        # ple_parity.cpp:49
 
 
-def test_ple_value_float64():
+@pytest.mark.parametrize("name", ["synthetic", "real"])
+def test_ple_value_float64(name):
     nd = 2560
     rng = np.random.default_rng(790)
-    w = bf16_weights(rng, nd, nd)
+    w = bf16_weights(rng, nd, nd) if name == "synthetic" else real().value
     wv = weight_values(w).astype(np.float64)
     i = np.arange(nd)
     # :789 ``witness[i] = i % 7 == 0 ? 1.00390625f : -0.501953125f;`` (halfway between two BF16 values)
     witness = np.where(i % 7 == 0, F32(1.00390625), F32(-0.501953125)).astype(F32)
 
-    def check(native, x):
+    def check(native, x, row):
         reference = (wv @ x.astype(np.float64)).astype(F32)                    # :790-799, float(sum)
         legacy = (wv @ weight_values(emu.bf16_bits(x)).astype(np.float64)).astype(F32)
         rel, nf = rel_l1(reference, native)
         separation, _ = rel_l1(native, legacy)
-        # basalt: ``const bool correct = le(rel, 2e-6) && nf == 0 && gt(separation, 1e-5);`` (:815)
-        assert le(rel, 2e-6) and nf == 0 and gt(separation, 1e-5), (rel, nf, separation)
+        assert le(rel, 2e-6) and nf == 0 and gt(separation, 1e-5), (
+            "`const bool correct = le(rel, 2e-6) && nf == 0 && gt(separation, 1e-5);` (ple_parity.cpp:815), "
+            f"{name} weights, {row}: rel {rel!r}, non-finite {nf}, separation {separation!r}")
         return rel
 
-    rels = [check(gpu.mmvf(w, witness, nd, nd, fill=0xFE), witness)]
+    rels = [check(gpu.mmvf(w, witness, nd, nd, fill=0xFE), witness, "the one-row kernel")]
     for t in range(2, 9):
         x = np.stack([np.roll(witness, k) for k in range(t)])
         y = gpu.mmvf(w, x, nd, nd, t, fill=0xFF).reshape(t, nd)
-        rels += [check(y[k], x[k]) for k in range(t)]
-    print(f"ple value rel_l1: max {max(rels):.3e}")
+        rels += [check(y[k], x[k], f"the multi kernel at T = {t}, row {k}") for k in range(t)]
+    print(f"ple value rel_l1 [{name}]: max {max(rels):.3e}")
 
 
 @pytest.mark.parametrize("n_in", [2560, 64, 130], ids=["block256", "block32", "block96"])

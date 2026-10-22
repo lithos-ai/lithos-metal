@@ -1,7 +1,8 @@
 // Copyright (c) 2023-2026 The ggml authors (MIT)
 // Copyright (c) 2026 Jesús Gulfo (MIT)
 // Adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
-// src/kernels/cuda/q5k_head.cu, include/basalt/kernels/dp4a.hpp and include/basalt/kernels/q8_1_finite.hpp
+// src/kernels/cuda/q5k_head.cu, src/kernels/cuda/native_gr_norm.cu, src/kernels/cuda/native_ple_postops.cu,
+// include/basalt/kernels/dp4a.hpp and include/basalt/kernels/q8_1_finite.hpp
 // @ b4c63b55754637f4c72ad53a0f791d425f71eb36 (MIT; third_party/NOTICE),
 // which adapt ggml-org/llama.cpp ggml/src/ggml-cuda/{quantize.cu,vecdotq.cuh,mmvq.cu,common.cuh} @
 // 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
@@ -40,6 +41,9 @@
 //   integer dot, shared by native_mmvq and the routed experts; q5k_load, q5k_dot: the Q5_K decode and dot, shared by
 //   native_mmvq and the Q5_K head.
 // - expf_ftz: __expf(x) in a --use_fast_math file (docs/research/basalt-nvcc/q5k_head.md section 2).
+// - rsqrtf_ftz, sqrtf_ftz: rsqrtf(x) and sqrtf(x) in a --use_fast_math file, rsqrt.approx.ftz.f32 and
+//   sqrt.approx.ftz.f32 (MUFU.RSQ and MUFU.SQRT with .ftz): fast::rsqrt and fast::sqrt of the flushed input, the
+//   result flushed (docs/research/basalt-nvcc/ple.md sections 1-2).
 #pragma STDC FP_CONTRACT OFF
 
 static inline float ftz(float x) {
@@ -253,3 +257,13 @@ static inline float q5k_dot(thread const Q5KW& r, device const uint* x, int iqs)
     }
     return fma_ftz(r.dmx, sumf_d, -mul_ftz(r.dmy, sumf_m));
 }
+
+// The square roots of a --use_fast_math file (docs/research/basalt-nvcc/ple.md sections 1, 2 and 6): nvcc compiles
+// rsqrtf (the grouped RMSNorm's scale, native_gr_norm.cu:72) to rsqrt.approx.ftz.f32, MUFU.RSQ alone, and sqrtf (the
+// n-gram gate's magnitude, native_ple_postops.cu:63) to sqrt.approx.ftz.f32, MUFU.SQRT alone, not a reciprocal square
+// root and a multiply. NVIDIA documents their error bounds, not their bits, so the contract (invariant 5) maps each
+// to the metal::fast function of the same operation, whose last bits can differ from CUDA's; one helper serves each
+// operation at every site. The flushes are .ftz's, on the input and on the result, for any operand; on the n-gram
+// path the operands are at least 1e-6 and the results normal, so there they never change a value.
+static inline float rsqrtf_ftz(float x) { return ftz(fast::rsqrt(ftz(x))); }
+static inline float sqrtf_ftz(float x) { return ftz(fast::sqrt(ftz(x))); }

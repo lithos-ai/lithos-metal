@@ -3,10 +3,11 @@
 # adapted from basalt (jesdga95/basalt) src/kernels/elementwise_parity.cpp @ b4c63b55754637f4c72ad53a0f791d425f71eb36
 # (MIT; third_party/NOTICE): the contraction check's pass criterion.
 """The platform facts the exact basalt port rests on, measured on this GPU in MTLMathModeSafe (the repository default):
-fp32 add, multiply, fma and division round to nearest even; how they treat subnormals; fp16 conversions; and that
-``#pragma STDC FP_CONTRACT OFF`` stops contraction in a runtime-compiled source, told apart the way basalt's
-elementwise_parity does (src/kernels/elementwise_parity.cpp:410: ``if (mismatches || guards || fma_diff == 0) ++bad;``
-- the kernel must match the unfused result, and the inputs must be ones where fusing would change it)."""
+fp32 add, multiply, fma and division round to nearest even; how they and the compares treat subnormals; the
+``metal::fast`` limits at infinity; fp16 conversions; and that ``#pragma STDC FP_CONTRACT OFF`` stops contraction in a
+runtime-compiled source, told apart the way basalt's elementwise_parity does (src/kernels/elementwise_parity.cpp:410:
+``if (mismatches || guards || fma_diff == 0) ++bad;`` - the kernel must match the unfused result, and the inputs must
+be ones where fusing would change it)."""
 
 import numpy as np
 import pytest
@@ -229,3 +230,86 @@ kernel void conv(device const ushort* h [[buffer(0)]], device const float* f [[b
     assert np.array_equal(got[finite].view(np.uint32), emu.h2f(h)[finite].view(np.uint32))   # exact, fp16 subnormals too
     assert np.array_equal(got[~finite], emu.h2f(h)[~finite], equal_nan=True)   # infinities exact; NaN stays NaN
     assert np.array_equal(np.frombuffer(fh.read(0, 2 * n), np.uint16), emu.half_bits(f))     # round to nearest even
+
+
+def test_compares_read_subnormals_as_zero():
+    """Measured: ``<``, ``>`` and ``==`` read a subnormal operand as the zero of its sign, so two subnormals, or a
+    subnormal and a zero, compare equal; NaN is unordered and -0 equals +0, as IEEE says. The model is IEEE's compare
+    of the flushed operands, on every row. That is CUDA's setp with .ftz, so a --use_fast_math file's compares are
+    ported as plain ones (the n-gram gate's sign, src/kernels/cuda/native_ple_postops.cu:64: setp.gt.ftz and
+    setp.lt.ftz; docs/research/basalt-nvcc/ple.md section 2); setp without .ftz orders subnormals exactly."""
+    dev = nt.Device()
+    src = kernels.PRELUDE + kernels.template("basalt_fp.metal") + """
+kernel void cmp(device const float* a [[buffer(0)]], device const float* b [[buffer(1)]],
+                device uint* out [[buffer(2)]], constant uint& n [[buffer(3)]], uint i [[thread_position_in_grid]]) {
+  if (i >= n) return;
+  const float x = a[i], y = b[i];
+  out[i] = uint(x < y) | (uint(x > y) << 1) | (uint(x == y) << 2);
+}
+"""
+    pso = nt.Pipeline(nt.Library(dev, src, {}), "cmp")
+    s, s2, m = 1.5e-39, 3e-39, 2.0 ** -126                  # subnormals s < s2; the smallest normal
+    nan, inf = np.nan, np.inf
+    planted = np.array([(s, 0), (0, s), (s, s2), (-s, 0), (s, -s), (-s, -0.0), (s2, -s2), (m, s), (s, m), (m, 0),
+                        (0, -0.0), (nan, nan), (nan, s), (s, nan), (inf, s), (-inf, -s)], F32)
+    rng = np.random.default_rng(5)
+    n = 1 << 16
+    low = lambda: normals(rng, n, 0, 3)                    # subnormals (or zeros) and the two lowest binades
+    a = np.r_[planted[:, 0], low(), rng.integers(0, 1 << 32, n, dtype=np.uint64).astype(np.uint32).view(F32)]
+    b = np.r_[planted[:, 1], low(), rng.integers(0, 1 << 32, n, dtype=np.uint64).astype(np.uint32).view(F32)]
+    out = nt.Buffer(dev, 4 * len(a))
+    d = nt.Dispatch().pipeline(pso).buffer(0, nt.Buffer(dev, a.tobytes())).buffer(1, nt.Buffer(dev, b.tobytes()))
+    d = d.buffer(2, out).bytes(3, np.uint32(len(a)).tobytes()).grid(-(-len(a) // 256)).threadgroup(256)
+    r = nt.Queue(dev).run([d])
+    assert not r.error, r.error
+    got = np.frombuffer(out.read(0, 4 * len(a)), np.uint32)
+    code = lambda x, y: (x < y).astype(np.uint32) | ((x > y).astype(np.uint32) << 1) | ((x == y).astype(np.uint32) << 2)
+    lt, gt, eq = 1, 2, 4
+    # the planted rows: subnormals are zeros of their sign to the compare; NaN unordered; -0 == +0; normals ordered
+    assert got[: len(planted)].tolist() == [eq, eq, eq, eq, eq, eq, eq, gt, lt, gt, eq, 0, 0, 0, gt, lt]
+    assert np.array_equal(got, code(emu.ftz(a), emu.ftz(b)))
+    assert np.count_nonzero(got != code(a, b)) > n // 16    # IEEE's compare of the same bits differs on many rows
+
+
+def test_fast_limits_at_infinity():
+    """Measured: the ``metal::fast`` functions invariant 5 maps MUFU.RSQ, MUFU.SQRT and MUFU.EX2 to return those
+    instructions' limits at infinity (docs/research/basalt-nvcc/ple.md section 6): rsqrt(+inf) = +0, sqrt(+inf) = +inf,
+    exp2(+inf) = +inf and exp2(-inf) = +0. Beyond the float range exp2 gives the limits as well: exp2(x) = +inf for
+    every x >= 128, and ftz(exp2(x)) = +0 for every x <= -150. The norm's scale of an infinite row, the gate of an
+    infinite s and the SiLU whose -acc * log2(e) leaves the float range rest on them. Checked bit for bit on every float
+    of [128, 129) and of (-151, -150], 2^16 random floats of each sign and every exponent from 2^7 to 2^127, the largest
+    finite floats and the infinities."""
+    dev = nt.Device()
+    src = kernels.PRELUDE + kernels.template("basalt_fp.metal") + """
+kernel void lim(device const float* a [[buffer(0)]], device float* out [[buffer(1)]], constant uint& n [[buffer(2)]],
+                uint i [[thread_position_in_grid]]) {
+  if (i >= n) return;
+  const float x = a[i];
+  device float* o = out + 4 * i;
+  o[0] = fast::rsqrt(x);
+  o[1] = fast::sqrt(x);
+  o[2] = fast::exp2(x);
+  o[3] = ftz(fast::exp2(x));
+}
+"""
+    pso = nt.Pipeline(nt.Library(dev, src, {}), "lim")
+    rng = np.random.default_rng(6)
+    big = np.finfo(F32).max
+    edge = np.arange(0x43000000, 0x43010000, dtype=np.uint32).view(F32)      # [128, 129)
+    edge_neg = np.arange(0xC3160000, 0xC3170000, dtype=np.uint32).view(F32)  # (-151, -150]
+    far = np.abs(normals(rng, 1 << 16, 134, 255))                             # [128, 2^128)
+    x = np.r_[np.array([np.inf, -np.inf, big, -big], F32), edge, edge_neg, far, -far]
+    n = len(x)
+    out = nt.Buffer(dev, 16 * n)
+    d = nt.Dispatch().pipeline(pso).buffer(0, nt.Buffer(dev, x.tobytes())).buffer(1, out)
+    d = d.bytes(2, np.uint32(n).tobytes()).grid(-(-n // 256)).threadgroup(256)
+    r = nt.Queue(dev).run([d])
+    assert not r.error, r.error
+    bits = np.frombuffer(out.read(0, 16 * n), np.uint32).reshape(n, 4)
+    pos0, inf = 0x00000000, 0x7F800000
+    over, under = x >= 128, x <= -150
+    assert x[4] == 128 and x[4 + len(edge)] == -150 and min(np.count_nonzero(over), np.count_nonzero(under)) > 1 << 16
+    assert bits[0, 0] == pos0 and bits[0, 1] == inf             # rsqrt(+inf) = +0, sqrt(+inf) = +inf
+    assert bits[0, 2] == inf and bits[1, 2] == pos0             # exp2(+inf) = +inf, exp2(-inf) = +0
+    assert np.all(bits[over, 2] == inf)                         # exp2(x) = +inf for x >= 128
+    assert np.all(bits[under, 3] == pos0)                       # ftz(exp2(x)) = +0 for x <= -150

@@ -1,5 +1,7 @@
 """The self-hosted Mac lane: the skip audit of tools/ci/mac_gpu.py and the commit statuses of tools/ci/ci_status.py."""
 
+import types
+
 from tools.ci import ci_status, mac_gpu
 
 
@@ -83,3 +85,22 @@ def test_fresh_dir_never_follows_or_keeps_what_a_test_left(tmp_path):
     assert mac_gpu.fresh_dir(root, "venv").is_dir()
     assert (outside / "keep.txt").read_bytes() == b"precious"
 
+
+def test_lane_environment_names_the_ple_fixture(tmp_path, monkeypatch):
+    py, log = tmp_path / "venv" / "bin" / "python", []
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr(mac_gpu.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(mac_gpu.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(mac_gpu.shutil, "disk_usage", lambda path: types.SimpleNamespace(free=10**12))
+    monkeypatch.setattr(mac_gpu, "chip_name", lambda: "test")
+    monkeypatch.setattr(mac_gpu, "prepare_venv", lambda root, repo, python: py)
+    monkeypatch.setattr(mac_gpu, "run", lambda cmd, **kw: log.append(cmd))
+    monkeypatch.setattr(mac_gpu, "run_tier", lambda tier, py, repo, env, report, timeout: log.append(env) or
+                        {"tier": tier, "tests": 1, "failures": 0, "errors": 0, "skipped": 0, "wall_s": 0.0,
+                         "problems": []})
+    # a contract-only run: the contract tier reads the fixture too, and provisions nothing else
+    assert mac_gpu.main(["--root", str(tmp_path), "--tiers", "contract", "--report-dir", str(tmp_path / "report")]) == 0
+    fixture = tmp_path / "fixtures" / "ple"
+    writer = str(mac_gpu.ROOT / "tests" / "contract" / "fixtures" / "make_basalt_ple_fixture.py")
+    assert log[0] == [str(py), writer, "--full", str(fixture)] and fixture.is_dir()     # fetched before the tier
+    assert len(log) == 2 and log[1]["BASALT_PLE_FIXTURE"] == str(fixture)

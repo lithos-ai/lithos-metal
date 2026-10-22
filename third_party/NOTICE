@@ -263,7 +263,9 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `docs/research/basalt-nvcc/q5k_head.md`) and the drafter experts' (`f16_from_f32`:
   `include/basalt/kernels/f16_bits.hpp:36-65` transcribed; `q8_0_scaled`, `s2_dots`, `s2_swiglu`:
   `src/kernels/cuda/quantize_act.cu` and `src/kernels/cuda/s2_expert_grouped.cu`;
-  `docs/research/basalt-nvcc/s2_experts.md`). License: `third_party/BASALT-LICENSE`.
+  `docs/research/basalt-nvcc/s2_experts.md`); and `rel_norm`, the GEMM gate's metric, `Err` of
+  `src/kernels/hc8_parity.cpp:57-61` in its float32 form (`gemm_chain`, `fma_metal` and `_fma64_odd` beside it are
+  the port's order and this GPU's measured `fma`, not basalt's). License: `third_party/BASALT-LICENSE`.
 - `runtime/src/basalt_cpu.h` and `runtime/src/basalt_cpu.cpp` — adapted from `src/kernels/cpu/expert.cpp:143-148`,
   `:336-370` and `:503-556` and `include/basalt/kernels/cpu/expert.hpp:25-61` (MIT): the `ActQ` struct and the
   geometry constants, `act_quant_q8_1`, and `q2_0_gguf_rows_multi` with `q2g_rows`, `q2g_row_multi` and
@@ -285,6 +287,17 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   `src/kernels/elementwise_parity.cpp:438-472` (MIT): their fixtures (the `std::mt19937(7)` blocks with pinned
   scales, the pack's tensors, the NaN-scale Q8_0 pair) and criteria, and `dequant_bf16.cu:190-205`'s type table.
   License: `third_party/BASALT-LICENSE`.
+- `kernels/common/basalt_prompt_gemm.metal` — adapted from `src/prefill/gemm.cu:122-185` and
+  `src/prefill/kernels.cu:31-40` and `:818-833` (MIT): `Gemm::bf16`'s and `Gemm::native`'s products as one
+  fixed-order fma chain per output (the order is this port's: cuBLAS fixes none,
+  `docs/research/basalt-nvcc/prefill_kernels.md`), and `to_f16` and `to_bf16` with `hf` and `bf`. License:
+  `third_party/BASALT-LICENSE`.
+- `monolith/compiler/emit_basalt_prompt.py` — adapted from `src/prefill/prefill.cpp:1188-1199` (MIT): `native_proj`'s
+  and `bf16_proj`'s weight checks, as the refusals at emit time of an `entry` its weight contradicts. License:
+  `third_party/BASALT-LICENSE`.
+- `tests/kernels/test_basalt_prompt_gemm.py` — adapted from `src/kernels/hc8_parity.cpp:253-262` and `:269` (MIT): the
+  GEMM gate's bound, `expect(ex.rel() < 5e-3, "the product against the copy in double");`, and its use of `Err`
+  over the product against double. License: `third_party/BASALT-LICENSE`.
 
 ## Test data
 

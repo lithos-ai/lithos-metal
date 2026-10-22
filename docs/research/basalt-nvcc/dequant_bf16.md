@@ -85,7 +85,7 @@ images of a NaN differ (0x7fff here, 0x8000 there); the port keeps both as basal
 ## 2. Per-type arithmetic
 
 `group32<TYPE, T>` (`:41-166`) for each type. d, dmin, d_all and m are fp16 scales read by `h2f`; every other
-factor is a small integer. This pack's projections use every type below but Q5_1 (`flash-next.md:218-219`; the
+factor is a small integer. This pack's projections use every type below but Q5_1 (`flash-next.md`, "The model file"; the
 IQ-only types 16, 17, 18, 21, 22 and 29 go to `iq_dequant_f16` instead, `:259-267`, and this pack has none).
 
 | Type (id) | Lines | Value | SASS | Metal |
@@ -157,7 +157,7 @@ the artifact's CPU dequantizers, within 10^-3 relative plus 10^-6. On Metal the 
 bit checks; the third needs a host reference of the four types, here `tests/contract/gguf_reference.py`'s float32
 values, bit for bit basalt's CPU dequantizers (`include/basalt/artifact/dequant.hpp`), compared in binary64 at
 basalt's bound. The prompt path converts this pack's other six types too (Q2_0, Q3_K, Q4_K, IQ4_NL, Q4_0, Q5_0;
-`flash-next.md:218-219`); the type list is the test's data, so the port runs the same three checks for all ten.
+`flash-next.md`, "The model file"); the type list is the test's data, so the port runs the same three checks for all ten.
 
 **`dequant_bf16_test`** (`src/kernels/dequant_bf16_test.cpp`, `CMakeLists.txt:804-807`: "not a ctest: needs the full
 model"). For each type `dequant_bf16_supported` accepts, the first four rows of the first two-dimensional tensor of

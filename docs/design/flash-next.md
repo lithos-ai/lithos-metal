@@ -81,6 +81,19 @@ The prompt path's own kernels, `src/prefill/kernels.cu`, build the same way (`CM
 `rsqrtf` and `log1pf` too (for example `src/prefill/kernels.cu:39`, `:74`, `:214`); the prompt path's port lists the
 ones this pack runs.
 
+- `src/prefill/gemm.cu`, the prompt path's fp16 and BF16 products, has no device code: each product is one
+  `cublasGemmEx` (`gemm.cu:122-132`, `:158-167`), so cuBLAS picks the kernel, the summation order and the subnormal
+  handling. basalt fixes the 16-bit operand types, the fp32 output and compute type (`CUDA_R_32F`,
+  `CUBLAS_COMPUTE_32F`, `CUBLAS_GEMM_DEFAULT`), alpha 1 and beta 0 (the default, `include/basalt/prefill/gemm.hpp:35`,
+  `:43`, `:47`; no prompt-path call passes another); every FP16 product, and every BF16 product in fp32's normal range,
+  is exact in fp32; the order, the in-MMA rounding and the handling of smaller BF16 products are cuBLAS's and the
+  hardware's. The port computes each output as one fp32 `fma` chain from +0 in increasing k
+  (`kernels/common/basalt_prompt_gemm.metal`), which, as Metal's `fma` does, reads subnormal BF16 operands as zero and
+  flushes every partial sum whose exact value is below 2^-126 (a lone product included): that order is the port's,
+  not basalt code, so invariant 5's subnormal emulation does not apply (decided 2026-10-19 for the partial sums; for
+  the operands, 2026-10-20). Widened FP16 operands, their fp32 products and the partial sums are never subnormal in
+  fp32: nonzero operands are multiples of 2^-24, nonzero products and partial sums multiples of 2^-48.
+
 ### Exactness invariants
 
 1. **Window invariance.** "Token t's argmax is what plain greedy decode would produce after token t, BIT FOR BIT"
@@ -103,11 +116,12 @@ ones this pack runs.
    (`src/program/generate.cpp:1889-1893`), including its rounding sequence. The authority for that sequence is what
    nvcc compiles, read from basalt's sm_120 PTX and SASS and recorded per kernel and site in
    `docs/research/basalt-nvcc/` (`matvec.md` for the q8_1 quantizers and `native_mmvq`, `hc_fused.md` for the
-   hyper-connection read, its router and the int8 copies, `dequant.md` for the GGUF dequantizers, `dequant_bf16.md`
-   for the prompt path's group dequantizers, `experts.md` for the routed experts, `bf16.md` for the BF16 GEMVs,
-   `dense_tc.md` for the window projections, `q5k_head.md` for the Q5_K head, `s2_experts.md` for the drafter's
-   experts, `nan.md` for the NaN each store holds; the CPU expert tier runs on the host rather than the GPU, so its
-   authority is glibc and gcc instead, recorded in `docs/research/basalt-cpu-expf.md`): which multiply-adds fuse and
+   hyper-connection read, its router and the int8 copies, `dequant.md` for the GGUF dequantizers, `dequant_bf16.md` for
+   the prompt path's group dequantizers, `prefill_kernels.md` for the prompt path's element-wise kernels and
+   conversions, `experts.md` for the routed experts, `bf16.md` for the BF16 GEMVs, `dense_tc.md` for the window
+   projections, `q5k_head.md` for the Q5_K head, `s2_experts.md` for the drafter's experts, `nan.md` for the NaN each
+   store holds; the CPU expert tier runs on the host rather than the GPU, so its authority is glibc and gcc instead,
+   recorded in `docs/research/basalt-cpu-expf.md`): which multiply-adds fuse and
    with which operands, the operand order of each `a * b - c * d`, where `.FTZ` flushes subnormals, and each
    approximate instruction. The source alone does not settle it: nvcc's default `--fmad=true` fuses where the source
    writes no FMA, `ptxas` fuses further than the PTX (the Q4_K and Q5_K returns, `matvec.md` section 5) and replaces an
@@ -467,6 +481,10 @@ same rule holds for any other ported kernel whose basalt tests end in a comparis
 | The attention's output gate, `native_qsa_gate_apply`'s arithmetic, which the merge reproduces (`src/kernels/cuda/qsa_dec_attn.cu:308-319`) | only a reference side (`src/kernels/qsa_dec_attn_parity.cpp:131`); `qsa_parity`'s gate check runs the fp16 `qsa_gate_apply` (`src/kernels/qsa_parity.cpp:1142-1154`) | `shared_expert_parity`'s rule for its sigmoid gate, `rel < 2e-6` (`src/kernels/shared_expert_parity.cpp:372`) |
 | `native_qsa_rms_norm_weighted`, the query and key norms with fp16 KV (`src/core/verify.cpp:1340-1341`; drafter, `src/core/mtp.cpp:727`, `:764`, `:792`) | only a reference side (`src/kernels/qsa_dec_fused_parity.cpp:111`, `:123`, `:125`) | `qsa_parity`'s rule for the pooled keys: `if (!(worst <= 1e-6)) {` (`src/kernels/qsa_parity.cpp:611`) |
 | `native_qsa_indexer_append`, the indexer key's norm, RoPE and pooling with fp16 KV (`src/core/verify.cpp:1478-1483`), which the commit replays (`native_qsa_indexer_commit_layers`, `:2134`) | `qsa_parity` compares it bitwise with the prompt path's batched append (`src/kernels/qsa_parity.cpp:1428-1437`) and its position-0 key with the table indexer (`:1495`); only the table indexer, `indexer_key_append`, meets a double reference (`:581`, `:611`) | the pooled keys against a double-precision reference with `rope_parity`'s bound for the native rotation: `if (!(rel <= 3e-3)) ++agree_bad;` (`src/kernels/rope_parity.cpp:400`) |
+| `Gemm::bf16`, the BF16 x BF16 product: the PLE value product and every BF16 projection without an int8 copy (`src/prefill/gemm.cu:122-132`; `src/prefill/prefill.cpp:1538`, `:1707`, and through `Gemm::bf16_w`'s fall-through, `gemm.cu:155`, at `prefill.cpp:1572`, `:1587`-`:1588`, `:1608`-`:1609`, `:1698`) | `hc8_parity` part 2 runs `Gemm::bf16` through `Gemm::bf16_w`, directly on a BF16 matrix (`src/kernels/hc8_parity.cpp:244`; `src/prefill/gemm.cu:155`) and on the BF16 image of an int8 copy (`hc8_parity.cpp:245-246`; `gemm.cu:151`), and gates only the copy's product against double (`hc8_parity.cpp:269`, on 256 sampled outputs, `:253-262`), at hc8's shapes | `hc8_parity`'s own gate on `Gemm::bf16`'s product, `expect(ex.rel() < 5e-3, "the product against the copy in double");` (`hc8_parity.cpp:269`), applied at this pack's plain-BF16 shapes on every output against float64; the chain bit for bit against its numpy twin; row, column, slice and repeat invariance bit for bit |
+| `Gemm::native`, a GGUF matrix dequantized into an FP16 image and multiplied by `Gemm::f16` (`src/prefill/gemm.cu:169-185`, `:158-167`; `src/prefill/prefill.cpp:1191` for every quantized projection, `:1535` for the PLE key) | no test runs `Gemm::native`; `prefill_mmq_kq_test` runs `Gemm::f16` in its FP16 expert path, off this pack (`tests/cuda/prefill_mmq_kq_test.cpp:241`, `:244`), and prints that path's error against double without a bound (`:370`, `:373`; only a non-finite output fails, `:269`); `dequant_f16_parity` checks only the first stage, the FP16 image (`src/kernels/dequant_f16_parity.cpp:73`, `:98`) | borrowed (nearest bound; no basalt test gates `Gemm::native`'s or `Gemm::f16`'s product against a reference): `expect(ex.rel() < 5e-3, "the product against the copy in double");` (`hc8_parity.cpp:269`) on every output against float64 on the exact dequantized values, so the FP16 image's rounding counts; the two stages bit for bit equal to the FP16 chain on the image; repeat invariance bit for bit |
+| `to_f16`, the PLE key operand for a quantized key matrix (`src/prefill/kernels.cu:818-821`, `hf` `:40`, launcher `:846-850`; `src/prefill/prefill.cpp:1534`) | no test runs `to_f16_kernel`; the nearest check, `dequant_f16_parity`'s store against `__float2half_rn` of the fp32 value (`src/kernels/dequant_f16_parity.cpp:73`), is the same rounding, bitwise | bit for bit against `emu.cuda_half_bits` on every special value (G9-F16) |
+| `to_bf16`, the PLE value operand (`src/prefill/kernels.cu:826-833`, `bf` `:31-35`, launcher `:856-860`; `src/prefill/prefill.cpp:1531`, `:1536`) | no test runs `to_bf16_kernel` or `bf`; `bf16_bits_test` checks `bf16_from_f32` bitwise over every fp32 pattern against ggml's rule (`src/kernels/bf16_bits_test.cpp:47`) and, on every non-NaN input, against `previous_bf16` (`:57`), whose `u = (u + ((u >> 16) & 1u) + 0x7FFFu) & 0xFFFF0000u;` (`:30`) is `bf`'s arithmetic; on a NaN, `bf` keeps the carry that `bf16_from_f32` replaced | bit for bit against `emu.bf16_bits` on every special value, NaNs included (G9-BF16) |
 
 The ported `route_window_parity` also runs the shapes this path uses, 2560 to 128 and 2560 to 512.
 

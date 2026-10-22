@@ -7,4 +7,6 @@ decode op kinds the layer library lowers to (``embed``, ``rmsnorm_stat``, ``norm
 from .registry import OPS, CostModel, KernelBinding, OpDef, register_op
 from . import attention, basalt, draft, embed, gdn, gemv, moe, norm, sample  # noqa: F401  (registration)
 
+from . import basalt_prompt  # noqa: F401  (registration: basalt's prompt path, ops/basalt_prompt.py)
+
 __all__ = ["OPS", "CostModel", "KernelBinding", "OpDef", "register_op"]

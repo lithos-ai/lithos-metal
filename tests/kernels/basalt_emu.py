@@ -4,7 +4,7 @@
 # adapted from basalt (jesdga95/basalt) src/kernels/cuda/native_mmvq.cu, src/kernels/cuda/iq_kernels.cu,
 # src/kernels/cuda/native_bf16.cu, src/kernels/cuda/dense_tc.cu, src/kernels/cuda/q5k_head.cu,
 # src/kernels/cuda/head_proxy.cuh, src/kernels/cuda/quantize_act.cu, src/kernels/cuda/s2_expert_grouped.cu,
-# include/basalt/kernels/q8_1_finite.hpp and include/basalt/kernels/f16_bits.hpp @
+# include/basalt/kernels/q8_1_finite.hpp, include/basalt/kernels/f16_bits.hpp and src/kernels/hc8_parity.cpp @
 # b4c63b55754637f4c72ad53a0f791d425f71eb36, which adapt ggml-org/llama.cpp ggml/src/ggml-common.h (kvalues_iq4nl),
 # ggml/src/ggml-quants.c (get_scale_min_k4), ggml/src/ggml-cuda/quantize.cu and ggml/src/ggml-cuda/mmvf.cu @
 # 3cf03257f219afbe7334045ff7c6a06ac68c627d (MIT; third_party/NOTICE).
@@ -28,10 +28,8 @@ def ftz(x):
     return np.where((b & 0x7F800000) == 0, (b & 0x80000000).view(F32), x).astype(F32)
 
 
-def fma32(a, b, c):
-    """a * b + c rounded once to float32 (to nearest even, on the grid with subnormals). a * b is exact in float64;
-    the float64 sum is rounded to odd (TwoSum gives its exact error), which a float32 cast then rounds correctly
-    (53 >= 24 + 2 bits)."""
+def _fma64_odd(a, b, c):
+    """a * b + c of float32 inputs as a float64 rounded to odd, fma32's and fma_metal's common step."""
     a, b, c = (np.asarray(v, F32).astype(np.float64) for v in (a, b, c))
     s = a * b
     t = s + c
@@ -39,9 +37,27 @@ def fma32(a, b, c):
     err = (s - (t - bp)) + (c - bp)
     even = (t.view(np.int64) & 1) == 0
     bump = (err != 0) & even & np.isfinite(t)
-    t = np.where(bump, np.nextafter(t, np.where(err > 0, np.inf, -np.inf)), t)
+    return np.where(bump, np.nextafter(t, np.where(err > 0, np.inf, -np.inf)), t)
+
+
+def fma32(a, b, c):
+    """a * b + c rounded once to float32 (to nearest even, on the grid with subnormals). a * b is exact in float64;
+    the float64 sum is rounded to odd (TwoSum gives its exact error), which a float32 cast then rounds correctly
+    (53 >= 24 + 2 bits)."""
     with np.errstate(over="ignore"):
-        return t.astype(F32)
+        return _fma64_odd(a, b, c).astype(F32)
+
+
+def fma_metal(a, b, c):
+    """This GPU's fma in MTLMathModeSafe as test_subnormals_in_safe_mode measures it (basalt_fp.metal's header): a
+    subnormal input reads as the zero of its sign, an exact result below 2^-126 in magnitude flushes to the zero of
+    its sign before rounding, and every other result is fma32's on the flushed inputs. So an exact 2^-126 - 2^-150
+    gives 0 here and 2^-126 in fma_ftz (.ftz flushes the rounded result). The test is on _fma64_odd's value, which is
+    below 2^-126 exactly when the exact result is: rounding to odd never reaches 2^-126, an even significand, from
+    below."""
+    t = _fma64_odd(ftz(a), ftz(b), ftz(c))
+    with np.errstate(over="ignore"):
+        return np.where(np.abs(t) < 2.0 ** -126, np.copysign(0.0, t), t).astype(F32)
 
 
 def add_ftz(a, b):
@@ -791,3 +807,39 @@ def q5k_proxy_final(cand, part, exact, map_, expf):
         s[:k] = add_ftz(s[:k], ed[c0:c0 + k])
     total = max_ftz(butterfly(s[None], add_ftz)[0], F32(1.0 if bi in rows else 0.0))
     return int(np.asarray(map_)[bi]), rcp_ftz(total), rows
+# ---- the prompt path's products (kernels/common/basalt_prompt_gemm.metal) -------------------------------------------
+# Gemm::bf16's product and Gemm::native's (Gemm::f16 on the FP16 image) are cuBLAS calls (src/prefill/gemm.cu:122-132,
+# :158-185), which fix no summation order; the port's is one fp32 fma chain per output, from +0 in increasing k.
+
+def gemm_chain(xb, wb, bf16, flush=True):
+    """basalt_prompt_gemm's outputs as bits, uint32 (R, N), for 16-bit operand bits ``xb`` (R, K) and ``wb`` (N, K),
+    BF16 if ``bf16`` else FP16: acc = fma_metal(x[t][k], w[n][k], acc) from +0 in increasing k, so subnormal BF16
+    operands read as zero and every partial sum whose exact value is below 2^-126 flushes; a NaN stored as sm_120's
+    0x7fffffff (cuda_nan). ``flush=False``: the same fold on fma32, an IEEE chain that keeps subnormals."""
+    widen = (lambda b: (np.asarray(b, np.uint16).astype(np.uint32) << 16).view(F32)) if bf16 else h2f
+    xf, wf = widen(xb), widen(wb)
+    fma = fma_metal if flush else fma32
+    acc = np.zeros((xf.shape[0], wf.shape[0]), F32)
+    for k in range(xf.shape[1]):
+        acc = fma(xf[:, k, None], wf[None, :, k], acc)
+    return np.where(np.isnan(acc), np.uint32(0x7FFFFFFF), acc.view(np.uint32))
+
+
+def rel_norm(y, ref):
+    """The GEMM gate's metric: src/kernels/hc8_parity.cpp:57-61's Err folded over every element of the float32 values
+    ``y`` (Err::add's a) against ``ref`` (its b), as part 2 feeds it (``ex.add(y1[t * ldy + n], (float) ref);``,
+    :261): ``ref`` cast to float32, |y - ref| in float32 widened to float64, each fold std::max's (a NaN never replaces
+    the running value, which starts at 0, so callers count non-finite outputs themselves), then rel():
+
+        struct Err {
+            double abs = 0, ref = 0;
+            void add(float a, float b) { abs = std::max(abs, (double) std::fabs(a - b)); ref = std::max(ref, (double) std::fabs(b)); }
+            double rel() const { return ref > 0 ? abs / ref : abs; }
+        };
+    """
+    with np.errstate(over="ignore", invalid="ignore"):
+        b = np.asarray(ref).astype(F32)
+        d = np.abs(np.asarray(y, F32) - b).astype(np.float64)
+    e = np.fmax.reduce(d.ravel(), initial=0.0)
+    r = np.fmax.reduce(np.abs(b).astype(np.float64).ravel(), initial=0.0)
+    return float(e / r) if r > 0 else float(e)

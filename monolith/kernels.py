@@ -756,6 +756,66 @@ def basalt_dequant16_grid(rows: int, cols: int) -> Tuple[int, int]:
     return grid, DEQUANT16_THREADS
 
 
+# ---- basalt's prompt path: the GEMM and the 16-bit conversions (kernels/common/basalt_prompt_gemm.metal; docs/research/basalt-nvcc/prefill_kernels.md) ----
+
+# The rows every prompt-path kernel reads (invariant 4): StepState.t_this_step clamped to the compiled bound ROWS_MAX in
+# a dynamic-T program (T_SRC 0), the compiled count T_STATIC_ROWS in a static one (T_SRC 2), whose advance resets
+# t_this_step to 1. A builder places it after its PRELUDE-led prefix, behind which the emitter splices the StepState
+# struct, and before its kernels. The row macros are uint literals ("64u"): MSL's min(uint, int) is ambiguous.
+PROMPT_ROWS = """
+inline uint prompt_rows(device const StepState* st) {          // invariant 4: the chunk's rows are StepState data
+#if T_SRC == 2
+  return T_STATIC_ROWS;                                        // a static program's compiled count
+#else
+  return min(st->t_this_step, ROWS_MAX);                       // ROWS_MAX: the program's bound, the buffers' rows
+#endif
+}
+"""
+
+
+def basalt_prompt_gemm_source() -> str:
+    """basalt's ``Gemm::bf16`` product and ``Gemm::native``'s FP16 product (``basalt_prompt_gemm``), and the
+    conversions ``to_f16`` and ``to_bf16`` (``basalt_prompt_convert``)."""
+    return PRELUDE + template("basalt_fp.metal") + PROMPT_ROWS + template("basalt_prompt_gemm.metal")
+
+
+# The padded multiply-adds a product dispatch may run, measured on 2026-10-20 on an Apple M3 Max (40 GPU cores, macOS
+# 27.0.1): whole products at B 256 with at least 40 threadgroups ran 769-2456 G MAC/s (three runs, each the least of 5
+# at a warm clock; one run alone gave 1 << 29); the slowest, FP16 640 x 2560 (one threadgroup per core) at 769, times
+# 0.5 ms, rounded down to a power of two.
+PROMPT_GEMM_MACS = 1 << 28
+
+
+def basalt_prompt_gemm_slices(rows: int, n: int, k: int) -> List[Tuple[int, int, int, int]]:
+    """The static slices ``(row0, nrows, col0, ncols)`` of a product at bound ``rows`` (B) with ``n`` outputs over
+    ``k``, each its own dispatch and params record, covering [0, Bp) x [0, n) once, Bp = 64 * ceil(B / 64). A slice
+    runs its tiles' 64 * ceil(nrows / 64) * 64 * ceil(ncols / 64) * k multiply-adds. Columns: CB = min(n, max(64, c)),
+    c the largest multiple of 64 with Bp * c * k <= PROMPT_GEMM_MACS (0 if none). Rows: Bp when c >= 64, else
+    RB = min(Bp, max(64, r)), r the largest multiple of 64 with r * 64 * k <= PROMPT_GEMM_MACS. So every slice is
+    within the budget or one tile, every row slice is a multiple of 64 tall and every column slice but the last (which
+    ends at n) a multiple of 64 wide: a slice's grid covers its block and no other. Slices change no bit (each output's
+    chain is the same in any slice)."""
+    if k <= 0 or k % 16:
+        raise ValueError(f"basalt_prompt_gemm: k must be a positive multiple of 16, got {k}")
+    if rows < 1 or n < 1:
+        raise ValueError(f"basalt_prompt_gemm: need at least one row and one output, got {rows} rows, {n} outputs")
+    bp = 64 * -(-rows // 64)
+    c = PROMPT_GEMM_MACS // (bp * k) // 64 * 64
+    cb = min(n, max(64, c))
+    rb = bp if c >= 64 else min(bp, max(64, PROMPT_GEMM_MACS // (64 * k) // 64 * 64))
+    return [(r0, min(rb, bp - r0), c0, min(cb, n - c0)) for r0 in range(0, bp, rb) for c0 in range(0, n, cb)]
+
+
+def basalt_prompt_gemm_params(n: int, k: int, row0: int, col0: int) -> bytes:
+    """``PromptGemmParams``: the product's n and k, the slice's first row and first column."""
+    return struct.pack("<4I", n, k, row0, col0)
+
+
+def basalt_prompt_convert_params(n: int) -> bytes:
+    """``PromptConvertParams``: the row width n (the conversion runs the chunk's rows times n elements)."""
+    return struct.pack("<I", n)
+
+
 # ---- the other decode kernels -------------------------------------------------------------------------------
 
 MSL_TENSOR_OPS = 4 << 16          # the language version the tensor-ops kernels need (MSL 4.0: <metal_tensor>, MPP)

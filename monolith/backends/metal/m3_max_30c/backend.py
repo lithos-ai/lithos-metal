@@ -9,7 +9,7 @@ class Backend(MetalBackend):
     """
     id = "m3_max_30c"
 
-    def serving_context_limit(self, *, drafter) -> int | None:
+    def serving_context_limit(self, *, drafter, kv_cache_dtype="bf16", k_cache_dtype=None, v_cache_dtype=None) -> int | None:
         # Measured on this 30-core, 36 GB M3 Max (working set 28 GB, target pack
         # 19.4 GB): DSpark at 22528 context fails Metal residency; 20480 generates.
         # Without a drafter the default 32768 context fits.

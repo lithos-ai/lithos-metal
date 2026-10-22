@@ -92,3 +92,12 @@ Format: `<path in this repo>` — adapted from / copied from `<repo>` `<path>` @
   confident-prefix rule) follow `deepspec/modeling/dspark/qwen3/modeling.py`, `deepspec/modeling/dspark/markov_head.py`
   and `deepspec/eval/dspark/draft_ops.py` (MIT); written against them, no code copied; the oracle test imports the
   reference implementation from a local checkout to compare against.
+
+## TurboQuant (TheTom/llama-cpp-turboquant, MIT)
+
+- `monolith/nn/kv_quant.py`, `kernels/common/kv_quant.metal`: Q8_0 block scaling,
+  Q4_0 signed extremum scaling and half-block nibble layout,
+  Turbo4_0 centroids, sign arrays, WHT rotation, norm correction and nibble layout
+  adapted from `ggml/src/ggml-quants.c`, `ggml/src/ggml-turbo-quant.c` and
+  `ggml/src/ggml-metal/turbo-wht.h` at `6e09de1b44ae328f641d1367bb4c875a8ffab43f`.
+  License: `third_party/TURBOQUANT-LICENSE`.

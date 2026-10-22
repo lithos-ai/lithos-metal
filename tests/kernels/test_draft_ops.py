@@ -55,9 +55,12 @@ class DCfg:
 class DraftHarness:
     """gqa_decode DRAFT=1 + gqa_merge, the counts from params or from a StepState buffer."""
 
-    def __init__(self, dev, cfg, qn, kn, step_state=False):
+    def __init__(self, dev, cfg, qn, kn, step_state=False, *, chunk_sg=None, simdgroups=12):
         self.dev, self.cfg, self.step_state = dev, cfg, step_state
+        self.simdgroups = simdgroups
         macros = dict(kernels.gqa_macros(cfg.d, chunk=cfg.chunk, rb_max=cfg.rb), DRAFT="1")
+        if chunk_sg is not None:
+            macros['GQA_CHUNK_SG'] = f'{chunk_sg}u'
         src = kernels.gqa_source()
         if step_state:
             macros["STEP_STATE"] = "1"
@@ -99,7 +102,7 @@ class DraftHarness:
         d1 = (nt.Dispatch().pipeline(self.p_dec).buffer(0, pb).buffer(1, self.k_cache).buffer(2, self.v_cache)
               .buffer(3, self.bufs["cos"]).buffer(4, self.bufs["sin"]).buffer(5, self.bufs["qn"]).buffer(6, self.bufs["kn"])
               .buffer(7, self.part_o).buffer(8, self.part_md).bytes(9, params).buffer(11, kb)
-              .grid(-(-(self.n_sg * 32) // 384)).threadgroup(384).barrier())
+              .grid(-(-self.n_sg // self.simdgroups)).threadgroup(32 * self.simdgroups).barrier())
         d2 = (nt.Dispatch().pipeline(self.p_merge).buffer(0, self.part_o).buffer(1, self.part_md).buffer(2, pb).buffer(3, out)
               .bytes(4, params).grid(g * c.heads).threadgroup(32))
         if self.step_state:
@@ -178,6 +181,26 @@ def test_draft_attn_matches_kernel_contract(dev, step_state):
     if step_state:
         proj = f32_to_bf16(rng.standard_normal((7, cfg.n1)).astype(np.float32))
         assert np.all(h.step(proj, np.zeros((0, cfg.kvp_stride), np.uint16), ctx_len, 0, done=1) == 0)   # done: returns at once
+
+
+@pytest.mark.parametrize('position,n_new', [(0, 8), (512, 128), (8192, 8), (8192, 128)])
+def test_draft_worker_tuning_preserves_state(dev, position, n_new):
+    cfg = DCfg(32, 8, 128, 8448, 7)
+    rng = np.random.default_rng(19)
+    qn, kn = [np.ones(cfg.d, np.float32) for _ in range(2)]
+    baseline = DraftHarness(dev, cfg, qn, kn, step_state=True)
+    candidate = DraftHarness(dev, cfg, qn, kn, step_state=True, chunk_sg=144, simdgroups=8)
+    baseline.n_sg, candidate.n_sg = 144, 192
+    keys = rbf(rng.normal(0, .5, (cfg.ctx_max, cfg.kv, cfg.d)))
+    values = rbf(rng.normal(0, .2, keys.shape))
+    keys[position:], values[position:] = 0, 0
+    baseline.set_caches(keys, values)
+    candidate.set_caches(keys, values)
+    proj = f32_to_bf16(rng.normal(0, .5, (7, cfg.n1)).astype(np.float32))
+    kvp = f32_to_bf16(rng.normal(0, .5, (n_new, cfg.kvp_stride)).astype(np.float32))
+    assert np.array_equal(baseline.step(proj, kvp, position, n_new), candidate.step(proj, kvp, position, n_new))
+    for expected, actual in zip(baseline.caches(), candidate.caches()):
+        assert np.array_equal(expected, actual)
 
 
 def test_draft_attn_matches_layer_oracle(dev):

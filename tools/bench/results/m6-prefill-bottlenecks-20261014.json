@@ -1,0 +1,5490 @@
+{
+  "method": "Real 32640-token prefix; checkpoints replay 128 rows, three ICB and three counter samples each. Encoder timestamps are diagnostic, not additive to production ICB latency.",
+  "model": "nvidia/Qwen3.8-27B-NVFP4",
+  "chip": "Apple M6",
+  "kv_cache_dtype": "turbo4",
+  "dspark_proposals": 7,
+  "profile_memory": {
+    "total": 25853000396,
+    "by_category": {
+      "weights": 22078193664,
+      "state": 307888128,
+      "target_kv": 553749504,
+      "arena": 2241835500,
+      "draft_kv": 671211520,
+      "step_state": 656,
+      "ring": 32768,
+      "params": 88656
+    }
+  },
+  "profile_gpu_ms_excluding_probes": 416477.6823333232,
+  "production_changed": false,
+  "points": [
+    {
+      "position": 8064,
+      "gpu_ms": 1200.7050833344692,
+      "groups_ms": {
+        "embed": 0.057372999999959574,
+        "rmsnorm_stat": 0.015751000000105705,
+        "norm_apply": 1.9022110000000518,
+        "gemv_T:fp8_e4m3": 0.4352849999998643,
+        "x_permute": 11.673260000000873,
+        "gemm_tile:fp8_e4m3": 174.60741599999952,
+        "gemv_T:bf16": 34.46975199999951,
+        "gemm_tile:bf16": 4.246454999999944,
+        "gdn_prepare": 30.646999000000285,
+        "gdn_mixer": 26.17179399999993,
+        "gdn_norm": 1.606038000000698,
+        "gemv_T:nvfp4": 2.9237480000002205,
+        "gemm_tile:nvfp4": 557.3027009999994,
+        "attention_prepare": 0.6400429999999773,
+        "attention_core": 398.7793310000005,
+        "attention_merge": 45.67146100000007,
+        "argmax_partial": 0.4466659999998228,
+        "argmax_final": 0.017334000000118976,
+        "accept_scan": 0.0017080000000078144,
+        "tap_concat": 0.07337499999994179,
+        "confidence": 0.09995900000012625,
+        "verify_select": 0.0018749999999272404
+      },
+      "samples": [
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 1200.7050833344692,
+          "wall_ms": 1459.3107500001788,
+          "host_busy_ms": 0.07000000000061846,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.033791668713092804,
+          "commit_ms": 0.009416662156581879,
+          "wait_ms": 1459.2506250068545
+        },
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 1193.5943749995204,
+          "wall_ms": 1194.0258333310485,
+          "host_busy_ms": 0.04899999999997817,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.01666666567325592,
+          "commit_ms": 0.005583338439464569,
+          "wait_ms": 1193.9869583323598
+        },
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 1208.6425833331305,
+          "wall_ms": 1568.0240416675806,
+          "host_busy_ms": 0.05500000000029104,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.02179165929555893,
+          "commit_ms": 0.00570833683013916,
+          "wait_ms": 1567.979041673243
+        }
+      ],
+      "counter_span_ms": [
+        1228.046625,
+        1319.9958749999998,
+        1267.899209
+      ],
+      "counter_sum_ms": [
+        1277.0466290000027,
+        1290.2697829999997,
+        1293.5144869999965
+      ],
+      "state_snapshot_bytes": 307921552,
+      "host": {
+        "rss_bytes": 2955427840,
+        "peak_rss_bytes": 4149428224,
+        "swap": "vm.swapusage: total = 2048.00M  used = 1276.19M  free = 771.81M  (encrypted)",
+        "vm_stat": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    10218.\nPages active:                                  79872.\nPages inactive:                                78097.\nPages speculative:                               748.\nPages throttled:                                   0.\nPages wired down:                            1706026.\nPages purgeable:                                4726.\n\"Translation faults\":                       86750537.\nPages copy-on-write:                         1618996.\nPages zero filled:                          87791205.\nPages reactivated:                          19109511.\nPages purged:                                 793017.\nFile-backed pages:                             58888.\nAnonymous pages:                               99829.\nPages stored in compressor:                   345053.\nPages occupied by compressor:                 171906.\nDecompressions:                              6724172.\nCompressions:                                8613719.\nPageins:                                    15786773.\nPageouts:                                       3991.\nSwapins:                                      279553.\nSwapouts:                                     422794.\nPages tagged:                                  79805.\nPages tagged resident:                         52870.\nPages tagged compressed:                       26935.\nPages tag-storage:                             65536.\nPages tag-storage holding tags:                 3629.\nPages tag-storage free:                         1107.\nPages tag-storage non-tag pageable:            60662.\nPages tag-storage non-tag wired:                   3.\nBytes of compressed tags:                    4667520.\nTagged compressions:                          452331.\nTagged decompressions:                        377552.\n"
+      },
+      "dispatches": 1660,
+      "barriers": 1055,
+      "under_10us_count": 608,
+      "under_10us_sum_ms": 1.434664000000996,
+      "largest_ops": [
+        {
+          "name": "lm_head:lm_head.weight",
+          "function": "gemm_tile",
+          "ms": 43.378124999999955
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 24.38499999999999
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 24.32137499999999
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 24.163665999999978
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 24.149875000000065
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 24.092416999999955
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 24.08279099999993
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.988500000000045
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.91508299999998
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.888582999999983
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.883332999999993
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.86295800000005
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.79833400000001
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.69999999999999
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.658792000000005
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.528334000000086
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 23.523417000000002
+        },
+        {
+          "name": "gemv:layers.7.mlp.gate_up.gate_proj+up_proj",
+          "function": "gemm_tile",
+          "ms": 5.77166600000001
+        },
+        {
+          "name": "gemv:layers.35.mlp.gate_up.gate_proj+up_proj",
+          "function": "gemm_tile",
+          "ms": 5.753667000000064
+        },
+        {
+          "name": "gemv:layers.62.mlp.gate_up.gate_proj+up_proj",
+          "function": "gemm_tile",
+          "ms": 5.682416000000103
+        },
+        {
+          "name": "gemv:layers.10.mlp.gate_up.gate_proj+up_proj",
+          "function": "gemm_tile",
+          "ms": 5.643916999999988
+        },
+        {
+          "name": "gemv:layers.57.mlp.gate_up.gate_proj+up_proj",
+          "function": "gemm_tile",
+          "ms": 5.54362500000002
+        },
+        {
+          "name": "gemv:layers.39.mlp.gate_up.gate_proj+up_proj",
+          "function": "gemm_tile",
+          "ms": 5.532249999999976
+        },
+        {
+          "name": "gemv:layers.31.mlp.gate_up.gate_proj+up_proj",
+          "function": "gemm_tile",
+          "ms": 5.494791999999961
+        }
+      ]
+    },
+    {
+      "position": 16256,
+      "gpu_ms": 1626.9201250033802,
+      "groups_ms": {
+        "embed": 0.05445900000056591,
+        "rmsnorm_stat": 0.013832999999945968,
+        "norm_apply": 1.8063300000003646,
+        "gemv_T:fp8_e4m3": 0.39524900000060725,
+        "x_permute": 11.399365999999901,
+        "gemm_tile:fp8_e4m3": 174.6966309999995,
+        "gemv_T:bf16": 34.90795399999993,
+        "gemm_tile:bf16": 4.196209000000238,
+        "gdn_prepare": 31.83408600000057,
+        "gdn_mixer": 26.68196000000044,
+        "gdn_norm": 1.431664000000577,
+        "gemv_T:nvfp4": 2.6578769999993597,
+        "gemm_tile:nvfp4": 550.0222919999983,
+        "attention_prepare": 0.6179170000003325,
+        "attention_core": 771.1103360000002,
+        "attention_merge": 92.55645900000019,
+        "argmax_partial": 0.5010839999997643,
+        "argmax_final": 0.017374999999901775,
+        "accept_scan": 0.0016669999999976426,
+        "tap_concat": 0.08020800000008421,
+        "confidence": 0.09645900000009533,
+        "verify_select": 0.0018749999999272404
+      },
+      "samples": [
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 1631.0660000017378,
+          "wall_ms": 1901.2489583343267,
+          "host_busy_ms": 0.06199999999989814,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.02420833706855774,
+          "commit_ms": 0.007624998688697815,
+          "wait_ms": 1901.1995833218098
+        },
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 1626.9201250033802,
+          "wall_ms": 1627.4310416653752,
+          "host_busy_ms": 0.05599999999958527,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.019333340227603912,
+          "commit_ms": 0.007541663944721222,
+          "wait_ms": 1627.386291667819
+        },
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 1621.1487499967916,
+          "wall_ms": 1867.5865833386779,
+          "host_busy_ms": 0.046000000000276486,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.0182083398103714,
+          "commit_ms": 0.00691666454076767,
+          "wait_ms": 1867.5490833371878
+        }
+      ],
+      "counter_span_ms": [
+        1672.504583,
+        1626.7515839999999,
+        1689.395
+      ],
+      "counter_sum_ms": [
+        1707.1021869999984,
+        1698.9673380000017,
+        1709.5378769999993
+      ],
+      "state_snapshot_bytes": 307921552,
+      "host": {
+        "rss_bytes": 2985148416,
+        "peak_rss_bytes": 4149428224,
+        "swap": "vm.swapusage: total = 2048.00M  used = 1276.19M  free = 771.81M  (encrypted)",
+        "vm_stat": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    10759.\nPages active:                                  94086.\nPages inactive:                                92150.\nPages speculative:                               186.\nPages throttled:                                   0.\nPages wired down:                            1704721.\nPages purgeable:                                6510.\n\"Translation faults\":                       87178101.\nPages copy-on-write:                         1638128.\nPages zero filled:                          87982474.\nPages reactivated:                          19217658.\nPages purged:                                 817397.\nFile-backed pages:                             65099.\nAnonymous pages:                              121323.\nPages stored in compressor:                   283789.\nPages occupied by compressor:                 144965.\nDecompressions:                              6807169.\nCompressions:                                8674274.\nPageins:                                    15800809.\nPageouts:                                       3995.\nSwapins:                                      279569.\nSwapouts:                                     422794.\nPages tagged:                                  76384.\nPages tagged resident:                         53737.\nPages tagged compressed:                       22647.\nPages tag-storage:                             65536.\nPages tag-storage holding tags:                 3643.\nPages tag-storage free:                         1098.\nPages tag-storage non-tag pageable:            60597.\nPages tag-storage non-tag wired:                   3.\nBytes of compressed tags:                    3763200.\nTagged compressions:                          456378.\nTagged decompressions:                        384418.\n"
+      },
+      "dispatches": 1660,
+      "barriers": 1055,
+      "under_10us_count": 592,
+      "under_10us_sum_ms": 1.3489750000005682,
+      "largest_ops": [
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.985749999999825
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.546959000000015
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.52925000000005
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.496624999999995
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.18995800000016
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.16274999999996
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.151084000000026
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 46.010624999999976
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.994959
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.872208
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.835375
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.814542000000074
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.803125000000136
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.79645900000003
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.79624999999987
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 45.79075
+        },
+        {
+          "name": "lm_head:lm_head.weight",
+          "function": "gemm_tile",
+          "ms": 43.359707999999955
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 6.163375000000087
+        },
+        {
+          "name": "gqa_merge",
+          "function": "gqa_merge",
+          "ms": 6.157875000000104
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 6.138165999999956
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 6.133915999999999
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 6.129417000000103
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 6.117209000000003
+        },
+        {
+          "name": "gqa_merge",
+          "function": "gqa_merge",
+          "ms": 5.916083999999955
+        }
+      ]
+    },
+    {
+      "position": 32384,
+      "gpu_ms": 2481.3155833326164,
+      "groups_ms": {
+        "embed": 0.05675099999976609,
+        "rmsnorm_stat": 0.014460000000658679,
+        "norm_apply": 1.724173999997672,
+        "gemv_T:fp8_e4m3": 0.4699960000003358,
+        "x_permute": 11.171067000000154,
+        "gemm_tile:fp8_e4m3": 174.60020400000016,
+        "gemv_T:bf16": 43.73753800000033,
+        "gemm_tile:bf16": 4.168333000000192,
+        "gdn_prepare": 31.401752000000595,
+        "gdn_mixer": 26.624331999999473,
+        "gdn_norm": 1.5059180000002108,
+        "gemv_T:nvfp4": 2.7137120000006547,
+        "gemm_tile:nvfp4": 551.6018010000021,
+        "attention_prepare": 0.6183319999995192,
+        "attention_core": 1530.2949580000006,
+        "attention_merge": 188.41442000000004,
+        "argmax_partial": 0.425664999998844,
+        "argmax_final": 0.017251000000214844,
+        "accept_scan": 0.0017090000001189765,
+        "tap_concat": 0.082915999999841,
+        "confidence": 0.1018330000001697,
+        "verify_select": 0.001833000000260654
+      },
+      "samples": [
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 2481.3155833326164,
+          "wall_ms": 2734.1140000000596,
+          "host_busy_ms": 0.05099999999947613,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.01841665804386139,
+          "commit_ms": 0.005625002086162567,
+          "wait_ms": 2734.0729583352804
+        },
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 2487.4932916718535,
+          "wall_ms": 2488.1419583410025,
+          "host_busy_ms": 0.06900000000041473,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.022708334028720856,
+          "commit_ms": 0.010875001549720764,
+          "wait_ms": 2488.0882916748524
+        },
+        {
+          "steps": 1,
+          "command_buffers": 1,
+          "gpu_ms": 2474.3087500028196,
+          "wall_ms": 2723.263541676104,
+          "host_busy_ms": 0.0500000000001819,
+          "done": false,
+          "tokens": [],
+          "encode_ms": 0.014750003814697266,
+          "commit_ms": 0.005583330988883972,
+          "wait_ms": 2723.2238333299756
+        }
+      ],
+      "counter_span_ms": [
+        2509.371333,
+        2497.257542,
+        2506.464
+      ],
+      "counter_sum_ms": [
+        2570.2725010000045,
+        2569.385923000004,
+        2571.9914239999966
+      ],
+      "state_snapshot_bytes": 307921552,
+      "host": {
+        "rss_bytes": 2951528448,
+        "peak_rss_bytes": 4149428224,
+        "swap": "vm.swapusage: total = 2048.00M  used = 1276.19M  free = 771.81M  (encrypted)",
+        "vm_stat": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     9923.\nPages active:                                  94559.\nPages inactive:                                93294.\nPages speculative:                                48.\nPages throttled:                                   0.\nPages wired down:                            1699511.\nPages purgeable:                               10543.\n\"Translation faults\":                       88104565.\nPages copy-on-write:                         1689435.\nPages zero filled:                          88439893.\nPages reactivated:                          19361966.\nPages purged:                                 829485.\nFile-backed pages:                             63198.\nAnonymous pages:                              124703.\nPages stored in compressor:                   286804.\nPages occupied by compressor:                 149532.\nDecompressions:                              6922956.\nCompressions:                                8799290.\nPageins:                                    15818914.\nPageouts:                                       4001.\nSwapins:                                      279577.\nSwapouts:                                     422794.\nPages tagged:                                  75639.\nPages tagged resident:                         52413.\nPages tagged compressed:                       23226.\nPages tag-storage:                             65536.\nPages tag-storage holding tags:                 3580.\nPages tag-storage free:                          172.\nPages tag-storage non-tag pageable:            61589.\nPages tag-storage non-tag wired:                   2.\nBytes of compressed tags:                    3902272.\nTagged compressions:                          462885.\nTagged decompressions:                        390324.\n"
+      },
+      "dispatches": 1660,
+      "barriers": 1055,
+      "under_10us_count": 582,
+      "under_10us_sum_ms": 1.2542870000053206,
+      "largest_ops": [
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 92.40520900000001
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 92.23866699999999
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 92.04395899999986
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 92.00937500000009
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.98695900000007
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.866334
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.80487500000004
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.66408300000012
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.52724999999998
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.42508299999997
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.32883300000003
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.27470799999998
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.176958
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.16824999999994
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.108792
+        },
+        {
+          "name": "gqa_decode",
+          "function": "gqa_decode_mma_m6",
+          "ms": 91.02054199999998
+        },
+        {
+          "name": "lm_head:lm_head.weight",
+          "function": "gemm_tile",
+          "ms": 43.979207999999744
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 12.532791999999972
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 12.33666600000015
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 12.328750000000127
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 12.293874999999844
+        },
+        {
+          "name": "draft_attn",
+          "function": "gqa_decode",
+          "ms": 12.286207999999988
+        },
+        {
+          "name": "gqa_merge",
+          "function": "gqa_merge",
+          "ms": 12.247249999999894
+        },
+        {
+          "name": "gqa_merge",
+          "function": "gqa_merge",
+          "ms": 12.022249999999985
+        }
+      ]
+    }
+  ],
+  "micro": {
+    "gate-up": {
+      "kind": "gate_up",
+      "chunk": 128,
+      "shader_validation": "0",
+      "reference": {
+        "K": "5120",
+        "R": "16",
+        "TM": "32",
+        "TN": "32u",
+        "TK": "128u",
+        "LANE_ORDER": "1",
+        "UNIT_WORDS": "6",
+        "PAYLOAD_WORDS": "5",
+        "SCALE_W0": "5",
+        "SCALE_UOFF": "0",
+        "SCALE_WORDS": "1",
+        "GROUP_SEG": "16",
+        "OUT_BF16": "1",
+        "EPILOGUE": "2",
+        "STAT_OUT": "0",
+        "Q_OUTER": "1",
+        "SCALE_CACHE": "1",
+        "T_SRC": "0",
+        "T_LO": "1",
+        "T_HI": "128",
+        "ROW_SCALE_BITS": "958698057u",
+        "STATIC_GEMM_P_N_ROWS": "34816u",
+        "STATIC_GEMM_P_N_TILES": "1088u",
+        "STATIC_GEMM_P_N_SG": "144u",
+        "STATIC_GEMM_P_OUT_SCALE": "1.0f",
+        "STATIC_GEMM_P_TILE0": "0u",
+        "STATIC_GEMM_P_N_BLOCKS": "2176u",
+        "STEP_STATE": "1"
+      },
+      "rows": [
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 4,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              5.420687500190979,
+              5.329723958311661,
+              5.310723958245944,
+              5.309869791744859,
+              5.387807291299396,
+              5.333645833161427
+            ],
+            "candidate": [
+              3.347015624967753,
+              3.372145833054674,
+              3.395760417333804,
+              3.392453125343309,
+              3.3755677086446667,
+              3.3582968744667596
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.331684895736544,
+          "candidate_ms": 3.3738567708496703
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              5.333328124834225,
+              5.279125000015483,
+              5.305583333210961,
+              5.282953125060885,
+              5.448187500405766,
+              5.418880208708288
+            ],
+            "candidate": [
+              3.5269999998490675,
+              3.4103541665899684,
+              3.3835624999483116,
+              3.3851874995889375,
+              3.3755000004020985,
+              3.3828437499323627
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.319455729022593,
+          "candidate_ms": 3.3843749997686245
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 8,
+            "groups": 48
+          },
+          "samples": {
+            "control": [
+              5.365296875424974,
+              5.289468750561355,
+              5.327921874595631,
+              5.284953125737957,
+              5.299520833432325,
+              5.288093750095868
+            ],
+            "candidate": [
+              3.492463541078905,
+              3.4660156243262463,
+              3.569494791008765,
+              3.634427082943148,
+              3.5194479169149417,
+              3.4756562499751453
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.29449479199684,
+          "candidate_ms": 3.5059557289969234
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 16,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              5.334286458491988,
+              5.321156249920023,
+              5.308156250066531,
+              5.3556093753286405,
+              5.264250000436732,
+              5.322843750036554
+            ],
+            "candidate": [
+              3.372838541508827,
+              3.406020833608636,
+              3.4114322916138917,
+              3.4121458329536836,
+              3.385520833944611,
+              3.3629375002419692
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.3219999999782885,
+          "candidate_ms": 3.3957708337766235
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 16,
+            "sgs": 8,
+            "groups": 48
+          },
+          "samples": {
+            "control": [
+              5.279911458274,
+              5.266749999464082,
+              5.353104166715639,
+              5.332562500370841,
+              5.296765625644184,
+              5.341765625416883
+            ],
+            "candidate": [
+              3.4310468754483736,
+              3.4105677077604923,
+              3.3739270829755696,
+              3.3521562500027358,
+              3.4055833330057794,
+              3.3681875002002926
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.314664063007513,
+          "candidate_ms": 3.3897552079906745
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 4,
+            "groups": 48
+          },
+          "samples": {
+            "control": [
+              5.461593749714666,
+              5.470942708598159,
+              5.327796875462809,
+              5.383062500186497,
+              5.302906250108208,
+              5.311812499712687
+            ],
+            "candidate": [
+              3.3983697921939893,
+              3.4176093749920256,
+              3.386869791938807,
+              3.364312499797961,
+              3.4097916668542894,
+              3.399687500859727
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.355429687824653,
+          "candidate_ms": 3.399028646526858
+        },
+        {
+          "config": {
+            "tm": 64,
+            "tn": 16,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              5.2834635416729725,
+              5.3721875001429,
+              5.311786458150891,
+              5.303671875481086,
+              5.334531249900465,
+              5.335848958566203
+            ],
+            "candidate": [
+              4.034843750559958,
+              4.047187499963911,
+              4.021781249321066,
+              4.02218749968597,
+              4.02556770859519,
+              4.017239582935872
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.323158854025678,
+          "candidate_ms": 4.02387760414058
+        },
+        {
+          "config": {
+            "tm": 64,
+            "tn": 32,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              5.320828125150001,
+              5.262307291559409,
+              5.376859375246568,
+              5.362645832974522,
+              5.385843749536434,
+              5.307375000484171
+            ],
+            "candidate": [
+              11.79845312526595,
+              11.65113020761055,
+              11.58484895768197,
+              11.678010416289908,
+              11.862015625411004,
+              11.661890624964144
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 5.3417369790622615,
+          "candidate_ms": 11.669950520627026
+        }
+      ]
+    },
+    "down": {
+      "kind": "down",
+      "chunk": 128,
+      "shader_validation": "0",
+      "reference": {
+        "K": "17408",
+        "R": "16",
+        "TM": "32",
+        "TN": "32u",
+        "TK": "128u",
+        "LANE_ORDER": "1",
+        "UNIT_WORDS": "20",
+        "PAYLOAD_WORDS": "17",
+        "SCALE_W0": "17",
+        "SCALE_UOFF": "0",
+        "SCALE_WORDS": "3",
+        "GROUP_SEG": "16",
+        "OUT_BF16": "1",
+        "EPILOGUE": "1",
+        "STAT_OUT": "1",
+        "Q_OUTER": "1",
+        "T_SRC": "0",
+        "T_LO": "1",
+        "T_HI": "128",
+        "ROW_SCALE_BITS": "968834292u",
+        "STATIC_GEMM_P_N_ROWS": "5120u",
+        "STATIC_GEMM_P_N_TILES": "160u",
+        "STATIC_GEMM_P_N_SG": "144u",
+        "STATIC_GEMM_P_OUT_SCALE": "1.0f",
+        "STATIC_GEMM_P_TILE0": "0u",
+        "STATIC_GEMM_P_N_BLOCKS": "320u",
+        "STEP_STATE": "1"
+      },
+      "rows": [
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 4,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              2.289718750034808,
+              2.2212812500583823,
+              2.2300729160633637,
+              2.2478906248579733,
+              2.234421875073167,
+              2.277661457810609
+            ],
+            "candidate": [
+              2.084130207549606,
+              2.131734374415828,
+              2.087156250127009,
+              2.1014479161749477,
+              2.105593749547552,
+              2.1070312495794496
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.24115624996557,
+          "candidate_ms": 2.10352083286125
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              2.235078125522705,
+              2.2156093755256734,
+              2.2337812497426057,
+              2.2415677085518837,
+              2.2360156253853347,
+              2.2434687498389394
+            ],
+            "candidate": [
+              2.186062500186381,
+              2.1946718743492966,
+              2.1723645832025795,
+              2.2044114584787167,
+              2.183296875045926,
+              2.1886666672799038
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.2355468754540198,
+          "candidate_ms": 2.1873645837331424
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 8,
+            "groups": 48
+          },
+          "samples": {
+            "control": [
+              2.245588540972676,
+              2.235744792415062,
+              2.2714635415468365,
+              2.2867760417284444,
+              2.2266249998210697,
+              2.2387968756447663
+            ],
+            "candidate": [
+              2.1899635412410134,
+              2.1952031247565174,
+              2.2028645835234784,
+              2.2104635418145335,
+              2.277322916597768,
+              2.2011406244928367
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.242192708308721,
+          "candidate_ms": 2.2020026040081575
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 16,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              2.2241302076508873,
+              2.299999999195279,
+              2.2247031247388804,
+              2.244588541543635,
+              2.240453125523345,
+              2.238942708572722
+            ],
+            "candidate": [
+              1.939604167091602,
+              1.9564531257856288,
+              1.9251093744969694,
+              1.894098958473478,
+              1.9114374999844586,
+              1.9073906250923756
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.2396979170480336,
+          "candidate_ms": 1.918273437240714
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 16,
+            "sgs": 8,
+            "groups": 48
+          },
+          "samples": {
+            "control": [
+              2.2428489583035116,
+              2.2259375000430737,
+              2.2452552084359922,
+              2.2209062499314314,
+              2.2639947919742553,
+              2.2742499995729304
+            ],
+            "candidate": [
+              1.592755208548624,
+              1.6382604162572534,
+              1.591937500052154,
+              1.6619531252217712,
+              1.5946718749546562,
+              1.6356614587493823
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.244052083369752,
+          "candidate_ms": 1.6151666668520193
+        },
+        {
+          "config": {
+            "tm": 32,
+            "tn": 32,
+            "sgs": 4,
+            "groups": 48
+          },
+          "samples": {
+            "control": [
+              2.283875000102853,
+              2.26482291600405,
+              2.2608906247114646,
+              2.232593749795342,
+              2.299411457897804,
+              2.225265625384054
+            ],
+            "candidate": [
+              2.1712968755309703,
+              2.201343750130036,
+              2.1893489583817427,
+              2.2073906247896957,
+              2.2293437496045954,
+              2.2280156254055328
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.2628567703577573,
+          "candidate_ms": 2.204367187459866
+        },
+        {
+          "config": {
+            "tm": 64,
+            "tn": 16,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              2.2292291669145925,
+              2.295828125170374,
+              2.2725312501279404,
+              2.2419687493311358,
+              2.2179583329489105,
+              2.238807291178091
+            ],
+            "candidate": [
+              1.7172760417452082,
+              1.7322187495665275,
+              1.7136406249846914,
+              1.7452864585720818,
+              1.7325364578937297,
+              1.7336041673843283
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.2403880202546134,
+          "candidate_ms": 1.7323776037301286
+        },
+        {
+          "config": {
+            "tm": 64,
+            "tn": 32,
+            "sgs": 8,
+            "groups": 24
+          },
+          "samples": {
+            "control": [
+              2.232072916740435,
+              2.2392343753381283,
+              2.2379218753485475,
+              2.288453124492662,
+              2.2690260420858976,
+              2.248479167064943
+            ],
+            "candidate": [
+              5.2443281247178675,
+              5.358328125112166,
+              5.365296875424974,
+              5.282500000248547,
+              5.508812500011118,
+              5.450718750580563
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 2.2438567712015356,
+          "candidate_ms": 5.36181250026857
+        }
+      ]
+    },
+    "gdn": {
+      "kind": "gdn",
+      "chunk": 128,
+      "shader_validation": "0",
+      "reference": {
+        "DK": "128",
+        "DV": "128",
+        "CW": "4u",
+        "SL": "4u",
+        "SPB": "1u",
+        "TP": "8u",
+        "SLOTS": "2u",
+        "STEP_STATE": "1",
+        "PREPARED": "1",
+        "STATIC_GDN_P_HV": "48u",
+        "STATIC_GDN_P_HK": "16u",
+        "STATIC_GDN_P_Q_OFF": "0u",
+        "STATIC_GDN_P_Z_OFF": "0u",
+        "STATIC_GDN_P_A_OFF": "0u",
+        "STATIC_GDN_P_B_OFF": "48u",
+        "STATIC_GDN_P_IN_STRIDE": "10240u",
+        "STATIC_GDN_P_AB_STRIDE": "96u",
+        "STATIC_GDN_P_AB_SEPARATE": "1u",
+        "STATIC_GDN_P_OUT_STRIDE": "6144u",
+        "STATIC_GDN_P_N_SG": "1536u",
+        "STATIC_GDN_P_KEY_DIM": "2048u",
+        "STATIC_GDN_P_EPS": "9.999999974752427e-07f"
+      },
+      "rows": [
+        {
+          "config": {
+            "tp": 16
+          },
+          "samples": {
+            "control": [
+              0.9342968751298031,
+              0.5752656252298038,
+              0.5448437495942926,
+              0.5493124999702559,
+              0.544640624866588,
+              0.5447187495519756
+            ],
+            "candidate": [
+              0.5304166661517229,
+              0.5316562501320732,
+              0.5425625004136236,
+              0.5334531251719454,
+              0.5335677078619483,
+              0.5349062503228197
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            },
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 0.5470781247822742,
+          "candidate_ms": 0.5335104165169469
+        },
+        {
+          "config": {
+            "tp": 32
+          },
+          "samples": {
+            "control": [
+              0.5538177083508344,
+              0.5460729171318235,
+              0.5455729160530609,
+              0.5465729163915967,
+              0.5407083326645079,
+              0.5455156251628068
+            ],
+            "candidate": [
+              0.5328906254362664,
+              0.525911458680639,
+              0.5445312499432475,
+              0.5246874998192652,
+              0.5751406251874869,
+              0.5287968742777593
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            },
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 0.5458229165924422,
+          "candidate_ms": 0.5308437498570129
+        },
+        {
+          "config": {
+            "tp": 64
+          },
+          "samples": {
+            "control": [
+              0.6233645826796419,
+              0.5463229163069627,
+              0.5451510414786753,
+              0.5569687500610598,
+              0.5428333333838964,
+              0.5683229164787917
+            ],
+            "candidate": [
+              0.575203124753898,
+              0.5283906257318449,
+              0.5379062495194376,
+              0.5300624998199055,
+              0.5336822914614459,
+              0.5266145826681168
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            },
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 0.5516458331840113,
+          "candidate_ms": 0.5318723956406757
+        },
+        {
+          "config": {
+            "tp": 128
+          },
+          "samples": {
+            "control": [
+              0.9370937505082111,
+              0.5555208335863426,
+              0.5447499997899286,
+              0.5425104163805372,
+              0.5436093751995941,
+              0.5652812506014016
+            ],
+            "candidate": [
+              0.7366927084149211,
+              0.5265468744255486,
+              0.5271718746371334,
+              0.5269270832286566,
+              0.5324531248334097,
+              0.5270833335089264
+            ]
+          },
+          "errors": [
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            },
+            {
+              "bit_equal": true,
+              "max_abs": 0.0,
+              "rel_l2": 0.0
+            }
+          ],
+          "control_ms": 0.5501354166881356,
+          "candidate_ms": 0.5271276040730299
+        }
+      ]
+    }
+  },
+  "full_model": {
+    "control": {
+      "prefill_gpu_ms": 62607.90231252395,
+      "decode_tps": 15.196907591704772,
+      "wall_ms": 70993.30997899597,
+      "accepted": 2.676470588235294,
+      "managed_bytes": 23932307404,
+      "peak_rss_bytes": 2627846144,
+      "swapout_pages": 0,
+      "rows": [
+        {
+          "kind": "full",
+          "repeat": 0,
+          "prompt_tokens": 8064,
+          "output_tokens": 128,
+          "wall_ms": 70828.41533299506,
+          "prefill_gpu_ms": 62496.32520837622,
+          "prefill_wall_ms": 62510.62120836973,
+          "decode_gpu_ms": 8303.042583342176,
+          "decode_wall_ms": 8304.215124994516,
+          "decode_tokens": 127,
+          "steps": 35,
+          "decode_tps": 15.293438102024586,
+          "e2e_tps": 1.8071842974068606,
+          "ms_per_round": 237.22978809549073,
+          "statistics": {
+            "delivered_tokens_per_round": 3.6285714285714286,
+            "nonterminal_rounds": 34,
+            "accepted_histogram": {
+              "0": 9,
+              "1": 7,
+              "2": 6,
+              "3": 1,
+              "4": 2,
+              "5": 1,
+              "6": 3,
+              "7": 6
+            },
+            "committed_histogram": {
+              "1": 9,
+              "2": 7,
+              "3": 6,
+              "4": 1,
+              "5": 2,
+              "6": 1,
+              "7": 3,
+              "8": 6
+            },
+            "verified_histogram": {
+              "7": 35
+            },
+            "nonterminal_mean_accepted": 2.676470588235294,
+            "nonterminal_mean_committed": 3.676470588235294,
+            "positions": [
+              {
+                "position": 1,
+                "eligible_rounds": 34,
+                "reached_rounds": 34,
+                "accepted_rounds": 25,
+                "survival": 0.7352941176470589,
+                "conditional_acceptance": 0.7352941176470589
+              },
+              {
+                "position": 2,
+                "eligible_rounds": 34,
+                "reached_rounds": 25,
+                "accepted_rounds": 18,
+                "survival": 0.5294117647058824,
+                "conditional_acceptance": 0.72
+              },
+              {
+                "position": 3,
+                "eligible_rounds": 34,
+                "reached_rounds": 18,
+                "accepted_rounds": 12,
+                "survival": 0.35294117647058826,
+                "conditional_acceptance": 0.6666666666666666
+              },
+              {
+                "position": 4,
+                "eligible_rounds": 34,
+                "reached_rounds": 12,
+                "accepted_rounds": 11,
+                "survival": 0.3235294117647059,
+                "conditional_acceptance": 0.9166666666666666
+              },
+              {
+                "position": 5,
+                "eligible_rounds": 34,
+                "reached_rounds": 11,
+                "accepted_rounds": 10,
+                "survival": 0.29411764705882354,
+                "conditional_acceptance": 0.9090909090909091
+              },
+              {
+                "position": 6,
+                "eligible_rounds": 34,
+                "reached_rounds": 10,
+                "accepted_rounds": 9,
+                "survival": 0.2647058823529412,
+                "conditional_acceptance": 0.9
+              },
+              {
+                "position": 7,
+                "eligible_rounds": 34,
+                "reached_rounds": 9,
+                "accepted_rounds": 6,
+                "survival": 0.17647058823529413,
+                "conditional_acceptance": 0.6666666666666666
+              }
+            ]
+          },
+          "accepted": [
+            6,
+            7,
+            2,
+            7,
+            0,
+            5,
+            6,
+            2,
+            0,
+            1,
+            1,
+            3,
+            0,
+            1,
+            7,
+            4,
+            1,
+            2,
+            6,
+            7,
+            7,
+            7,
+            2,
+            1,
+            0,
+            0,
+            2,
+            0,
+            1,
+            0,
+            1,
+            2,
+            0,
+            0,
+            4
+          ],
+          "committed": [
+            7,
+            8,
+            3,
+            8,
+            1,
+            6,
+            7,
+            3,
+            1,
+            2,
+            2,
+            4,
+            1,
+            2,
+            8,
+            5,
+            2,
+            3,
+            7,
+            8,
+            8,
+            8,
+            3,
+            2,
+            1,
+            1,
+            3,
+            1,
+            2,
+            1,
+            2,
+            3,
+            1,
+            1,
+            5
+          ],
+          "verify_len": [
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "tokens": [
+            27775,
+            383,
+            279,
+            5604,
+            8129,
+            3766,
+            11,
+            1532,
+            369,
+            264,
+            11346,
+            15673,
+            314,
+            63520,
+            45543,
+            13,
+            271,
+            13962,
+            9237,
+            33214,
+            198,
+            8068,
+            21473,
+            45543,
+            369,
+            264,
+            14334,
+            5995,
+            310,
+            41365,
+            279,
+            9191,
+            314,
+            1414,
+            539,
+            3349,
+            3992,
+            3983,
+            318,
+            3950,
+            20971,
+            553,
+            1049,
+            25224,
+            383,
+            264,
+            328,
+            43494,
+            9485,
+            12,
+            12089,
+            1,
+            46632,
+            15394,
+            1330,
+            12103,
+            3983,
+            25,
+            271,
+            16,
+            13,
+            220,
+            2972,
+            760,
+            27632,
+            4744,
+            64700,
+            357,
+            8882,
+            11,
+            10281,
+            1558,
+            421,
+            52789,
+            264,
+            8240,
+            314,
+            10885,
+            13,
+            198,
+            17,
+            13,
+            220,
+            2972,
+            760,
+            13095,
+            4744,
+            64700,
+            357,
+            7875,
+            11,
+            777,
+            12995,
+            1558,
+            421,
+            84828,
+            1439,
+            23497,
+            13,
+            271,
+            13962,
+            2500,
+            1049,
+            20457,
+            198,
+            760,
+            1817,
+            10695,
+            264,
+            3050,
+            27370,
+            310,
+            5790,
+            279,
+            2468,
+            4131,
+            8798,
+            421,
+            314,
+            279,
+            7875,
+            2100,
+            1558,
+            1345,
+            28187,
+            4478,
+            494,
+            279
+          ],
+          "setup_ms": 0.0,
+          "cached_prompt_tokens": 0,
+          "prefill_timings": [
+            {
+              "position": 0,
+              "tokens": 128,
+              "gpu_ms": 823.1118750045425,
+              "wall_ms": 823.5837083384395,
+              "host_busy_ms": 0.08799999999973807,
+              "encode_ms": 0.05304165929555893,
+              "commit_ms": 0.008291669189929962,
+              "wait_ms": 823.5058749988675
+            },
+            {
+              "position": 128,
+              "tokens": 128,
+              "gpu_ms": 832.7130416655564,
+              "wall_ms": 832.9130833372474,
+              "host_busy_ms": 0.02900000000045111,
+              "encode_ms": 0.010291673243045807,
+              "commit_ms": 0.0035833269357681274,
+              "wait_ms": 832.8940416648984
+            },
+            {
+              "position": 256,
+              "tokens": 128,
+              "gpu_ms": 837.2922083362937,
+              "wall_ms": 837.4963333308697,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.009333334863185883,
+              "commit_ms": 0.002875000238418579,
+              "wait_ms": 837.4722083285451
+            },
+            {
+              "position": 384,
+              "tokens": 128,
+              "gpu_ms": 848.9871249985299,
+              "wall_ms": 849.1949166730046,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.011624999344348907,
+              "commit_ms": 0.004083327949047089,
+              "wait_ms": 849.1691250056028
+            },
+            {
+              "position": 512,
+              "tokens": 128,
+              "gpu_ms": 855.4291250038659,
+              "wall_ms": 855.6338333413005,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008666671812534332,
+              "commit_ms": 0.0032916590571403503,
+              "wait_ms": 855.6101666614413
+            },
+            {
+              "position": 640,
+              "tokens": 128,
+              "gpu_ms": 864.5378750006785,
+              "wall_ms": 864.7390000000596,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009541667997837067,
+              "commit_ms": 0.003083333373069763,
+              "wait_ms": 864.7144999951124
+            },
+            {
+              "position": 768,
+              "tokens": 128,
+              "gpu_ms": 870.0767499976791,
+              "wall_ms": 870.2842499986291,
+              "host_busy_ms": 0.035000000000763976,
+              "encode_ms": 0.010374993085861206,
+              "commit_ms": 0.0037500038743019104,
+              "wait_ms": 870.2584583312273
+            },
+            {
+              "position": 896,
+              "tokens": 128,
+              "gpu_ms": 826.9243749964517,
+              "wall_ms": 827.128791667521,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.009833335876464844,
+              "commit_ms": 0.0032083317637443542,
+              "wait_ms": 827.1042500063777
+            },
+            {
+              "position": 1024,
+              "tokens": 128,
+              "gpu_ms": 834.6883749982226,
+              "wall_ms": 834.9032499939203,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.010666660964488983,
+              "commit_ms": 0.0034166648983955383,
+              "wait_ms": 834.878250002861
+            },
+            {
+              "position": 1152,
+              "tokens": 128,
+              "gpu_ms": 850.5330416664947,
+              "wall_ms": 850.7355000004172,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.009874999523162842,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 850.7169166654348
+            },
+            {
+              "position": 1280,
+              "tokens": 128,
+              "gpu_ms": 847.604250004224,
+              "wall_ms": 847.9058749973774,
+              "host_busy_ms": 0.0860000000002401,
+              "encode_ms": 0.033041663467884064,
+              "commit_ms": 0.013833336532115936,
+              "wait_ms": 847.8317916691303
+            },
+            {
+              "position": 1408,
+              "tokens": 128,
+              "gpu_ms": 855.5251249999856,
+              "wall_ms": 855.7803750038147,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.008666664361953735,
+              "commit_ms": 0.002791672945022583,
+              "wait_ms": 855.7569583281875
+            },
+            {
+              "position": 1536,
+              "tokens": 128,
+              "gpu_ms": 858.3612083311891,
+              "wall_ms": 858.5387916639447,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.010333329439163208,
+              "commit_ms": 0.0034583359956741333,
+              "wait_ms": 858.514708340168
+            },
+            {
+              "position": 1664,
+              "tokens": 128,
+              "gpu_ms": 866.0384166723816,
+              "wall_ms": 866.2727499976754,
+              "host_busy_ms": 0.02400000000034197,
+              "encode_ms": 0.0091666579246521,
+              "commit_ms": 0.002958334982395172,
+              "wait_ms": 866.2531250044703
+            },
+            {
+              "position": 1792,
+              "tokens": 128,
+              "gpu_ms": 881.3074999998207,
+              "wall_ms": 881.5446666702628,
+              "host_busy_ms": 0.04099999999925785,
+              "encode_ms": 0.01420833170413971,
+              "commit_ms": 0.004833333194255829,
+              "wait_ms": 881.5199999958277
+            },
+            {
+              "position": 1920,
+              "tokens": 128,
+              "gpu_ms": 877.0856250048382,
+              "wall_ms": 877.3005416616797,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.012916669249534607,
+              "commit_ms": 0.0031249970197677612,
+              "wait_ms": 877.2655000016093
+            },
+            {
+              "position": 2048,
+              "tokens": 128,
+              "gpu_ms": 885.1264999975683,
+              "wall_ms": 885.3462916612625,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.012208335101604462,
+              "commit_ms": 0.004083327949047089,
+              "wait_ms": 885.3178749978542
+            },
+            {
+              "position": 2176,
+              "tokens": 128,
+              "gpu_ms": 891.6531249997206,
+              "wall_ms": 891.8875833377242,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.011583328247070312,
+              "commit_ms": 0.004208333790302277,
+              "wait_ms": 891.8572083339095
+            },
+            {
+              "position": 2304,
+              "tokens": 128,
+              "gpu_ms": 903.8032500029658,
+              "wall_ms": 904.035416662693,
+              "host_busy_ms": 0.046000000000276486,
+              "encode_ms": 0.013875000178813934,
+              "commit_ms": 0.005208335816860199,
+              "wait_ms": 904.0028333365917
+            },
+            {
+              "position": 2432,
+              "tokens": 128,
+              "gpu_ms": 909.0768750029383,
+              "wall_ms": 909.2853749990463,
+              "host_busy_ms": 0.03900000000066939,
+              "encode_ms": 0.009458325803279877,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 909.2605000063777
+            },
+            {
+              "position": 2560,
+              "tokens": 128,
+              "gpu_ms": 909.5371666699066,
+              "wall_ms": 909.7422916665673,
+              "host_busy_ms": 0.03299999999944703,
+              "encode_ms": 0.00895833969116211,
+              "commit_ms": 0.0036666616797447205,
+              "wait_ms": 909.719041660428
+            },
+            {
+              "position": 2688,
+              "tokens": 128,
+              "gpu_ms": 917.2563750034897,
+              "wall_ms": 917.4653333351016,
+              "host_busy_ms": 0.03400000000056025,
+              "encode_ms": 0.008333325386047363,
+              "commit_ms": 0.002583332359790802,
+              "wait_ms": 917.4436666667461
+            },
+            {
+              "position": 2816,
+              "tokens": 128,
+              "gpu_ms": 927.3716250027064,
+              "wall_ms": 927.6744166761637,
+              "host_busy_ms": 0.047999999999774445,
+              "encode_ms": 0.01083333045244217,
+              "commit_ms": 0.004333332180976868,
+              "wait_ms": 927.648125000298
+            },
+            {
+              "position": 2944,
+              "tokens": 128,
+              "gpu_ms": 936.4905000038561,
+              "wall_ms": 936.75720833987,
+              "host_busy_ms": 0.06099999999969441,
+              "encode_ms": 0.022458337247371674,
+              "commit_ms": 0.009291663765907288,
+              "wait_ms": 936.7107499986887
+            },
+            {
+              "position": 3072,
+              "tokens": 128,
+              "gpu_ms": 936.165749997599,
+              "wall_ms": 936.3402500003576,
+              "host_busy_ms": 0.023000000000138243,
+              "encode_ms": 0.00925000011920929,
+              "commit_ms": 0.0032499954104423523,
+              "wait_ms": 936.3214583396912
+            },
+            {
+              "position": 3200,
+              "tokens": 128,
+              "gpu_ms": 943.1169999952544,
+              "wall_ms": 943.3300833329558,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.010875001549720764,
+              "commit_ms": 0.002916663885116577,
+              "wait_ms": 943.3028750047088
+            },
+            {
+              "position": 3328,
+              "tokens": 128,
+              "gpu_ms": 950.4668750014389,
+              "wall_ms": 950.6854166612029,
+              "host_busy_ms": 0.04400000000077853,
+              "encode_ms": 0.012500002980232239,
+              "commit_ms": 0.0039166659116744995,
+              "wait_ms": 950.65625
+            },
+            {
+              "position": 3456,
+              "tokens": 128,
+              "gpu_ms": 967.7644999974291,
+              "wall_ms": 967.976333335042,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.010083332657814026,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 967.9500416740775
+            },
+            {
+              "position": 3584,
+              "tokens": 128,
+              "gpu_ms": 961.8504166646744,
+              "wall_ms": 962.0563333332539,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.009874999523162842,
+              "commit_ms": 0.0035416632890701294,
+              "wait_ms": 962.0298333317041
+            },
+            {
+              "position": 3712,
+              "tokens": 128,
+              "gpu_ms": 967.1298333341838,
+              "wall_ms": 967.3309583291411,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.01179167628288269,
+              "commit_ms": 0.0040000006556510925,
+              "wait_ms": 967.3045416623354
+            },
+            {
+              "position": 3840,
+              "tokens": 128,
+              "gpu_ms": 976.5455416636541,
+              "wall_ms": 976.7589999958873,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.008916661143302917,
+              "commit_ms": 0.0035416707396507263,
+              "wait_ms": 976.73329167068
+            },
+            {
+              "position": 3968,
+              "tokens": 128,
+              "gpu_ms": 990.677500005404,
+              "wall_ms": 990.9074999988079,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.012999996542930603,
+              "commit_ms": 0.005208335816860199,
+              "wait_ms": 990.8780416697264
+            },
+            {
+              "position": 4096,
+              "tokens": 128,
+              "gpu_ms": 988.4721249982249,
+              "wall_ms": 988.6761250048876,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.010041661560535431,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 988.6509166657925
+            },
+            {
+              "position": 4224,
+              "tokens": 128,
+              "gpu_ms": 993.3376249973662,
+              "wall_ms": 993.49945833534,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008708342909812927,
+              "commit_ms": 0.002666659653186798,
+              "wait_ms": 993.4776250049472
+            },
+            {
+              "position": 4352,
+              "tokens": 128,
+              "gpu_ms": 1002.1099583318573,
+              "wall_ms": 1002.3121666684747,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009166672825813293,
+              "commit_ms": 0.003041662275791168,
+              "wait_ms": 1002.2867083325982
+            },
+            {
+              "position": 4480,
+              "tokens": 128,
+              "gpu_ms": 1015.5906250001863,
+              "wall_ms": 1015.8007083311677,
+              "host_busy_ms": 0.03900000000066939,
+              "encode_ms": 0.010833323001861572,
+              "commit_ms": 0.0041666775941848755,
+              "wait_ms": 1015.7802916616201
+            },
+            {
+              "position": 4608,
+              "tokens": 128,
+              "gpu_ms": 1017.2079166732146,
+              "wall_ms": 1017.4905000030994,
+              "host_busy_ms": 0.07399999999961437,
+              "encode_ms": 0.028666667640209198,
+              "commit_ms": 0.012916669249534607,
+              "wait_ms": 1017.4268750026822
+            },
+            {
+              "position": 4736,
+              "tokens": 128,
+              "gpu_ms": 1020.3003333299421,
+              "wall_ms": 1020.5251250043511,
+              "host_busy_ms": 0.051000000000385626,
+              "encode_ms": 0.017333336174488068,
+              "commit_ms": 0.0066250041127204895,
+              "wait_ms": 1020.4874583259225
+            },
+            {
+              "position": 4864,
+              "tokens": 128,
+              "gpu_ms": 1025.9250000017346,
+              "wall_ms": 1026.1341666579247,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.011374995112419128,
+              "commit_ms": 0.004208333790302277,
+              "wait_ms": 1026.1072500050068
+            },
+            {
+              "position": 4992,
+              "tokens": 128,
+              "gpu_ms": 1042.885999995633,
+              "wall_ms": 1043.096375003457,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.00858333706855774,
+              "commit_ms": 0.0037083402276039124,
+              "wait_ms": 1043.0716666653752
+            },
+            {
+              "position": 5120,
+              "tokens": 128,
+              "gpu_ms": 1040.996666662977,
+              "wall_ms": 1041.214958332479,
+              "host_busy_ms": 0.040000000000873115,
+              "encode_ms": 0.010541670024394989,
+              "commit_ms": 0.0038749948143959045,
+              "wait_ms": 1041.1864999979734
+            },
+            {
+              "position": 5248,
+              "tokens": 128,
+              "gpu_ms": 1047.0900833315682,
+              "wall_ms": 1047.3109166771173,
+              "host_busy_ms": 0.04199999999946158,
+              "encode_ms": 0.01208333671092987,
+              "commit_ms": 0.004708327353000641,
+              "wait_ms": 1047.282499998808
+            },
+            {
+              "position": 5376,
+              "tokens": 128,
+              "gpu_ms": 1052.9467083324562,
+              "wall_ms": 1053.1557916626334,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.011500000953674316,
+              "commit_ms": 0.004291661083698273,
+              "wait_ms": 1053.1283750012517
+            },
+            {
+              "position": 5504,
+              "tokens": 128,
+              "gpu_ms": 1068.6952499963809,
+              "wall_ms": 1068.8967916741967,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009208336472511292,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 1068.8724166601896
+            },
+            {
+              "position": 5632,
+              "tokens": 128,
+              "gpu_ms": 1070.1130000015837,
+              "wall_ms": 1070.317083336413,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009874999523162842,
+              "commit_ms": 0.0034583359956741333,
+              "wait_ms": 1070.290541663766
+            },
+            {
+              "position": 5760,
+              "tokens": 128,
+              "gpu_ms": 1070.6251250012428,
+              "wall_ms": 1070.8185000047088,
+              "host_busy_ms": 0.028000000000247383,
+              "encode_ms": 0.012958325445652008,
+              "commit_ms": 0.0037916749715805054,
+              "wait_ms": 1070.7946249991655
+            },
+            {
+              "position": 5888,
+              "tokens": 128,
+              "gpu_ms": 1084.3600000007427,
+              "wall_ms": 1084.5859583318233,
+              "host_busy_ms": 0.042999999999665306,
+              "encode_ms": 0.013416670262813568,
+              "commit_ms": 0.004791669547557831,
+              "wait_ms": 1084.5557499974966
+            },
+            {
+              "position": 6016,
+              "tokens": 128,
+              "gpu_ms": 1092.207250003412,
+              "wall_ms": 1092.577791661024,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009125001728534698,
+              "commit_ms": 0.0033333227038383484,
+              "wait_ms": 1092.5532083287835
+            },
+            {
+              "position": 6144,
+              "tokens": 128,
+              "gpu_ms": 1092.490083334269,
+              "wall_ms": 1092.7126666679978,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.011124998331069946,
+              "commit_ms": 0.0040000006556510925,
+              "wait_ms": 1092.6861250028014
+            },
+            {
+              "position": 6272,
+              "tokens": 128,
+              "gpu_ms": 1101.3877500008675,
+              "wall_ms": 1101.5917083248496,
+              "host_busy_ms": 0.03900000000066939,
+              "encode_ms": 0.009416669607162476,
+              "commit_ms": 0.0032083243131637573,
+              "wait_ms": 1101.567374996841
+            },
+            {
+              "position": 6400,
+              "tokens": 128,
+              "gpu_ms": 1113.3436250020168,
+              "wall_ms": 1113.5525000020862,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.010375000536441803,
+              "commit_ms": 0.0038750022649765015,
+              "wait_ms": 1113.526833333075
+            },
+            {
+              "position": 6528,
+              "tokens": 128,
+              "gpu_ms": 1117.6105000049574,
+              "wall_ms": 1117.781874999404,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.009416669607162476,
+              "commit_ms": 0.002958334982395172,
+              "wait_ms": 1117.7577499970794
+            },
+            {
+              "position": 6656,
+              "tokens": 128,
+              "gpu_ms": 1123.41337500402,
+              "wall_ms": 1123.6275000050664,
+              "host_busy_ms": 0.03400000000056025,
+              "encode_ms": 0.009624995291233063,
+              "commit_ms": 0.003083333373069763,
+              "wait_ms": 1123.6041666641831
+            },
+            {
+              "position": 6784,
+              "tokens": 128,
+              "gpu_ms": 1129.271375000826,
+              "wall_ms": 1129.4735833406448,
+              "host_busy_ms": 0.03300000000035652,
+              "encode_ms": 0.01495833694934845,
+              "commit_ms": 0.0063749998807907104,
+              "wait_ms": 1129.444375000894
+            },
+            {
+              "position": 6912,
+              "tokens": 128,
+              "gpu_ms": 1143.069583333272,
+              "wall_ms": 1143.2984583228827,
+              "host_busy_ms": 0.032000000000152795,
+              "encode_ms": 0.01391667127609253,
+              "commit_ms": 0.009541667997837067,
+              "wait_ms": 1143.2568333372474
+            },
+            {
+              "position": 7040,
+              "tokens": 128,
+              "gpu_ms": 1140.2931249976973,
+              "wall_ms": 1140.5002083331347,
+              "host_busy_ms": 0.040000000000873115,
+              "encode_ms": 0.00962500274181366,
+              "commit_ms": 0.0032916665077209473,
+              "wait_ms": 1140.4748333245516
+            },
+            {
+              "position": 7168,
+              "tokens": 128,
+              "gpu_ms": 1143.399666667392,
+              "wall_ms": 1143.7984166666865,
+              "host_busy_ms": 0.040000000000873115,
+              "encode_ms": 0.010875001549720764,
+              "commit_ms": 0.003999993205070496,
+              "wait_ms": 1143.7710833325982
+            },
+            {
+              "position": 7296,
+              "tokens": 128,
+              "gpu_ms": 1159.0839166674414,
+              "wall_ms": 1159.2861666679382,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.00966665893793106,
+              "commit_ms": 0.0033750012516975403,
+              "wait_ms": 1159.2620416656137
+            },
+            {
+              "position": 7424,
+              "tokens": 128,
+              "gpu_ms": 1159.3573749996722,
+              "wall_ms": 1159.5654583349824,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.008625000715255737,
+              "commit_ms": 0.003041662275791168,
+              "wait_ms": 1159.5408333390951
+            },
+            {
+              "position": 7552,
+              "tokens": 128,
+              "gpu_ms": 1162.735750003776,
+              "wall_ms": 1162.933791667223,
+              "host_busy_ms": 0.028000000000247383,
+              "encode_ms": 0.012416660785675049,
+              "commit_ms": 0.004875004291534424,
+              "wait_ms": 1162.909916676581
+            },
+            {
+              "position": 7680,
+              "tokens": 128,
+              "gpu_ms": 1174.2674583365442,
+              "wall_ms": 1174.4754999950528,
+              "host_busy_ms": 0.03900000000066939,
+              "encode_ms": 0.010874994099140167,
+              "commit_ms": 0.0038750022649765015,
+              "wait_ms": 1174.4500416591763
+            },
+            {
+              "position": 7808,
+              "tokens": 128,
+              "gpu_ms": 1189.7271250054473,
+              "wall_ms": 1189.9276666715741,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.00925000011920929,
+              "commit_ms": 0.003083333373069763,
+              "wait_ms": 1189.9043333381414
+            },
+            {
+              "position": 7936,
+              "tokens": 128,
+              "gpu_ms": 1309.7620833359542,
+              "wall_ms": 1310.14783333987,
+              "host_busy_ms": 0.04500000000007276,
+              "encode_ms": 0.009624995291233063,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 1310.1156250014901
+            }
+          ],
+          "prompt_sha256": "556c4e9234a8222b0d5d5c8e00c09974908f2beb7aeebaf443e870eba66ead40",
+          "token_sha256": "ed214c23f52d9d239b557e5da0a57d7a279b92eaa6fa8a5af42d73150de8621f",
+          "text": "Based on the reference notes provided, here is a detailed explanation of speculative decoding.\n\n### Core Concept\nSpeculative decoding is a technique designed to accelerate the generation of text by large language models (LLMs). It operates on a \"draft-and-verify\" paradigm involving two distinct models:\n\n1.  **The Draft Model:** A smaller, faster model that proposes a sequence of tokens.\n2.  **The Target Model:** A larger, more accurate model that verifies these proposals.\n\n### How It Works\nThe process follows a specific workflow to ensure the output quality matches that of the larger target model while gaining speed from the"
+        },
+        {
+          "kind": "full",
+          "repeat": 1,
+          "prompt_tokens": 8064,
+          "output_tokens": 128,
+          "wall_ms": 71158.20462499687,
+          "prefill_gpu_ms": 62719.479416671675,
+          "prefill_wall_ms": 62733.663166701794,
+          "decode_gpu_ms": 8409.235499995702,
+          "decode_wall_ms": 8410.38599999994,
+          "decode_tokens": 127,
+          "steps": 35,
+          "decode_tps": 15.100377081384957,
+          "e2e_tps": 1.798808734348469,
+          "ms_per_round": 240.26387142844865,
+          "statistics": {
+            "delivered_tokens_per_round": 3.6285714285714286,
+            "nonterminal_rounds": 34,
+            "accepted_histogram": {
+              "0": 9,
+              "1": 7,
+              "2": 6,
+              "3": 1,
+              "4": 2,
+              "5": 1,
+              "6": 3,
+              "7": 6
+            },
+            "committed_histogram": {
+              "1": 9,
+              "2": 7,
+              "3": 6,
+              "4": 1,
+              "5": 2,
+              "6": 1,
+              "7": 3,
+              "8": 6
+            },
+            "verified_histogram": {
+              "7": 35
+            },
+            "nonterminal_mean_accepted": 2.676470588235294,
+            "nonterminal_mean_committed": 3.676470588235294,
+            "positions": [
+              {
+                "position": 1,
+                "eligible_rounds": 34,
+                "reached_rounds": 34,
+                "accepted_rounds": 25,
+                "survival": 0.7352941176470589,
+                "conditional_acceptance": 0.7352941176470589
+              },
+              {
+                "position": 2,
+                "eligible_rounds": 34,
+                "reached_rounds": 25,
+                "accepted_rounds": 18,
+                "survival": 0.5294117647058824,
+                "conditional_acceptance": 0.72
+              },
+              {
+                "position": 3,
+                "eligible_rounds": 34,
+                "reached_rounds": 18,
+                "accepted_rounds": 12,
+                "survival": 0.35294117647058826,
+                "conditional_acceptance": 0.6666666666666666
+              },
+              {
+                "position": 4,
+                "eligible_rounds": 34,
+                "reached_rounds": 12,
+                "accepted_rounds": 11,
+                "survival": 0.3235294117647059,
+                "conditional_acceptance": 0.9166666666666666
+              },
+              {
+                "position": 5,
+                "eligible_rounds": 34,
+                "reached_rounds": 11,
+                "accepted_rounds": 10,
+                "survival": 0.29411764705882354,
+                "conditional_acceptance": 0.9090909090909091
+              },
+              {
+                "position": 6,
+                "eligible_rounds": 34,
+                "reached_rounds": 10,
+                "accepted_rounds": 9,
+                "survival": 0.2647058823529412,
+                "conditional_acceptance": 0.9
+              },
+              {
+                "position": 7,
+                "eligible_rounds": 34,
+                "reached_rounds": 9,
+                "accepted_rounds": 6,
+                "survival": 0.17647058823529413,
+                "conditional_acceptance": 0.6666666666666666
+              }
+            ]
+          },
+          "accepted": [
+            6,
+            7,
+            2,
+            7,
+            0,
+            5,
+            6,
+            2,
+            0,
+            1,
+            1,
+            3,
+            0,
+            1,
+            7,
+            4,
+            1,
+            2,
+            6,
+            7,
+            7,
+            7,
+            2,
+            1,
+            0,
+            0,
+            2,
+            0,
+            1,
+            0,
+            1,
+            2,
+            0,
+            0,
+            4
+          ],
+          "committed": [
+            7,
+            8,
+            3,
+            8,
+            1,
+            6,
+            7,
+            3,
+            1,
+            2,
+            2,
+            4,
+            1,
+            2,
+            8,
+            5,
+            2,
+            3,
+            7,
+            8,
+            8,
+            8,
+            3,
+            2,
+            1,
+            1,
+            3,
+            1,
+            2,
+            1,
+            2,
+            3,
+            1,
+            1,
+            5
+          ],
+          "verify_len": [
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "tokens": [
+            27775,
+            383,
+            279,
+            5604,
+            8129,
+            3766,
+            11,
+            1532,
+            369,
+            264,
+            11346,
+            15673,
+            314,
+            63520,
+            45543,
+            13,
+            271,
+            13962,
+            9237,
+            33214,
+            198,
+            8068,
+            21473,
+            45543,
+            369,
+            264,
+            14334,
+            5995,
+            310,
+            41365,
+            279,
+            9191,
+            314,
+            1414,
+            539,
+            3349,
+            3992,
+            3983,
+            318,
+            3950,
+            20971,
+            553,
+            1049,
+            25224,
+            383,
+            264,
+            328,
+            43494,
+            9485,
+            12,
+            12089,
+            1,
+            46632,
+            15394,
+            1330,
+            12103,
+            3983,
+            25,
+            271,
+            16,
+            13,
+            220,
+            2972,
+            760,
+            27632,
+            4744,
+            64700,
+            357,
+            8882,
+            11,
+            10281,
+            1558,
+            421,
+            52789,
+            264,
+            8240,
+            314,
+            10885,
+            13,
+            198,
+            17,
+            13,
+            220,
+            2972,
+            760,
+            13095,
+            4744,
+            64700,
+            357,
+            7875,
+            11,
+            777,
+            12995,
+            1558,
+            421,
+            84828,
+            1439,
+            23497,
+            13,
+            271,
+            13962,
+            2500,
+            1049,
+            20457,
+            198,
+            760,
+            1817,
+            10695,
+            264,
+            3050,
+            27370,
+            310,
+            5790,
+            279,
+            2468,
+            4131,
+            8798,
+            421,
+            314,
+            279,
+            7875,
+            2100,
+            1558,
+            1345,
+            28187,
+            4478,
+            494,
+            279
+          ],
+          "setup_ms": 0.0,
+          "cached_prompt_tokens": 0,
+          "prefill_timings": [
+            {
+              "position": 0,
+              "tokens": 128,
+              "gpu_ms": 819.1514999998617,
+              "wall_ms": 819.6052916646004,
+              "host_busy_ms": 0.06500000000050932,
+              "encode_ms": 0.03354165703058243,
+              "commit_ms": 0.007333323359489441,
+              "wait_ms": 819.5498333349824
+            },
+            {
+              "position": 128,
+              "tokens": 128,
+              "gpu_ms": 839.2509166660602,
+              "wall_ms": 839.4678333327174,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.012166664004325867,
+              "commit_ms": 0.0041250064969062805,
+              "wait_ms": 839.4451249986887
+            },
+            {
+              "position": 256,
+              "tokens": 128,
+              "gpu_ms": 839.898499994888,
+              "wall_ms": 840.109833329916,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.010375000536441803,
+              "commit_ms": 0.003083333373069763,
+              "wait_ms": 840.0844166651368
+            },
+            {
+              "position": 384,
+              "tokens": 128,
+              "gpu_ms": 848.6569583328674,
+              "wall_ms": 848.8592500016093,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.009708330035209656,
+              "commit_ms": 0.0033750012516975403,
+              "wait_ms": 848.8360416591167
+            },
+            {
+              "position": 512,
+              "tokens": 128,
+              "gpu_ms": 851.4741249964572,
+              "wall_ms": 851.6775833368301,
+              "host_busy_ms": 0.03699999999935244,
+              "encode_ms": 0.008958324790000916,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 851.6525416597724
+            },
+            {
+              "position": 640,
+              "tokens": 128,
+              "gpu_ms": 862.3056249998626,
+              "wall_ms": 862.5122916772962,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.00925000011920929,
+              "commit_ms": 0.0034583359956741333,
+              "wait_ms": 862.4873750060797
+            },
+            {
+              "position": 768,
+              "tokens": 128,
+              "gpu_ms": 876.3363333273446,
+              "wall_ms": 876.5209166631103,
+              "host_busy_ms": 0.026000000000749424,
+              "encode_ms": 0.010583333671092987,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 876.500458329916
+            },
+            {
+              "position": 896,
+              "tokens": 128,
+              "gpu_ms": 829.0316249986063,
+              "wall_ms": 829.2402499988675,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009958326816558838,
+              "commit_ms": 0.0031249970197677612,
+              "wait_ms": 829.2163333371282
+            },
+            {
+              "position": 1024,
+              "tokens": 128,
+              "gpu_ms": 835.5732499985606,
+              "wall_ms": 835.7945833355188,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.010999999940395355,
+              "commit_ms": 0.0034583285450935364,
+              "wait_ms": 835.7683750018477
+            },
+            {
+              "position": 1152,
+              "tokens": 128,
+              "gpu_ms": 841.1822500056587,
+              "wall_ms": 841.3997916653752,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.010375000536441803,
+              "commit_ms": 0.0038333386182785034,
+              "wait_ms": 841.37445833534
+            },
+            {
+              "position": 1280,
+              "tokens": 128,
+              "gpu_ms": 850.6899583298946,
+              "wall_ms": 850.9016666635871,
+              "host_busy_ms": 0.042000000000371074,
+              "encode_ms": 0.011041663587093353,
+              "commit_ms": 0.004583336412906647,
+              "wait_ms": 850.8736666664481
+            },
+            {
+              "position": 1408,
+              "tokens": 128,
+              "gpu_ms": 859.8642916695098,
+              "wall_ms": 860.0682500004768,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.00937499850988388,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 860.0435833334923
+            },
+            {
+              "position": 1536,
+              "tokens": 128,
+              "gpu_ms": 861.4720833356841,
+              "wall_ms": 861.6478750035167,
+              "host_busy_ms": 0.024999999999636202,
+              "encode_ms": 0.009833335876464844,
+              "commit_ms": 0.002958327531814575,
+              "wait_ms": 861.6278750002384
+            },
+            {
+              "position": 1664,
+              "tokens": 128,
+              "gpu_ms": 866.6387916673557,
+              "wall_ms": 866.8648749962449,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.01120833307504654,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 866.8373750001192
+            },
+            {
+              "position": 1792,
+              "tokens": 128,
+              "gpu_ms": 873.734875000082,
+              "wall_ms": 873.9583750069141,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.011416666209697723,
+              "commit_ms": 0.0038750022649765015,
+              "wait_ms": 873.9310833364725
+            },
+            {
+              "position": 1920,
+              "tokens": 128,
+              "gpu_ms": 886.8469166627619,
+              "wall_ms": 887.0579583346844,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.00895833969116211,
+              "commit_ms": 0.002916663885116577,
+              "wait_ms": 887.0344166606665
+            },
+            {
+              "position": 2048,
+              "tokens": 128,
+              "gpu_ms": 888.0911666637985,
+              "wall_ms": 888.2675416693091,
+              "host_busy_ms": 0.03599999999914871,
+              "encode_ms": 0.00937499850988388,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 888.2422916740179
+            },
+            {
+              "position": 2176,
+              "tokens": 128,
+              "gpu_ms": 891.6206666690414,
+              "wall_ms": 891.8362083286047,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.00962500274181366,
+              "commit_ms": 0.0038749948143959045,
+              "wait_ms": 891.8107500001788
+            },
+            {
+              "position": 2304,
+              "tokens": 128,
+              "gpu_ms": 901.6519583383342,
+              "wall_ms": 901.8610833361745,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.01029166579246521,
+              "commit_ms": 0.0036666616797447205,
+              "wait_ms": 901.8350000008941
+            },
+            {
+              "position": 2432,
+              "tokens": 128,
+              "gpu_ms": 913.2920000047307,
+              "wall_ms": 913.5048333331943,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.010499998927116394,
+              "commit_ms": 0.004208333790302277,
+              "wait_ms": 913.4783750027418
+            },
+            {
+              "position": 2560,
+              "tokens": 128,
+              "gpu_ms": 916.3342916654074,
+              "wall_ms": 916.5413333252072,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.010375000536441803,
+              "commit_ms": 0.0030833259224891663,
+              "wait_ms": 916.5154583379626
+            },
+            {
+              "position": 2688,
+              "tokens": 128,
+              "gpu_ms": 917.78274999524,
+              "wall_ms": 917.972625002265,
+              "host_busy_ms": 0.027000000000043656,
+              "encode_ms": 0.008708328008651733,
+              "commit_ms": 0.0033333301544189453,
+              "wait_ms": 917.9559166580439
+            },
+            {
+              "position": 2816,
+              "tokens": 128,
+              "gpu_ms": 923.4819999983301,
+              "wall_ms": 923.6732499971986,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009624995291233063,
+              "commit_ms": 0.003041669726371765,
+              "wait_ms": 923.6494999974966
+            },
+            {
+              "position": 2944,
+              "tokens": 128,
+              "gpu_ms": 929.3607500003418,
+              "wall_ms": 929.5707916691899,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.008749999105930328,
+              "commit_ms": 0.002375006675720215,
+              "wait_ms": 929.5460833311081
+            },
+            {
+              "position": 3072,
+              "tokens": 128,
+              "gpu_ms": 945.204666670179,
+              "wall_ms": 945.4354166686535,
+              "host_busy_ms": 0.04399999999986903,
+              "encode_ms": 0.013374999165534973,
+              "commit_ms": 0.005166672170162201,
+              "wait_ms": 945.4032916650176
+            },
+            {
+              "position": 3200,
+              "tokens": 128,
+              "gpu_ms": 944.3908750035916,
+              "wall_ms": 944.6118750050664,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.01291666179895401,
+              "commit_ms": 0.004500001668930054,
+              "wait_ms": 944.5882500037551
+            },
+            {
+              "position": 3328,
+              "tokens": 128,
+              "gpu_ms": 951.7216250023921,
+              "wall_ms": 951.9499166682363,
+              "host_busy_ms": 0.05199999999967986,
+              "encode_ms": 0.014250002801418304,
+              "commit_ms": 0.005125001072883606,
+              "wait_ms": 951.9088750034571
+            },
+            {
+              "position": 3456,
+              "tokens": 128,
+              "gpu_ms": 954.996749998827,
+              "wall_ms": 955.1854999959469,
+              "host_busy_ms": 0.04199999999946158,
+              "encode_ms": 0.013125002384185791,
+              "commit_ms": 0.00466667115688324,
+              "wait_ms": 955.1550416722894
+            },
+            {
+              "position": 3584,
+              "tokens": 128,
+              "gpu_ms": 971.1500833363971,
+              "wall_ms": 971.3740416690707,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.011833332479000092,
+              "commit_ms": 0.0042083412408828735,
+              "wait_ms": 971.3454583361745
+            },
+            {
+              "position": 3712,
+              "tokens": 128,
+              "gpu_ms": 972.0832499951939,
+              "wall_ms": 972.2839166671038,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.010083325207233429,
+              "commit_ms": 0.0035833343863487244,
+              "wait_ms": 972.2583333328366
+            },
+            {
+              "position": 3840,
+              "tokens": 128,
+              "gpu_ms": 977.3488749997341,
+              "wall_ms": 977.5570416674018,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.010124996304512024,
+              "commit_ms": 0.0037500038743019104,
+              "wait_ms": 977.5319166630507
+            },
+            {
+              "position": 3968,
+              "tokens": 128,
+              "gpu_ms": 983.3106666701497,
+              "wall_ms": 983.5155000016093,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.009333327412605286,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 983.490958340466
+            },
+            {
+              "position": 4096,
+              "tokens": 128,
+              "gpu_ms": 996.8436666677007,
+              "wall_ms": 997.0530416667461,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.008666664361953735,
+              "commit_ms": 0.0032916590571403503,
+              "wait_ms": 997.0290833339095
+            },
+            {
+              "position": 4224,
+              "tokens": 128,
+              "gpu_ms": 998.6226249966421,
+              "wall_ms": 998.8293333426118,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.010041661560535431,
+              "commit_ms": 0.0033333376049995422,
+              "wait_ms": 998.8038333281875
+            },
+            {
+              "position": 4352,
+              "tokens": 128,
+              "gpu_ms": 1002.8832500029239,
+              "wall_ms": 1003.0900833383203,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008291661739349365,
+              "commit_ms": 0.002958334982395172,
+              "wait_ms": 1003.066375002265
+            },
+            {
+              "position": 4480,
+              "tokens": 128,
+              "gpu_ms": 1008.357500002603,
+              "wall_ms": 1008.5614999979734,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.011749997735023499,
+              "commit_ms": 0.004708334803581238,
+              "wait_ms": 1008.5330416634679
+            },
+            {
+              "position": 4608,
+              "tokens": 128,
+              "gpu_ms": 1024.3555833294522,
+              "wall_ms": 1024.5877083316445,
+              "host_busy_ms": 0.04500000000007276,
+              "encode_ms": 0.01524999737739563,
+              "commit_ms": 0.00458332896232605,
+              "wait_ms": 1024.5562916621566
+            },
+            {
+              "position": 4736,
+              "tokens": 128,
+              "gpu_ms": 1023.9064166671596,
+              "wall_ms": 1024.1118750050664,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.009208336472511292,
+              "commit_ms": 0.003041662275791168,
+              "wait_ms": 1024.0883333310485
+            },
+            {
+              "position": 4864,
+              "tokens": 128,
+              "gpu_ms": 1027.2595416681725,
+              "wall_ms": 1027.4710000008345,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.010166674852371216,
+              "commit_ms": 0.0039583295583724976,
+              "wait_ms": 1027.4449583292007
+            },
+            {
+              "position": 4992,
+              "tokens": 128,
+              "gpu_ms": 1035.4672499961453,
+              "wall_ms": 1035.6503333300352,
+              "host_busy_ms": 0.02599999999983993,
+              "encode_ms": 0.010041669011116028,
+              "commit_ms": 0.0039166659116744995,
+              "wait_ms": 1035.6297499984503
+            },
+            {
+              "position": 5120,
+              "tokens": 128,
+              "gpu_ms": 1052.1558333348366,
+              "wall_ms": 1052.3729999959469,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.010750003159046173,
+              "commit_ms": 0.0039583370089530945,
+              "wait_ms": 1052.3465833365917
+            },
+            {
+              "position": 5248,
+              "tokens": 128,
+              "gpu_ms": 1050.8608750023996,
+              "wall_ms": 1051.0770416632295,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009291663765907288,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 1051.0517500042915
+            },
+            {
+              "position": 5376,
+              "tokens": 128,
+              "gpu_ms": 1058.237499993993,
+              "wall_ms": 1058.4662916660309,
+              "host_busy_ms": 0.0430000000005748,
+              "encode_ms": 0.012791663408279419,
+              "commit_ms": 0.004833325743675232,
+              "wait_ms": 1058.4360000044107
+            },
+            {
+              "position": 5504,
+              "tokens": 128,
+              "gpu_ms": 1061.2244583389838,
+              "wall_ms": 1061.4482916668057,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.012499995529651642,
+              "commit_ms": 0.004458338022232056,
+              "wait_ms": 1061.4220416620374
+            },
+            {
+              "position": 5632,
+              "tokens": 128,
+              "gpu_ms": 1077.2925000055693,
+              "wall_ms": 1077.5176666676998,
+              "host_busy_ms": 0.042000000000371074,
+              "encode_ms": 0.012125000357627869,
+              "commit_ms": 0.0038749948143959045,
+              "wait_ms": 1077.4891249984503
+            },
+            {
+              "position": 5760,
+              "tokens": 128,
+              "gpu_ms": 1076.2367499992251,
+              "wall_ms": 1076.441291667521,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009583339095115662,
+              "commit_ms": 0.0033333301544189453,
+              "wait_ms": 1076.4162916690111
+            },
+            {
+              "position": 5888,
+              "tokens": 128,
+              "gpu_ms": 1081.1617500003194,
+              "wall_ms": 1081.3765833377838,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.011124998331069946,
+              "commit_ms": 0.0039166659116744995,
+              "wait_ms": 1081.3507916629314
+            },
+            {
+              "position": 6016,
+              "tokens": 128,
+              "gpu_ms": 1091.5987083353684,
+              "wall_ms": 1091.8001666665077,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.010958336293697357,
+              "commit_ms": 0.0033333376049995422,
+              "wait_ms": 1091.7741666659713
+            },
+            {
+              "position": 6144,
+              "tokens": 128,
+              "gpu_ms": 1104.3544999993173,
+              "wall_ms": 1104.5823750048876,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.009708330035209656,
+              "commit_ms": 0.003000006079673767,
+              "wait_ms": 1104.555541664362
+            },
+            {
+              "position": 6272,
+              "tokens": 128,
+              "gpu_ms": 1128.209375005099,
+              "wall_ms": 1128.6350833326578,
+              "host_busy_ms": 0.04500000000007276,
+              "encode_ms": 0.014041662216186523,
+              "commit_ms": 0.005125001072883606,
+              "wait_ms": 1128.6039166674018
+            },
+            {
+              "position": 6400,
+              "tokens": 128,
+              "gpu_ms": 1136.893125003553,
+              "wall_ms": 1137.070624999702,
+              "host_busy_ms": 0.02900000000045111,
+              "encode_ms": 0.00962500274181366,
+              "commit_ms": 0.003166668117046356,
+              "wait_ms": 1137.0526250004768
+            },
+            {
+              "position": 6528,
+              "tokens": 128,
+              "gpu_ms": 1138.6358750023646,
+              "wall_ms": 1138.8575000017881,
+              "host_busy_ms": 0.05199999999967986,
+              "encode_ms": 0.021125003695487976,
+              "commit_ms": 0.007874995470046997,
+              "wait_ms": 1138.8189999982715
+            },
+            {
+              "position": 6656,
+              "tokens": 128,
+              "gpu_ms": 1135.5286666657776,
+              "wall_ms": 1135.7939583361149,
+              "host_busy_ms": 0.06599999999980355,
+              "encode_ms": 0.027500003576278687,
+              "commit_ms": 0.010999999940395355,
+              "wait_ms": 1135.742208339274
+            },
+            {
+              "position": 6784,
+              "tokens": 128,
+              "gpu_ms": 1144.5437083311845,
+              "wall_ms": 1144.7952916696668,
+              "host_busy_ms": 0.06799999999930151,
+              "encode_ms": 0.024333328008651733,
+              "commit_ms": 0.010083325207233429,
+              "wait_ms": 1144.742583334446
+            },
+            {
+              "position": 6912,
+              "tokens": 128,
+              "gpu_ms": 1142.6823750007316,
+              "wall_ms": 1142.8864166587591,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009708337485790253,
+              "commit_ms": 0.0034583285450935364,
+              "wait_ms": 1142.8607083335519
+            },
+            {
+              "position": 7040,
+              "tokens": 128,
+              "gpu_ms": 1149.7690833348315,
+              "wall_ms": 1149.9704166650772,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.00795833021402359,
+              "commit_ms": 0.002666674554347992,
+              "wait_ms": 1149.9483750015497
+            },
+            {
+              "position": 7168,
+              "tokens": 128,
+              "gpu_ms": 1157.7967499979422,
+              "wall_ms": 1158.1591250002384,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.008166663348674774,
+              "commit_ms": 0.00270833820104599,
+              "wait_ms": 1158.1367500051856
+            },
+            {
+              "position": 7296,
+              "tokens": 128,
+              "gpu_ms": 1165.5189999946742,
+              "wall_ms": 1165.723708331585,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.008833333849906921,
+              "commit_ms": 0.002875000238418579,
+              "wait_ms": 1165.6993749961257
+            },
+            {
+              "position": 7424,
+              "tokens": 128,
+              "gpu_ms": 1166.5915833364124,
+              "wall_ms": 1166.8035000041127,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.011958323419094086,
+              "commit_ms": 0.0039583370089530945,
+              "wait_ms": 1166.7766249999404
+            },
+            {
+              "position": 7552,
+              "tokens": 128,
+              "gpu_ms": 1175.6234999993467,
+              "wall_ms": 1175.834458336234,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.010791674256324768,
+              "commit_ms": 0.0030833259224891663,
+              "wait_ms": 1175.8070833310485
+            },
+            {
+              "position": 7680,
+              "tokens": 128,
+              "gpu_ms": 1189.3357083317824,
+              "wall_ms": 1189.5572500005364,
+              "host_busy_ms": 0.03400000000056025,
+              "encode_ms": 0.01291666179895401,
+              "commit_ms": 0.004749998450279236,
+              "wait_ms": 1189.5321666747332
+            },
+            {
+              "position": 7808,
+              "tokens": 128,
+              "gpu_ms": 1187.0009166668751,
+              "wall_ms": 1187.3316249996424,
+              "host_busy_ms": 0.03699999999935244,
+              "encode_ms": 0.009416662156581879,
+              "commit_ms": 0.002791672945022583,
+              "wait_ms": 1187.3060833215714
+            },
+            {
+              "position": 7936,
+              "tokens": 128,
+              "gpu_ms": 1306.6006666631438,
+              "wall_ms": 1306.9791250005364,
+              "host_busy_ms": 0.04599999999936699,
+              "encode_ms": 0.009833328425884247,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 1306.94645832479
+            }
+          ],
+          "prompt_sha256": "556c4e9234a8222b0d5d5c8e00c09974908f2beb7aeebaf443e870eba66ead40",
+          "token_sha256": "ed214c23f52d9d239b557e5da0a57d7a279b92eaa6fa8a5af42d73150de8621f",
+          "text": "Based on the reference notes provided, here is a detailed explanation of speculative decoding.\n\n### Core Concept\nSpeculative decoding is a technique designed to accelerate the generation of text by large language models (LLMs). It operates on a \"draft-and-verify\" paradigm involving two distinct models:\n\n1.  **The Draft Model:** A smaller, faster model that proposes a sequence of tokens.\n2.  **The Target Model:** A larger, more accurate model that verifies these proposals.\n\n### How It Works\nThe process follows a specific workflow to ensure the output quality matches that of the larger target model while gaining speed from the"
+        }
+      ],
+      "prompt_sha256": "556c4e9234a8222b0d5d5c8e00c09974908f2beb7aeebaf443e870eba66ead40",
+      "token_sha256": "ed214c23f52d9d239b557e5da0a57d7a279b92eaa6fa8a5af42d73150de8621f"
+    },
+    "nvfp4_crew": {
+      "prefill_gpu_ms": 52822.547499967186,
+      "decode_tps": 15.1423803012892,
+      "wall_ms": 61236.20437499994,
+      "accepted": 2.676470588235294,
+      "managed_bytes": 23932307404,
+      "peak_rss_bytes": 2639282176,
+      "swapout_pages": 0,
+      "rows": [
+        {
+          "kind": "full",
+          "repeat": 0,
+          "prompt_tokens": 8064,
+          "output_tokens": 128,
+          "wall_ms": 61214.69041700038,
+          "prefill_gpu_ms": 52795.78262494033,
+          "prefill_wall_ms": 52809.120541617274,
+          "decode_gpu_ms": 8391.70108333201,
+          "decode_wall_ms": 8392.465874999762,
+          "decode_tokens": 127,
+          "steps": 35,
+          "decode_tps": 15.132620363499973,
+          "e2e_tps": 2.09100134507014,
+          "ms_per_round": 239.76288809520025,
+          "statistics": {
+            "delivered_tokens_per_round": 3.6285714285714286,
+            "nonterminal_rounds": 34,
+            "accepted_histogram": {
+              "0": 9,
+              "1": 7,
+              "2": 6,
+              "3": 1,
+              "4": 2,
+              "5": 1,
+              "6": 3,
+              "7": 6
+            },
+            "committed_histogram": {
+              "1": 9,
+              "2": 7,
+              "3": 6,
+              "4": 1,
+              "5": 2,
+              "6": 1,
+              "7": 3,
+              "8": 6
+            },
+            "verified_histogram": {
+              "7": 35
+            },
+            "nonterminal_mean_accepted": 2.676470588235294,
+            "nonterminal_mean_committed": 3.676470588235294,
+            "positions": [
+              {
+                "position": 1,
+                "eligible_rounds": 34,
+                "reached_rounds": 34,
+                "accepted_rounds": 25,
+                "survival": 0.7352941176470589,
+                "conditional_acceptance": 0.7352941176470589
+              },
+              {
+                "position": 2,
+                "eligible_rounds": 34,
+                "reached_rounds": 25,
+                "accepted_rounds": 18,
+                "survival": 0.5294117647058824,
+                "conditional_acceptance": 0.72
+              },
+              {
+                "position": 3,
+                "eligible_rounds": 34,
+                "reached_rounds": 18,
+                "accepted_rounds": 12,
+                "survival": 0.35294117647058826,
+                "conditional_acceptance": 0.6666666666666666
+              },
+              {
+                "position": 4,
+                "eligible_rounds": 34,
+                "reached_rounds": 12,
+                "accepted_rounds": 11,
+                "survival": 0.3235294117647059,
+                "conditional_acceptance": 0.9166666666666666
+              },
+              {
+                "position": 5,
+                "eligible_rounds": 34,
+                "reached_rounds": 11,
+                "accepted_rounds": 10,
+                "survival": 0.29411764705882354,
+                "conditional_acceptance": 0.9090909090909091
+              },
+              {
+                "position": 6,
+                "eligible_rounds": 34,
+                "reached_rounds": 10,
+                "accepted_rounds": 9,
+                "survival": 0.2647058823529412,
+                "conditional_acceptance": 0.9
+              },
+              {
+                "position": 7,
+                "eligible_rounds": 34,
+                "reached_rounds": 9,
+                "accepted_rounds": 6,
+                "survival": 0.17647058823529413,
+                "conditional_acceptance": 0.6666666666666666
+              }
+            ]
+          },
+          "accepted": [
+            6,
+            7,
+            2,
+            7,
+            0,
+            5,
+            6,
+            2,
+            0,
+            1,
+            1,
+            3,
+            0,
+            1,
+            7,
+            4,
+            1,
+            2,
+            6,
+            7,
+            7,
+            7,
+            2,
+            1,
+            0,
+            0,
+            2,
+            0,
+            1,
+            0,
+            1,
+            2,
+            0,
+            0,
+            4
+          ],
+          "committed": [
+            7,
+            8,
+            3,
+            8,
+            1,
+            6,
+            7,
+            3,
+            1,
+            2,
+            2,
+            4,
+            1,
+            2,
+            8,
+            5,
+            2,
+            3,
+            7,
+            8,
+            8,
+            8,
+            3,
+            2,
+            1,
+            1,
+            3,
+            1,
+            2,
+            1,
+            2,
+            3,
+            1,
+            1,
+            5
+          ],
+          "verify_len": [
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "tokens": [
+            27775,
+            383,
+            279,
+            5604,
+            8129,
+            3766,
+            11,
+            1532,
+            369,
+            264,
+            11346,
+            15673,
+            314,
+            63520,
+            45543,
+            13,
+            271,
+            13962,
+            9237,
+            33214,
+            198,
+            8068,
+            21473,
+            45543,
+            369,
+            264,
+            14334,
+            5995,
+            310,
+            41365,
+            279,
+            9191,
+            314,
+            1414,
+            539,
+            3349,
+            3992,
+            3983,
+            318,
+            3950,
+            20971,
+            553,
+            1049,
+            25224,
+            383,
+            264,
+            328,
+            43494,
+            9485,
+            12,
+            12089,
+            1,
+            46632,
+            15394,
+            1330,
+            12103,
+            3983,
+            25,
+            271,
+            16,
+            13,
+            220,
+            2972,
+            760,
+            27632,
+            4744,
+            64700,
+            357,
+            8882,
+            11,
+            10281,
+            1558,
+            421,
+            52789,
+            264,
+            8240,
+            314,
+            10885,
+            13,
+            198,
+            17,
+            13,
+            220,
+            2972,
+            760,
+            13095,
+            4744,
+            64700,
+            357,
+            7875,
+            11,
+            777,
+            12995,
+            1558,
+            421,
+            84828,
+            1439,
+            23497,
+            13,
+            271,
+            13962,
+            2500,
+            1049,
+            20457,
+            198,
+            760,
+            1817,
+            10695,
+            264,
+            3050,
+            27370,
+            310,
+            5790,
+            279,
+            2468,
+            4131,
+            8798,
+            421,
+            314,
+            279,
+            7875,
+            2100,
+            1558,
+            1345,
+            28187,
+            4478,
+            494,
+            279
+          ],
+          "setup_ms": 0.0,
+          "cached_prompt_tokens": 0,
+          "prefill_timings": [
+            {
+              "position": 0,
+              "tokens": 128,
+              "gpu_ms": 668.2279166634544,
+              "wall_ms": 668.6488749980927,
+              "host_busy_ms": 0.07600000000093132,
+              "encode_ms": 0.042750000953674316,
+              "commit_ms": 0.0064583271741867065,
+              "wait_ms": 668.5844166651368
+            },
+            {
+              "position": 128,
+              "tokens": 128,
+              "gpu_ms": 688.8432499981718,
+              "wall_ms": 689.0383749976754,
+              "host_busy_ms": 0.028000000000247383,
+              "encode_ms": 0.009291663765907288,
+              "commit_ms": 0.0033333227038383484,
+              "wait_ms": 689.0209166631103
+            },
+            {
+              "position": 256,
+              "tokens": 128,
+              "gpu_ms": 684.3378333287546,
+              "wall_ms": 684.550041668117,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.010499998927116394,
+              "commit_ms": 0.003083333373069763,
+              "wait_ms": 684.5233333334327
+            },
+            {
+              "position": 384,
+              "tokens": 128,
+              "gpu_ms": 690.4208333289716,
+              "wall_ms": 690.5941666662693,
+              "host_busy_ms": 0.035000000000763976,
+              "encode_ms": 0.009583331644535065,
+              "commit_ms": 0.0033333376049995422,
+              "wait_ms": 690.5694166645408
+            },
+            {
+              "position": 512,
+              "tokens": 128,
+              "gpu_ms": 696.0607916626032,
+              "wall_ms": 696.2613333389163,
+              "host_busy_ms": 0.0319999999992433,
+              "encode_ms": 0.008666671812534332,
+              "commit_ms": 0.003041662275791168,
+              "wait_ms": 696.2384999990463
+            },
+            {
+              "position": 640,
+              "tokens": 128,
+              "gpu_ms": 703.3316250017378,
+              "wall_ms": 703.5319166630507,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008375003933906555,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 703.508499994874
+            },
+            {
+              "position": 768,
+              "tokens": 128,
+              "gpu_ms": 715.8926250049262,
+              "wall_ms": 716.0949583351612,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.009500004351139069,
+              "commit_ms": 0.0032916665077209473,
+              "wait_ms": 716.070083335042
+            },
+            {
+              "position": 896,
+              "tokens": 128,
+              "gpu_ms": 684.5937499965657,
+              "wall_ms": 684.7942916601896,
+              "host_busy_ms": 0.03400000000056025,
+              "encode_ms": 0.008833341300487518,
+              "commit_ms": 0.002833336591720581,
+              "wait_ms": 684.7708749994636
+            },
+            {
+              "position": 1024,
+              "tokens": 128,
+              "gpu_ms": 676.0322500049369,
+              "wall_ms": 676.2338333278894,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.009958341717720032,
+              "commit_ms": 0.003083333373069763,
+              "wait_ms": 676.2087083309889
+            },
+            {
+              "position": 1152,
+              "tokens": 128,
+              "gpu_ms": 685.023749996617,
+              "wall_ms": 685.2310416698456,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.008958332240581512,
+              "commit_ms": 0.0031249970197677612,
+              "wait_ms": 685.2080833241343
+            },
+            {
+              "position": 1280,
+              "tokens": 128,
+              "gpu_ms": 688.2223749998957,
+              "wall_ms": 688.4148750007153,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009291671216487885,
+              "commit_ms": 0.0033333301544189453,
+              "wait_ms": 688.3899583369493
+            },
+            {
+              "position": 1408,
+              "tokens": 128,
+              "gpu_ms": 695.5276249937015,
+              "wall_ms": 695.7387083247304,
+              "host_busy_ms": 0.023000000000138243,
+              "encode_ms": 0.009208329021930695,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 695.719666659832
+            },
+            {
+              "position": 1536,
+              "tokens": 128,
+              "gpu_ms": 708.1842916668393,
+              "wall_ms": 708.3888749927282,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009958334267139435,
+              "commit_ms": 0.004041664302349091,
+              "wait_ms": 708.3625416606665
+            },
+            {
+              "position": 1664,
+              "tokens": 128,
+              "gpu_ms": 719.925791665446,
+              "wall_ms": 720.1268749982119,
+              "host_busy_ms": 0.035000000000763976,
+              "encode_ms": 0.009291663765907288,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 720.1027916669846
+            },
+            {
+              "position": 1792,
+              "tokens": 128,
+              "gpu_ms": 714.033833333815,
+              "wall_ms": 714.2333333343267,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008208326995372772,
+              "commit_ms": 0.002458333969116211,
+              "wait_ms": 714.211249999702
+            },
+            {
+              "position": 1920,
+              "tokens": 128,
+              "gpu_ms": 722.1560416655848,
+              "wall_ms": 722.3579583391547,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.008291669189929962,
+              "commit_ms": 0.002666667103767395,
+              "wait_ms": 722.3358333259821
+            },
+            {
+              "position": 2048,
+              "tokens": 128,
+              "gpu_ms": 729.6528749939171,
+              "wall_ms": 729.9463333338499,
+              "host_busy_ms": 0.03699999999935244,
+              "encode_ms": 0.008916668593883514,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 729.9202083349228
+            },
+            {
+              "position": 2176,
+              "tokens": 128,
+              "gpu_ms": 735.6978333336883,
+              "wall_ms": 735.8909583315253,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.0090833380818367,
+              "commit_ms": 0.0033333227038383484,
+              "wait_ms": 735.8673750013113
+            },
+            {
+              "position": 2304,
+              "tokens": 128,
+              "gpu_ms": 752.6901666715275,
+              "wall_ms": 752.8707083314657,
+              "host_busy_ms": 0.02299999999922875,
+              "encode_ms": 0.008416660130023956,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 752.8529166653752
+            },
+            {
+              "position": 2432,
+              "tokens": 128,
+              "gpu_ms": 752.6735833307612,
+              "wall_ms": 752.8987083360553,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009583331644535065,
+              "commit_ms": 0.003166668117046356,
+              "wait_ms": 752.8736666738987
+            },
+            {
+              "position": 2560,
+              "tokens": 128,
+              "gpu_ms": 753.2503333277418,
+              "wall_ms": 753.4547083228827,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.009458325803279877,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 753.4299166724086
+            },
+            {
+              "position": 2688,
+              "tokens": 128,
+              "gpu_ms": 763.8675000052899,
+              "wall_ms": 764.0712083354592,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009791664779186249,
+              "commit_ms": 0.0032916665077209473,
+              "wait_ms": 764.0459166690707
+            },
+            {
+              "position": 2816,
+              "tokens": 128,
+              "gpu_ms": 767.6867499976652,
+              "wall_ms": 767.8918333277106,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009499996900558472,
+              "commit_ms": 0.0037083402276039124,
+              "wait_ms": 767.865958340466
+            },
+            {
+              "position": 2944,
+              "tokens": 128,
+              "gpu_ms": 784.874958335422,
+              "wall_ms": 785.0779166668653,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009125001728534698,
+              "commit_ms": 0.0033333301544189453,
+              "wait_ms": 785.0530833229423
+            },
+            {
+              "position": 3072,
+              "tokens": 128,
+              "gpu_ms": 787.739416664408,
+              "wall_ms": 787.9395416676998,
+              "host_busy_ms": 0.03599999999914871,
+              "encode_ms": 0.00887499749660492,
+              "commit_ms": 0.0032916665077209473,
+              "wait_ms": 787.9160000011325
+            },
+            {
+              "position": 3200,
+              "tokens": 128,
+              "gpu_ms": 787.3556249978719,
+              "wall_ms": 787.5394166707993,
+              "host_busy_ms": 0.02299999999922875,
+              "encode_ms": 0.008916676044464111,
+              "commit_ms": 0.002958327531814575,
+              "wait_ms": 787.5208749994636
+            },
+            {
+              "position": 3328,
+              "tokens": 128,
+              "gpu_ms": 794.9553333310178,
+              "wall_ms": 795.1572500020266,
+              "host_busy_ms": 0.03400000000056025,
+              "encode_ms": 0.009208321571350098,
+              "commit_ms": 0.00308334082365036,
+              "wait_ms": 795.1328333392739
+            },
+            {
+              "position": 3456,
+              "tokens": 128,
+              "gpu_ms": 800.389374999213,
+              "wall_ms": 800.6058333367109,
+              "host_busy_ms": 0.0319999999992433,
+              "encode_ms": 0.008749999105930328,
+              "commit_ms": 0.00270833820104599,
+              "wait_ms": 800.5825416743755
+            },
+            {
+              "position": 3584,
+              "tokens": 128,
+              "gpu_ms": 816.3589583346038,
+              "wall_ms": 816.5609166622162,
+              "host_busy_ms": 0.0430000000005748,
+              "encode_ms": 0.01224999874830246,
+              "commit_ms": 0.005374997854232788,
+              "wait_ms": 816.5301249995828
+            },
+            {
+              "position": 3712,
+              "tokens": 128,
+              "gpu_ms": 822.1783749977476,
+              "wall_ms": 822.3894999995828,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009208321571350098,
+              "commit_ms": 0.002916678786277771,
+              "wait_ms": 822.3658333420753
+            },
+            {
+              "position": 3840,
+              "tokens": 128,
+              "gpu_ms": 822.790124999301,
+              "wall_ms": 823.0002083331347,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.009791672229766846,
+              "commit_ms": 0.0033333301544189453,
+              "wait_ms": 822.9742916673422
+            },
+            {
+              "position": 3968,
+              "tokens": 128,
+              "gpu_ms": 828.7776249999297,
+              "wall_ms": 828.9870000034571,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009125001728534698,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 828.9628750011325
+            },
+            {
+              "position": 4096,
+              "tokens": 128,
+              "gpu_ms": 833.02562499739,
+              "wall_ms": 833.2335833236575,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.010083332657814026,
+              "commit_ms": 0.0037499964237213135,
+              "wait_ms": 833.2071249932051
+            },
+            {
+              "position": 4224,
+              "tokens": 128,
+              "gpu_ms": 852.9646250026417,
+              "wall_ms": 853.1716249957681,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.009499996900558472,
+              "commit_ms": 0.0035416632890701294,
+              "wait_ms": 853.1467500030994
+            },
+            {
+              "position": 4352,
+              "tokens": 128,
+              "gpu_ms": 848.9822083283798,
+              "wall_ms": 849.180541664362,
+              "host_busy_ms": 0.03699999999935244,
+              "encode_ms": 0.009583324193954468,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 849.1563749983907
+            },
+            {
+              "position": 4480,
+              "tokens": 128,
+              "gpu_ms": 853.9525000014692,
+              "wall_ms": 854.1411250010133,
+              "host_busy_ms": 0.03599999999914871,
+              "encode_ms": 0.009833335876464844,
+              "commit_ms": 0.0038333311676979065,
+              "wait_ms": 854.116333335638
+            },
+            {
+              "position": 4608,
+              "tokens": 128,
+              "gpu_ms": 861.9988749996992,
+              "wall_ms": 862.2039166614413,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009125001728534698,
+              "commit_ms": 0.0031249970197677612,
+              "wait_ms": 862.1794999986887
+            },
+            {
+              "position": 4736,
+              "tokens": 128,
+              "gpu_ms": 865.209750001668,
+              "wall_ms": 865.4154166653752,
+              "host_busy_ms": 0.03400000000056025,
+              "encode_ms": 0.009458333253860474,
+              "commit_ms": 0.0032916665077209473,
+              "wait_ms": 865.3928750008345
+            },
+            {
+              "position": 4864,
+              "tokens": 128,
+              "gpu_ms": 884.3239583293325,
+              "wall_ms": 884.5498750060797,
+              "host_busy_ms": 0.049999999999272404,
+              "encode_ms": 0.014083325862884521,
+              "commit_ms": 0.006708331406116486,
+              "wait_ms": 884.5142916589975
+            },
+            {
+              "position": 4992,
+              "tokens": 128,
+              "gpu_ms": 879.6941250038799,
+              "wall_ms": 879.8962083384395,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.008875004947185516,
+              "commit_ms": 0.0034166648983955383,
+              "wait_ms": 879.8727916702628
+            },
+            {
+              "position": 5120,
+              "tokens": 128,
+              "gpu_ms": 889.2119166703196,
+              "wall_ms": 889.4203749969602,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.008916668593883514,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 889.3958333358169
+            },
+            {
+              "position": 5248,
+              "tokens": 128,
+              "gpu_ms": 892.1719166683033,
+              "wall_ms": 892.3865833356977,
+              "host_busy_ms": 0.042999999999665306,
+              "encode_ms": 0.012666665017604828,
+              "commit_ms": 0.005625002086162567,
+              "wait_ms": 892.3558750003576
+            },
+            {
+              "position": 5376,
+              "tokens": 128,
+              "gpu_ms": 910.1142500003334,
+              "wall_ms": 910.3200833275914,
+              "host_busy_ms": 0.042999999999665306,
+              "encode_ms": 0.010333329439163208,
+              "commit_ms": 0.0035000070929527283,
+              "wait_ms": 910.2935833334923
+            },
+            {
+              "position": 5504,
+              "tokens": 128,
+              "gpu_ms": 919.8491249990184,
+              "wall_ms": 920.1210833340883,
+              "host_busy_ms": 0.07900000000063301,
+              "encode_ms": 0.028166666626930237,
+              "commit_ms": 0.011875003576278687,
+              "wait_ms": 920.0590833351016
+            },
+            {
+              "position": 5632,
+              "tokens": 128,
+              "gpu_ms": 915.7320000012987,
+              "wall_ms": 915.9966249987483,
+              "host_busy_ms": 0.0749999999998181,
+              "encode_ms": 0.029875002801418304,
+              "commit_ms": 0.012291662395000458,
+              "wait_ms": 915.933875001967
+            },
+            {
+              "position": 5760,
+              "tokens": 128,
+              "gpu_ms": 919.0226666614763,
+              "wall_ms": 919.2296249940991,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009541667997837067,
+              "commit_ms": 0.0036250054836273193,
+              "wait_ms": 919.2052916660905
+            },
+            {
+              "position": 5888,
+              "tokens": 128,
+              "gpu_ms": 924.7067916658125,
+              "wall_ms": 924.9144999980927,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008958332240581512,
+              "commit_ms": 0.003166668117046356,
+              "wait_ms": 924.890625
+            },
+            {
+              "position": 6016,
+              "tokens": 128,
+              "gpu_ms": 942.6952499998151,
+              "wall_ms": 942.9011666625738,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.008958332240581512,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 942.8765000030398
+            },
+            {
+              "position": 6144,
+              "tokens": 128,
+              "gpu_ms": 940.1006249972852,
+              "wall_ms": 940.3222500011325,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.012041665613651276,
+              "commit_ms": 0.004500001668930054,
+              "wait_ms": 940.2938750013709
+            },
+            {
+              "position": 6272,
+              "tokens": 128,
+              "gpu_ms": 947.2755000024335,
+              "wall_ms": 947.4808750003576,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009333327412605286,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 947.4555833339691
+            },
+            {
+              "position": 6400,
+              "tokens": 128,
+              "gpu_ms": 954.1051249980228,
+              "wall_ms": 954.3122916668653,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.00962500274181366,
+              "commit_ms": 0.0036666616797447205,
+              "wait_ms": 954.286416657269
+            },
+            {
+              "position": 6528,
+              "tokens": 128,
+              "gpu_ms": 976.2003333307803,
+              "wall_ms": 976.4080833271146,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.010041669011116028,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 976.382500000298
+            },
+            {
+              "position": 6656,
+              "tokens": 128,
+              "gpu_ms": 965.5908333297702,
+              "wall_ms": 965.7989583387971,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.010333329439163208,
+              "commit_ms": 0.0035833418369293213,
+              "wait_ms": 965.7730416730046
+            },
+            {
+              "position": 6784,
+              "tokens": 128,
+              "gpu_ms": 974.4061249948572,
+              "wall_ms": 974.6028333380818,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.0091666579246521,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 974.5777499973774
+            },
+            {
+              "position": 6912,
+              "tokens": 128,
+              "gpu_ms": 977.7496249953401,
+              "wall_ms": 977.9564583301544,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.00991666316986084,
+              "commit_ms": 0.003208339214324951,
+              "wait_ms": 977.9315833374858
+            },
+            {
+              "position": 7040,
+              "tokens": 128,
+              "gpu_ms": 999.6248333336553,
+              "wall_ms": 999.8319583386183,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009833335876464844,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 999.805541664362
+            },
+            {
+              "position": 7168,
+              "tokens": 128,
+              "gpu_ms": 996.5222916653147,
+              "wall_ms": 996.7231249958277,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009208329021930695,
+              "commit_ms": 0.003208339214324951,
+              "wait_ms": 996.6975416615605
+            },
+            {
+              "position": 7296,
+              "tokens": 128,
+              "gpu_ms": 999.1043749978417,
+              "wall_ms": 999.2779166698456,
+              "host_busy_ms": 0.023000000000138243,
+              "encode_ms": 0.008000001311302185,
+              "commit_ms": 0.002750001847743988,
+              "wait_ms": 999.2599583268166
+            },
+            {
+              "position": 7424,
+              "tokens": 128,
+              "gpu_ms": 1005.1424999983283,
+              "wall_ms": 1005.3716666698456,
+              "host_busy_ms": 0.023000000000138243,
+              "encode_ms": 0.00962500274181366,
+              "commit_ms": 0.0034166574478149414,
+              "wait_ms": 1005.3527083322406
+            },
+            {
+              "position": 7552,
+              "tokens": 128,
+              "gpu_ms": 1026.5618750054273,
+              "wall_ms": 1026.8304166719317,
+              "host_busy_ms": 0.05599999999958527,
+              "encode_ms": 0.04783332347869873,
+              "commit_ms": 0.003166675567626953,
+              "wait_ms": 1026.7650416716933
+            },
+            {
+              "position": 7680,
+              "tokens": 128,
+              "gpu_ms": 1018.8757083305973,
+              "wall_ms": 1019.0795416608453,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009458333253860474,
+              "commit_ms": 0.0033333376049995422,
+              "wait_ms": 1019.0538749992847
+            },
+            {
+              "position": 7808,
+              "tokens": 128,
+              "gpu_ms": 1026.1895416624611,
+              "wall_ms": 1026.3887083306909,
+              "host_busy_ms": 0.033999999999650754,
+              "encode_ms": 0.009291663765907288,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 1026.364708326757
+            },
+            {
+              "position": 7936,
+              "tokens": 128,
+              "gpu_ms": 1152.9243333352497,
+              "wall_ms": 1153.1316249966621,
+              "host_busy_ms": 0.04199999999946158,
+              "encode_ms": 0.009041666984558105,
+              "commit_ms": 0.003041669726371765,
+              "wait_ms": 1153.0993333235383
+            }
+          ],
+          "prompt_sha256": "556c4e9234a8222b0d5d5c8e00c09974908f2beb7aeebaf443e870eba66ead40",
+          "token_sha256": "ed214c23f52d9d239b557e5da0a57d7a279b92eaa6fa8a5af42d73150de8621f",
+          "text": "Based on the reference notes provided, here is a detailed explanation of speculative decoding.\n\n### Core Concept\nSpeculative decoding is a technique designed to accelerate the generation of text by large language models (LLMs). It operates on a \"draft-and-verify\" paradigm involving two distinct models:\n\n1.  **The Draft Model:** A smaller, faster model that proposes a sequence of tokens.\n2.  **The Target Model:** A larger, more accurate model that verifies these proposals.\n\n### How It Works\nThe process follows a specific workflow to ensure the output quality matches that of the larger target model while gaining speed from the"
+        },
+        {
+          "kind": "full",
+          "repeat": 1,
+          "prompt_tokens": 8064,
+          "output_tokens": 128,
+          "wall_ms": 61257.7183329995,
+          "prefill_gpu_ms": 52849.31237499404,
+          "prefill_wall_ms": 52862.42566664517,
+          "decode_gpu_ms": 8380.834958326886,
+          "decode_wall_ms": 8381.65420832485,
+          "decode_tokens": 127,
+          "steps": 35,
+          "decode_tps": 15.152140239078427,
+          "e2e_tps": 2.0895326088410067,
+          "ms_per_round": 239.45242738076817,
+          "statistics": {
+            "delivered_tokens_per_round": 3.6285714285714286,
+            "nonterminal_rounds": 34,
+            "accepted_histogram": {
+              "0": 9,
+              "1": 7,
+              "2": 6,
+              "3": 1,
+              "4": 2,
+              "5": 1,
+              "6": 3,
+              "7": 6
+            },
+            "committed_histogram": {
+              "1": 9,
+              "2": 7,
+              "3": 6,
+              "4": 1,
+              "5": 2,
+              "6": 1,
+              "7": 3,
+              "8": 6
+            },
+            "verified_histogram": {
+              "7": 35
+            },
+            "nonterminal_mean_accepted": 2.676470588235294,
+            "nonterminal_mean_committed": 3.676470588235294,
+            "positions": [
+              {
+                "position": 1,
+                "eligible_rounds": 34,
+                "reached_rounds": 34,
+                "accepted_rounds": 25,
+                "survival": 0.7352941176470589,
+                "conditional_acceptance": 0.7352941176470589
+              },
+              {
+                "position": 2,
+                "eligible_rounds": 34,
+                "reached_rounds": 25,
+                "accepted_rounds": 18,
+                "survival": 0.5294117647058824,
+                "conditional_acceptance": 0.72
+              },
+              {
+                "position": 3,
+                "eligible_rounds": 34,
+                "reached_rounds": 18,
+                "accepted_rounds": 12,
+                "survival": 0.35294117647058826,
+                "conditional_acceptance": 0.6666666666666666
+              },
+              {
+                "position": 4,
+                "eligible_rounds": 34,
+                "reached_rounds": 12,
+                "accepted_rounds": 11,
+                "survival": 0.3235294117647059,
+                "conditional_acceptance": 0.9166666666666666
+              },
+              {
+                "position": 5,
+                "eligible_rounds": 34,
+                "reached_rounds": 11,
+                "accepted_rounds": 10,
+                "survival": 0.29411764705882354,
+                "conditional_acceptance": 0.9090909090909091
+              },
+              {
+                "position": 6,
+                "eligible_rounds": 34,
+                "reached_rounds": 10,
+                "accepted_rounds": 9,
+                "survival": 0.2647058823529412,
+                "conditional_acceptance": 0.9
+              },
+              {
+                "position": 7,
+                "eligible_rounds": 34,
+                "reached_rounds": 9,
+                "accepted_rounds": 6,
+                "survival": 0.17647058823529413,
+                "conditional_acceptance": 0.6666666666666666
+              }
+            ]
+          },
+          "accepted": [
+            6,
+            7,
+            2,
+            7,
+            0,
+            5,
+            6,
+            2,
+            0,
+            1,
+            1,
+            3,
+            0,
+            1,
+            7,
+            4,
+            1,
+            2,
+            6,
+            7,
+            7,
+            7,
+            2,
+            1,
+            0,
+            0,
+            2,
+            0,
+            1,
+            0,
+            1,
+            2,
+            0,
+            0,
+            4
+          ],
+          "committed": [
+            7,
+            8,
+            3,
+            8,
+            1,
+            6,
+            7,
+            3,
+            1,
+            2,
+            2,
+            4,
+            1,
+            2,
+            8,
+            5,
+            2,
+            3,
+            7,
+            8,
+            8,
+            8,
+            3,
+            2,
+            1,
+            1,
+            3,
+            1,
+            2,
+            1,
+            2,
+            3,
+            1,
+            1,
+            5
+          ],
+          "verify_len": [
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "tokens": [
+            27775,
+            383,
+            279,
+            5604,
+            8129,
+            3766,
+            11,
+            1532,
+            369,
+            264,
+            11346,
+            15673,
+            314,
+            63520,
+            45543,
+            13,
+            271,
+            13962,
+            9237,
+            33214,
+            198,
+            8068,
+            21473,
+            45543,
+            369,
+            264,
+            14334,
+            5995,
+            310,
+            41365,
+            279,
+            9191,
+            314,
+            1414,
+            539,
+            3349,
+            3992,
+            3983,
+            318,
+            3950,
+            20971,
+            553,
+            1049,
+            25224,
+            383,
+            264,
+            328,
+            43494,
+            9485,
+            12,
+            12089,
+            1,
+            46632,
+            15394,
+            1330,
+            12103,
+            3983,
+            25,
+            271,
+            16,
+            13,
+            220,
+            2972,
+            760,
+            27632,
+            4744,
+            64700,
+            357,
+            8882,
+            11,
+            10281,
+            1558,
+            421,
+            52789,
+            264,
+            8240,
+            314,
+            10885,
+            13,
+            198,
+            17,
+            13,
+            220,
+            2972,
+            760,
+            13095,
+            4744,
+            64700,
+            357,
+            7875,
+            11,
+            777,
+            12995,
+            1558,
+            421,
+            84828,
+            1439,
+            23497,
+            13,
+            271,
+            13962,
+            2500,
+            1049,
+            20457,
+            198,
+            760,
+            1817,
+            10695,
+            264,
+            3050,
+            27370,
+            310,
+            5790,
+            279,
+            2468,
+            4131,
+            8798,
+            421,
+            314,
+            279,
+            7875,
+            2100,
+            1558,
+            1345,
+            28187,
+            4478,
+            494,
+            279
+          ],
+          "setup_ms": 0.0,
+          "cached_prompt_tokens": 0,
+          "prefill_timings": [
+            {
+              "position": 0,
+              "tokens": 128,
+              "gpu_ms": 674.7376249986701,
+              "wall_ms": 675.1702499985695,
+              "host_busy_ms": 0.07300000000032014,
+              "encode_ms": 0.03491666167974472,
+              "commit_ms": 0.006999999284744263,
+              "wait_ms": 675.1092916727066
+            },
+            {
+              "position": 128,
+              "tokens": 128,
+              "gpu_ms": 680.6378749970463,
+              "wall_ms": 680.8403333351016,
+              "host_busy_ms": 0.028000000000247383,
+              "encode_ms": 0.00937499850988388,
+              "commit_ms": 0.0032499954104423523,
+              "wait_ms": 680.8228333368897
+            },
+            {
+              "position": 256,
+              "tokens": 128,
+              "gpu_ms": 682.9236250050599,
+              "wall_ms": 683.1303333342075,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.010833323001861572,
+              "commit_ms": 0.0036666616797447205,
+              "wait_ms": 683.1044166684151
+            },
+            {
+              "position": 384,
+              "tokens": 128,
+              "gpu_ms": 694.4376249957713,
+              "wall_ms": 694.6466666609049,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009583324193954468,
+              "commit_ms": 0.0033750012516975403,
+              "wait_ms": 694.6217916756868
+            },
+            {
+              "position": 512,
+              "tokens": 128,
+              "gpu_ms": 699.8723750002682,
+              "wall_ms": 700.0765833333135,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.008833326399326324,
+              "commit_ms": 0.003166675567626953,
+              "wait_ms": 700.0527499988675
+            },
+            {
+              "position": 640,
+              "tokens": 128,
+              "gpu_ms": 713.9559583374648,
+              "wall_ms": 714.1570833325386,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008541665971279144,
+              "commit_ms": 0.003041662275791168,
+              "wait_ms": 714.1331666633487
+            },
+            {
+              "position": 768,
+              "tokens": 128,
+              "gpu_ms": 717.6227916643256,
+              "wall_ms": 717.8284583389759,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.00933334231376648,
+              "commit_ms": 0.0037083253264427185,
+              "wait_ms": 717.8040833324194
+            },
+            {
+              "position": 896,
+              "tokens": 128,
+              "gpu_ms": 672.9333749972284,
+              "wall_ms": 673.2175416648388,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.00991666316986084,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 673.1930416598916
+            },
+            {
+              "position": 1024,
+              "tokens": 128,
+              "gpu_ms": 676.8483749983716,
+              "wall_ms": 677.0416250005364,
+              "host_busy_ms": 0.03900000000066939,
+              "encode_ms": 0.011958330869674683,
+              "commit_ms": 0.0034583359956741333,
+              "wait_ms": 677.0151249989867
+            },
+            {
+              "position": 1152,
+              "tokens": 128,
+              "gpu_ms": 686.8776249975781,
+              "wall_ms": 687.0885833278298,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008833326399326324,
+              "commit_ms": 0.002916671335697174,
+              "wait_ms": 687.0627916678786
+            },
+            {
+              "position": 1280,
+              "tokens": 128,
+              "gpu_ms": 692.0211666656542,
+              "wall_ms": 692.2314999997616,
+              "host_busy_ms": 0.04599999999936699,
+              "encode_ms": 0.015291661024093628,
+              "commit_ms": 0.005583338439464569,
+              "wait_ms": 692.1972500011325
+            },
+            {
+              "position": 1408,
+              "tokens": 128,
+              "gpu_ms": 710.39862500038,
+              "wall_ms": 710.5974999964237,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008458323776721954,
+              "commit_ms": 0.002875000238418579,
+              "wait_ms": 710.5752499997616
+            },
+            {
+              "position": 1536,
+              "tokens": 128,
+              "gpu_ms": 705.0524166697869,
+              "wall_ms": 705.2357916682959,
+              "host_busy_ms": 0.02599999999983993,
+              "encode_ms": 0.009083330631256104,
+              "commit_ms": 0.002958327531814575,
+              "wait_ms": 705.2168333381414
+            },
+            {
+              "position": 1664,
+              "tokens": 128,
+              "gpu_ms": 707.7179999978398,
+              "wall_ms": 707.9207083359361,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009583331644535065,
+              "commit_ms": 0.0034583285450935364,
+              "wait_ms": 707.8959166631103
+            },
+            {
+              "position": 1792,
+              "tokens": 128,
+              "gpu_ms": 714.9453749952954,
+              "wall_ms": 715.1185416579247,
+              "host_busy_ms": 0.02299999999922875,
+              "encode_ms": 0.008666664361953735,
+              "commit_ms": 0.0034166648983955383,
+              "wait_ms": 715.0995416641235
+            },
+            {
+              "position": 1920,
+              "tokens": 128,
+              "gpu_ms": 725.4903749999357,
+              "wall_ms": 725.6622083336115,
+              "host_busy_ms": 0.024999999999636202,
+              "encode_ms": 0.009999997913837433,
+              "commit_ms": 0.0033333376049995422,
+              "wait_ms": 725.6421249955893
+            },
+            {
+              "position": 2048,
+              "tokens": 128,
+              "gpu_ms": 738.9379583328264,
+              "wall_ms": 739.1528749987483,
+              "host_busy_ms": 0.03900000000066939,
+              "encode_ms": 0.010083332657814026,
+              "commit_ms": 0.003166668117046356,
+              "wait_ms": 739.1270833313465
+            },
+            {
+              "position": 2176,
+              "tokens": 128,
+              "gpu_ms": 741.2634166612406,
+              "wall_ms": 741.4652500003576,
+              "host_busy_ms": 0.04199999999946158,
+              "encode_ms": 0.010083332657814026,
+              "commit_ms": 0.0037499964237213135,
+              "wait_ms": 741.4395833313465
+            },
+            {
+              "position": 2304,
+              "tokens": 128,
+              "gpu_ms": 743.7271666640299,
+              "wall_ms": 743.9272083342075,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009333334863185883,
+              "commit_ms": 0.003041669726371765,
+              "wait_ms": 743.9027916640043
+            },
+            {
+              "position": 2432,
+              "tokens": 128,
+              "gpu_ms": 755.6103333336068,
+              "wall_ms": 755.7729166671634,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.008749999105930328,
+              "commit_ms": 0.002833336591720581,
+              "wait_ms": 755.7494166642427
+            },
+            {
+              "position": 2560,
+              "tokens": 128,
+              "gpu_ms": 756.0651249950752,
+              "wall_ms": 756.2856250032783,
+              "host_busy_ms": 0.04100000000016735,
+              "encode_ms": 0.010624997317790985,
+              "commit_ms": 0.0037916675209999084,
+              "wait_ms": 756.2590833380818
+            },
+            {
+              "position": 2688,
+              "tokens": 128,
+              "gpu_ms": 763.9742083338206,
+              "wall_ms": 764.1744583323598,
+              "host_busy_ms": 0.039999999999054126,
+              "encode_ms": 0.01012500375509262,
+              "commit_ms": 0.0036249980330467224,
+              "wait_ms": 764.1477916762233
+            },
+            {
+              "position": 2816,
+              "tokens": 128,
+              "gpu_ms": 775.8258750036475,
+              "wall_ms": 776.0336666703224,
+              "host_busy_ms": 0.03699999999935244,
+              "encode_ms": 0.009124994277954102,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 776.0087916702032
+            },
+            {
+              "position": 2944,
+              "tokens": 128,
+              "gpu_ms": 778.7270833359798,
+              "wall_ms": 778.9297083318233,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.009166665375232697,
+              "commit_ms": 0.0033333376049995422,
+              "wait_ms": 778.9049999937415
+            },
+            {
+              "position": 3072,
+              "tokens": 128,
+              "gpu_ms": 781.5648749965476,
+              "wall_ms": 781.7723750025034,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009666666388511658,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 781.7471249997616
+            },
+            {
+              "position": 3200,
+              "tokens": 128,
+              "gpu_ms": 790.5082500001299,
+              "wall_ms": 790.7706666663289,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.00975000113248825,
+              "commit_ms": 0.0032500028610229492,
+              "wait_ms": 790.7449999973178
+            },
+            {
+              "position": 3328,
+              "tokens": 128,
+              "gpu_ms": 794.5030416667578,
+              "wall_ms": 794.7109166756272,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.008916661143302917,
+              "commit_ms": 0.002833336591720581,
+              "wait_ms": 794.6863749995828
+            },
+            {
+              "position": 3456,
+              "tokens": 128,
+              "gpu_ms": 817.1070000025793,
+              "wall_ms": 817.3297083377838,
+              "host_busy_ms": 0.0430000000005748,
+              "encode_ms": 0.01329166442155838,
+              "commit_ms": 0.005291670560836792,
+              "wait_ms": 817.30462500453
+            },
+            {
+              "position": 3584,
+              "tokens": 128,
+              "gpu_ms": 811.2966666667489,
+              "wall_ms": 811.5934999957681,
+              "host_busy_ms": 0.0929999999998472,
+              "encode_ms": 0.035333335399627686,
+              "commit_ms": 0.012833334505558014,
+              "wait_ms": 811.515000000596
+            },
+            {
+              "position": 3712,
+              "tokens": 128,
+              "gpu_ms": 821.2710833395249,
+              "wall_ms": 821.484375,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.010583333671092987,
+              "commit_ms": 0.004124999046325684,
+              "wait_ms": 821.457000002265
+            },
+            {
+              "position": 3840,
+              "tokens": 128,
+              "gpu_ms": 824.4012499999371,
+              "wall_ms": 824.5838333293796,
+              "host_busy_ms": 0.024999999999636202,
+              "encode_ms": 0.010458335280418396,
+              "commit_ms": 0.0034583285450935364,
+              "wait_ms": 824.5638749971986
+            },
+            {
+              "position": 3968,
+              "tokens": 128,
+              "gpu_ms": 830.8078750051209,
+              "wall_ms": 831.0036666691303,
+              "host_busy_ms": 0.042000000000371074,
+              "encode_ms": 0.010874994099140167,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 830.9762916639447
+            },
+            {
+              "position": 4096,
+              "tokens": 128,
+              "gpu_ms": 840.1327499959734,
+              "wall_ms": 840.3342500030994,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.00804167240858078,
+              "commit_ms": 0.003208339214324951,
+              "wait_ms": 840.3109999969602
+            },
+            {
+              "position": 4224,
+              "tokens": 128,
+              "gpu_ms": 840.9591666641063,
+              "wall_ms": 841.1648333221674,
+              "host_busy_ms": 0.03400000000056025,
+              "encode_ms": 0.008291661739349365,
+              "commit_ms": 0.00270833820104599,
+              "wait_ms": 841.1422083377838
+            },
+            {
+              "position": 4352,
+              "tokens": 128,
+              "gpu_ms": 847.6376250036992,
+              "wall_ms": 847.8559999987483,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.011583328247070312,
+              "commit_ms": 0.0034166648983955383,
+              "wait_ms": 847.82866666466
+            },
+            {
+              "position": 4480,
+              "tokens": 128,
+              "gpu_ms": 853.6972916626837,
+              "wall_ms": 853.8937499970198,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.009458325803279877,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 853.8689583316445
+            },
+            {
+              "position": 4608,
+              "tokens": 128,
+              "gpu_ms": 866.8984166652081,
+              "wall_ms": 867.1064166724682,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.009333334863185883,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 867.081291668117
+            },
+            {
+              "position": 4736,
+              "tokens": 128,
+              "gpu_ms": 873.0287500002305,
+              "wall_ms": 873.2360416650772,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.009416669607162476,
+              "commit_ms": 0.003083333373069763,
+              "wait_ms": 873.2116666659713
+            },
+            {
+              "position": 4864,
+              "tokens": 128,
+              "gpu_ms": 873.8190833319095,
+              "wall_ms": 874.0205000042915,
+              "host_busy_ms": 0.03900000000066939,
+              "encode_ms": 0.009500004351139069,
+              "commit_ms": 0.0031249970197677612,
+              "wait_ms": 873.9954999983311
+            },
+            {
+              "position": 4992,
+              "tokens": 128,
+              "gpu_ms": 881.496750000224,
+              "wall_ms": 881.699958331883,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.008333325386047363,
+              "commit_ms": 0.002750001847743988,
+              "wait_ms": 881.6769583374262
+            },
+            {
+              "position": 5120,
+              "tokens": 128,
+              "gpu_ms": 886.100333329523,
+              "wall_ms": 886.3044999986887,
+              "host_busy_ms": 0.035000000000763976,
+              "encode_ms": 0.009291663765907288,
+              "commit_ms": 0.003166668117046356,
+              "wait_ms": 886.2797500044107
+            },
+            {
+              "position": 5248,
+              "tokens": 128,
+              "gpu_ms": 903.9409166653058,
+              "wall_ms": 904.1274166628718,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.009666666388511658,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 904.1026666685939
+            },
+            {
+              "position": 5376,
+              "tokens": 128,
+              "gpu_ms": 902.6580000063404,
+              "wall_ms": 902.8659583330154,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.00975000113248825,
+              "commit_ms": 0.00308334082365036,
+              "wait_ms": 902.8412083387375
+            },
+            {
+              "position": 5504,
+              "tokens": 128,
+              "gpu_ms": 909.3545833311509,
+              "wall_ms": 909.5558333396912,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.008875004947185516,
+              "commit_ms": 0.0032916590571403503,
+              "wait_ms": 909.5322083383799
+            },
+            {
+              "position": 5632,
+              "tokens": 128,
+              "gpu_ms": 914.6610000025248,
+              "wall_ms": 914.8655000030994,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.010375000536441803,
+              "commit_ms": 0.0035833343863487244,
+              "wait_ms": 914.8389166668057
+            },
+            {
+              "position": 5760,
+              "tokens": 128,
+              "gpu_ms": 931.5559999959078,
+              "wall_ms": 931.7689166665077,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.008875004947185516,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 931.7453333362937
+            },
+            {
+              "position": 5888,
+              "tokens": 128,
+              "gpu_ms": 928.2882916668314,
+              "wall_ms": 928.4928333237767,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.0090833380818367,
+              "commit_ms": 0.0034166648983955383,
+              "wait_ms": 928.4674583300948
+            },
+            {
+              "position": 6016,
+              "tokens": 128,
+              "gpu_ms": 938.1702916725772,
+              "wall_ms": 938.3813333287835,
+              "host_busy_ms": 0.02099999999973079,
+              "encode_ms": 0.009791664779186249,
+              "commit_ms": 0.0034999996423721313,
+              "wait_ms": 938.3640833348036
+            },
+            {
+              "position": 6144,
+              "tokens": 128,
+              "gpu_ms": 956.125125005201,
+              "wall_ms": 956.3297083228827,
+              "host_busy_ms": 0.03899999999975989,
+              "encode_ms": 0.01591666042804718,
+              "commit_ms": 0.005458332598209381,
+              "wait_ms": 956.2985416650772
+            },
+            {
+              "position": 6272,
+              "tokens": 128,
+              "gpu_ms": 966.5696666634176,
+              "wall_ms": 966.7335833385587,
+              "host_busy_ms": 0.039999999999054126,
+              "encode_ms": 0.01716667413711548,
+              "commit_ms": 0.005750000476837158,
+              "wait_ms": 966.7028333321214
+            },
+            {
+              "position": 6400,
+              "tokens": 128,
+              "gpu_ms": 965.4668750008568,
+              "wall_ms": 965.6782916635275,
+              "host_busy_ms": 0.04399999999986903,
+              "encode_ms": 0.018958337604999542,
+              "commit_ms": 0.007749997079372406,
+              "wait_ms": 965.6400833278894
+            },
+            {
+              "position": 6528,
+              "tokens": 128,
+              "gpu_ms": 960.4088333362597,
+              "wall_ms": 960.6183749958873,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.010083332657814026,
+              "commit_ms": 0.0036249980330467224,
+              "wait_ms": 960.5922916606069
+            },
+            {
+              "position": 6656,
+              "tokens": 128,
+              "gpu_ms": 966.3956250005867,
+              "wall_ms": 966.5856666639447,
+              "host_busy_ms": 0.03799999999955617,
+              "encode_ms": 0.009458325803279877,
+              "commit_ms": 0.0034166723489761353,
+              "wait_ms": 966.5607083290815
+            },
+            {
+              "position": 6784,
+              "tokens": 128,
+              "gpu_ms": 974.4054166658316,
+              "wall_ms": 974.6091250032187,
+              "host_busy_ms": 0.03600000000005821,
+              "encode_ms": 0.009166665375232697,
+              "commit_ms": 0.003125004470348358,
+              "wait_ms": 974.5848333388567
+            },
+            {
+              "position": 6912,
+              "tokens": 128,
+              "gpu_ms": 979.1005000006407,
+              "wall_ms": 979.3081249967217,
+              "host_busy_ms": 0.03699999999935244,
+              "encode_ms": 0.010291673243045807,
+              "commit_ms": 0.0036249980330467224,
+              "wait_ms": 979.2826666608453
+            },
+            {
+              "position": 7040,
+              "tokens": 128,
+              "gpu_ms": 986.9877500022994,
+              "wall_ms": 987.1862500011921,
+              "host_busy_ms": 0.037000000000261934,
+              "encode_ms": 0.00937499850988388,
+              "commit_ms": 0.0031249970197677612,
+              "wait_ms": 987.1614999994636
+            },
+            {
+              "position": 7168,
+              "tokens": 128,
+              "gpu_ms": 992.8123749996303,
+              "wall_ms": 992.9675000011921,
+              "host_busy_ms": 0.040000000000873115,
+              "encode_ms": 0.009708337485790253,
+              "commit_ms": 0.0039166659116744995,
+              "wait_ms": 992.942208327353
+            },
+            {
+              "position": 7296,
+              "tokens": 128,
+              "gpu_ms": 998.5477500013076,
+              "wall_ms": 998.7170000001788,
+              "host_busy_ms": 0.03499999999985448,
+              "encode_ms": 0.00858333706855774,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 998.6941250041127
+            },
+            {
+              "position": 7424,
+              "tokens": 128,
+              "gpu_ms": 1010.0350833381526,
+              "wall_ms": 1010.2391666695476,
+              "host_busy_ms": 0.03599999999914871,
+              "encode_ms": 0.008875004947185516,
+              "commit_ms": 0.003041662275791168,
+              "wait_ms": 1010.2157083377242
+            },
+            {
+              "position": 7552,
+              "tokens": 128,
+              "gpu_ms": 1013.6993333289865,
+              "wall_ms": 1013.9004999995232,
+              "host_busy_ms": 0.03699999999935244,
+              "encode_ms": 0.008333340287208557,
+              "commit_ms": 0.002875000238418579,
+              "wait_ms": 1013.8772083297372
+            },
+            {
+              "position": 7680,
+              "tokens": 128,
+              "gpu_ms": 1023.0897083310992,
+              "wall_ms": 1023.2984166666865,
+              "host_busy_ms": 0.03800000000046566,
+              "encode_ms": 0.009291671216487885,
+              "commit_ms": 0.00299999862909317,
+              "wait_ms": 1023.274124994874
+            },
+            {
+              "position": 7808,
+              "tokens": 128,
+              "gpu_ms": 1027.682250001817,
+              "wall_ms": 1027.8848749995232,
+              "host_busy_ms": 0.03999999999996362,
+              "encode_ms": 0.008541658520698547,
+              "commit_ms": 0.002750001847743988,
+              "wait_ms": 1027.8608750030398
+            },
+            {
+              "position": 7936,
+              "tokens": 128,
+              "gpu_ms": 1153.5224166655098,
+              "wall_ms": 1153.7405833378434,
+              "host_busy_ms": 0.046000000000276486,
+              "encode_ms": 0.009583331644535065,
+              "commit_ms": 0.0040833353996276855,
+              "wait_ms": 1153.7067083269358
+            }
+          ],
+          "prompt_sha256": "556c4e9234a8222b0d5d5c8e00c09974908f2beb7aeebaf443e870eba66ead40",
+          "token_sha256": "ed214c23f52d9d239b557e5da0a57d7a279b92eaa6fa8a5af42d73150de8621f",
+          "text": "Based on the reference notes provided, here is a detailed explanation of speculative decoding.\n\n### Core Concept\nSpeculative decoding is a technique designed to accelerate the generation of text by large language models (LLMs). It operates on a \"draft-and-verify\" paradigm involving two distinct models:\n\n1.  **The Draft Model:** A smaller, faster model that proposes a sequence of tokens.\n2.  **The Target Model:** A larger, more accurate model that verifies these proposals.\n\n### How It Works\nThe process follows a specific workflow to ensure the output quality matches that of the larger target model while gaining speed from the"
+        }
+      ],
+      "prompt_sha256": "556c4e9234a8222b0d5d5c8e00c09974908f2beb7aeebaf443e870eba66ead40",
+      "token_sha256": "ed214c23f52d9d239b557e5da0a57d7a279b92eaa6fa8a5af42d73150de8621f"
+    }
+  },
+  "logit_checks": [
+    {
+      "capture": "build/m6-bottlenecks-20261014/full-8k-control.prompt-logits-0.npy",
+      "max_abs": 0.0,
+      "bit_equal": true
+    },
+    {
+      "capture": "build/m6-bottlenecks-20261014/full-8k-control.prompt-logits-1.npy",
+      "max_abs": 0.0,
+      "bit_equal": true
+    },
+    {
+      "capture": "build/m6-bottlenecks-20261014/full-8k-nvfp4-crew.prompt-logits-0.npy",
+      "max_abs": 0.0,
+      "bit_equal": true
+    },
+    {
+      "capture": "build/m6-bottlenecks-20261014/full-8k-nvfp4-crew.prompt-logits-1.npy",
+      "max_abs": 0.0,
+      "bit_equal": true
+    }
+  ],
+  "uninstrumented_32k_scheduler": {
+    "source": "build/m6-mma-20261014/full-32k-turbo4-m6.json",
+    "chunks": 255,
+    "gpu_ms": 411939.50862500607,
+    "wall_ms": 412024.2004166804,
+    "host_busy_ms": 7.855000000007749,
+    "encode_ms": 2.4557500146329403,
+    "commit_ms": 0.9670833386480808,
+    "wait_ms": 412018.63095831685
+  },
+  "shader_validation": {
+    "gate_up": {
+      "candidates": 8,
+      "exact": true
+    },
+    "down": {
+      "candidates": 8,
+      "exact": true
+    },
+    "gdn": {
+      "candidates": 4,
+      "exact": true
+    }
+  },
+  "final_source_sha256": {
+    "tools/bench/m6_prefill_profile.py": "fdb76f6a57a5ac84fdb75d610798d2146ecc75c3f53fec05a5598311e57e1436",
+    "tools/bench/m6_prefill_candidates.py": "42c48f3a304f851f0c81cdaea45201d279d85e4ab5b3356662767bb3cb8021e4",
+    "tools/bench/m6_prefill_probe_model.py": "6782fb3790fc25c742eb89a83c79e484a5dc404cb64671922765904072c50bdd",
+    "tools/bench/m6_prefill_model.py": "277c16af986c1581966c3285498aa9de1be3cad61ddf4b814e752980ce48c6ff",
+    "kernels/common/gemm_tile.metal": "5b1819207718c5b96c908aa041c5d7d419ae519e3bfe5c54febe6709e6ed6db3",
+    "kernels/common/gdn_mixer.metal": "c65541e54fedd2d7992643cd0ff2e801f139f728c3db0d2aefae352cf7690bef",
+    "kernels/common/gqa_decode.metal": "f309631c04ef3d9e610efa29e05c7250b3a1b7fa10979a820f8a9fcd42c30c28",
+    "kernels/common/gqa_decode_mma_m6.metal": "9d1f2fb20b151ed2a5b4cd465b3c7bb8d6c96e72900fc5943267410ac5f8057e",
+    "monolith/compiler/prefill.py": "244f276731966518b8b89b24fee473d1fbe96e34913cde98f62a5a088e4eb35f",
+    "monolith/compiler/emit.py": "531ad0d2848b2d9f8e0eb95f02aa570721ac2194918bf6aa45c1937d666d712b",
+    "monolith/generate.py": "949fe2295a71e33a4c8590776b70fca2a199eaedd945adcb71ec65588ca69737",
+    "runtime/src/metal_core.mm": "8635515b22d459cc1a583070965546a9bbbbf856b3685cfbb94170858b6983ad",
+    "monolith/backends/metal/m6/config.json": "bc55043bbc617777315f84c4eec8f360a39f8d6219f7bf06e5e3df1a66a17339"
+  },
+  "raw_sha256": {
+    "build/m6-bottlenecks-20261014/synthetic-turbo4-p128.json": "bf1372cd903951817b5e625b27891ab2e6c66155dc6207d864c720461727b1a8",
+    "build/m6-bottlenecks-20261014/validation-gdn.json": "ab5b2fdfd3269ed9065790b43507d99badd283e41924acd733b10fea1d6ec6a8",
+    "build/m6-bottlenecks-20261014/full-8k-control.json": "14c9cfe0a3cb0f85be1a17f1726f5c0a43ad0e04c42c390d9e849f980451ccf6",
+    "build/m6-bottlenecks-20261014/validation-gate_up.json": "d03ed30523549353b009d0ad0198ad6980756d774f41331c6c6382e8867fe77e",
+    "build/m6-bottlenecks-20261014/candidates-gate-up.json": "346693f8d0f45434bed5c54c6a0c5b40ed597c071a90c6b1c9d108d921ac25d7",
+    "build/m6-bottlenecks-20261014/full-8k-nvfp4-crew.json": "b89dc083f574e135c8f156d5b0f9ba3196006a61cca19d55169c799b541aa196",
+    "build/m6-bottlenecks-20261014/validation-down.json": "3eb1f6927f0a620e266509a8960fe6301efaf65d5ca820a9089250521b68a7dd",
+    "build/m6-bottlenecks-20261014/real-turbo4-p128.json": "91e0a4b191b05e1d1a41b97a6bb3cdd80369fe53088ddfe06f5a0f9e549a67f3",
+    "build/m6-bottlenecks-20261014/candidates-down.json": "0d29d4cc3a1e0313e292fc441ed2e70350c549e37c6b367ee4285fec3906dd8e",
+    "build/m6-bottlenecks-20261014/candidates-gdn.json": "d51cf373c932f9e373b1a0f88f11080d7f4f4a4eaf8245bc7c15c81469c451ff"
+  }
+}

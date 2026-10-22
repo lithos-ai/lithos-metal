@@ -119,6 +119,7 @@ Pipeline::Pipeline(const Library& lib, const std::string& function, bool support
 Pipeline::~Pipeline() = default;
 uint32_t Pipeline::max_threads_per_threadgroup() const { return (uint32_t)impl->pso.maxTotalThreadsPerThreadgroup; }
 uint32_t Pipeline::thread_execution_width() const { return (uint32_t)impl->pso.threadExecutionWidth; }
+uint64_t Pipeline::static_threadgroup_memory_length() const { return (uint64_t)impl->pso.staticThreadgroupMemoryLength; }
 
 Queue::Queue(const Device& d) : impl(std::make_shared<QueueImpl>()) { impl->q = [d.impl->dev newCommandQueue]; }
 Queue::~Queue() = default;

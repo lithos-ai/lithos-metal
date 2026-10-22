@@ -62,6 +62,7 @@ class Pipeline {
   ~Pipeline();
   uint32_t max_threads_per_threadgroup() const;
   uint32_t thread_execution_width() const;
+  uint64_t static_threadgroup_memory_length() const;
   std::shared_ptr<PipelineImpl> impl;
 };
 

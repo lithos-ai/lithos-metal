@@ -21,7 +21,7 @@ class Backend(MetalBackend):
         from .serving import recipes
         return recipes(model, drafter, quantization)
 
-    def serving_prefill_chunk(self, recipes, model=None):
+    def serving_prefill_chunk(self, recipes, model=None, *, max_context=32768, kv_cache_dtype="bf16", k_cache_dtype=None, v_cache_dtype=None):
         # prefill.py tunes 512-row tiles for the model the serving recipes match; the 4-bit 27B is exact at 512 rows too
         if any(recipe.get('target') for recipe in recipes.values()):
             return 512

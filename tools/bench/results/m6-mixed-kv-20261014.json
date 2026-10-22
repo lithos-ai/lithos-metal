@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-14",
+  "device": "Apple M6, 12 GPU cores, 32 GiB RAM",
+  "model": "nvidia/Qwen3.8-27B-NVFP4",
+  "draft": "LithosAI/Qwen3.8-27B-DSpark-NVFP4",
+  "serving": {
+    "k_cache_dtype": "q8_0",
+    "v_cache_dtype": "q4_0",
+    "context": 32768,
+    "capacity_with_draft": 32774,
+    "prefill_rows": 128,
+    "prefix_snapshots": false,
+    "advertised_context": 32768
+  },
+  "tests": {
+    "contract_passed": 240,
+    "metal_shader_validation_passed": 225,
+    "independent_format_pairs": 16,
+    "attention_rtol": 0.035,
+    "attention_atol": 0.004,
+    "mixed_codec_test": "All 16 pairs use QK normalization disabled to isolate codec/rotation, including 8K history and exact cache bytes. Existing normalized homogeneous attention and mixed generation/checkpoint tests also pass.",
+    "normalized_boundary_check": {
+      "k_cache": true,
+      "v_cache": true
+    }
+  },
+  "requests": [
+    {
+      "name": "short",
+      "wall_s": 0.8129399999997986,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    },
+    {
+      "name": "sampled",
+      "wall_s": 0.8896249580002404,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    },
+    {
+      "name": "long",
+      "wall_s": 137.92475470800036,
+      "usage": {
+        "prompt_tokens": 12625,
+        "completion_tokens": 21,
+        "total_tokens": 12646
+      }
+    },
+    {
+      "name": "repeat",
+      "wall_s": 0.7844339170005696,
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23
+      }
+    }
+  ],
+  "long_request_metrics": {
+    "steps": 8,
+    "decode_gpu_ms": 2094.770791666633,
+    "wall_ms": 137902.85366700028,
+    "prefill_gpu_ms": 135740.48400000084,
+    "prefill_wall_ms": 135779.59225000162,
+    "state_reset_ms": 0.0006250002115848474,
+    "checkpoint_ms": 0.0,
+    "setup_ms": 16.19074900099804,
+    "load_ms": 6.1861670001235325,
+    "first_text_ms": null,
+    "decode_wall_ms": 2095.3369166674092,
+    "cached_prompt_tokens": 0,
+    "prefix_source": null,
+    "prefix_load_ms": 0.0,
+    "prefill_encode_ms": 1.1819166587665677,
+    "prefill_commit_ms": 0.3985416702926159,
+    "prefill_wait_ms": 135774.2021249989,
+    "verify_tokens": 8,
+    "decode_step_ms": 261.84634895832914
+  },
+  "managed_buffer_bytes": 26169348116,
+  "system_swap": {
+    "page_bytes": 16384,
+    "pages_before": 181256,
+    "pages_after": 181256,
+    "delta_bytes": 0,
+    "note": "System-wide counters, not per-process attribution."
+  },
+  "checks": {
+    "greedy": true,
+    "sampled": true,
+    "repeated_greedy_output_exact": true,
+    "sse": true,
+    "context_overflow_status": 400,
+    "temporary_server_stopped": true
+  },
+  "limitations": [
+    "32K service capacity with 12625 input tokens, not a full 32K-input benchmark.",
+    "Mixed cache model quality and perplexity have not been evaluated."
+  ],
+  "source_sha256": {
+    "monolith/nn/kv_quant.py": "8a4575dd511028a890882c14ab4a1161678c9e8ed84d49ce102b52d6b277fdc5",
+    "monolith/nn/attention.py": "ea8e104ad0a1e91c73ac678885a4df755f7af260db04561fe55ef532c6ba56ca",
+    "kernels/common/kv_quant.metal": "01f39d84b9d1851de2961b2f4cbbb2bc75a5c42e8cea39ee4b99b50586b5b3c6",
+    "kernels/common/gqa_decode.metal": "52cc00837c3a6597301babbf58325167715863594206490bb048c7c41bbd12b9",
+    "monolith/compiler/emit.py": "988d23f9c5a4758880f7e7737498fbff5e9799ca1ca4a33fae3c2aa5c718ee04",
+    "monolith/generate.py": "7bdf91d903a592900a3030ffbd791358751aea81efc18289c37714fbea838e16",
+    "monolith/serving/setup.py": "63f2b5bdebbc9b8950cdda1fa17cd056c85dc59a66eec9a5dc95ff204949db7f",
+    "monolith/serve.py": "4bd588fede9610332b9edca517c8a396b645015ff5b02a7b0cbb367718b6d9fa",
+    "monolith/backends/metal/m6/backend.py": "225254fe974270fef2c688dd214bf7b0b3401a1d5f5145861959c6a38d6a4821"
+  }
+}

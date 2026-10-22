@@ -521,10 +521,10 @@ def gqa_source(v2: bool = False, steal: bool = False, v3: bool = False, mma: boo
     (``gqa_decode_v2`` / ``gqa_merge_v2``: the long-context structure of design §5.6, #34) or v3 (``gqa_decode_v3``:
     core and merge in one dispatch, a threadgroup per query row — the few-rows kernel, #113).
     ``mma`` uses MSL 4 tensor operations and the v1 merge; compile with MSL_TENSOR_OPS."""
-    src = PRELUDE + PERM_OUT_MSL + template("gqa_common.metal") + "\n"
+    src = PRELUDE + PERM_OUT_MSL + template("gqa_common.metal") + "\n" + template("kv_quant.metal") + "\n"
     if mma:
         return (src + template("gqa_decode.metal") + "\n#if ADAPTIVE_CHUNK\n" + template("gqa_decode_mma_adaptive.metal") +
-                "\n#else\n" + template("gqa_decode_mma.metal") + "\n#endif\n")
+                "\n#elif M6_MMA\n" + template("gqa_decode_mma_m6.metal") + "\n#else\n" + template("gqa_decode_mma.metal") + "\n#endif\n")
     if steal:
         src += template("steal.metal") + "\n"                                          # the claim protocol (#44), v1 only
     return src + template("gqa_decode_v3.metal" if v3 else ("gqa_decode_v2.metal" if v2 else "gqa_decode.metal"))

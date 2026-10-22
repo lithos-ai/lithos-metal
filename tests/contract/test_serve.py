@@ -379,3 +379,31 @@ def test_complete_records_activity_and_serializes_on_the_gpu_lock(monkeypatch):
     backend._complete = lambda request, **options: held.append(not backend._gpu().acquire(blocking=False)) or 'done'
     assert backend.complete(object()) == 'done' and held == [True]
     assert backend.last_active == 42.0 and backend._gpu().acquire(blocking=False)
+
+
+@pytest.mark.parametrize('dtype', ['turbo4', 'q4_0'])
+def test_long_four_bit_session_disables_snapshots_and_preserves_context(monkeypatch, dtype):
+    from pathlib import Path
+    from monolith import generate
+    from monolith.backends.metal import load_configs
+    from monolith.serving.setup import ServingAssets
+    calls = []
+    def load(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(prefix_cache=None)
+    monkeypatch.setattr(generate, 'load_session', load)
+    backend = Backend.__new__(Backend)
+    backend.model_dir, backend.pack_dir, backend.max_context = 'model', 'pack', 65536
+    backend.prefill_chunk_size, backend.prefill_exact = 32, True
+    backend.session, backend.sampling = None, None
+    backend.assets = ServingAssets(Path('m'), Path('p'), 65536, 65542,
+        load_configs()['apple-m6-12c'], Path('d'), Path('dp'), 7,
+        kv_cache_dtype=dtype, prefix_cache=False)
+    from monolith.serving.protocol import ChatRequest
+    for temperature in (0, 1, 0):
+        backend.select_session(ChatRequest(**payload(temperature=temperature)), 16384)
+    assert len(calls) == 2
+    assert all(c['prefix_cache'] is False and c['kv_cache_dtype'] == dtype
+               and c['max_context'] == 65542 and c['prefill_chunk_size'] == 32 for c in calls)
+    client = TestClient(create_app(backend, 'test-model'))
+    assert client.get('/v1/models').json()['data'][0]['context_window'] == 65536

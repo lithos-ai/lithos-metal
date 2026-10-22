@@ -189,7 +189,12 @@ def test_the_affine_4bit_27b_prefills_exact_512_row_chunks():
     assert backend.serving_prefill_chunk({}) is None
 
 
-def test_prepare_builds_target_and_draft_caches(checkpoint, tmp_path):
+@pytest.mark.parametrize('chip,cores,family,requested,expected', [
+    ('Apple M5 Max', 40, 10, 16, 16),
+    ('Apple M6', 12, 11, 16, 16),
+    ('Apple M6', 12, 11, 32768, 8192),
+])
+def test_prepare_builds_target_and_draft_caches(checkpoint, tmp_path, chip, cores, family, requested, expected):
     pytest.importorskip('fastapi')
     from monolith.serve import parse_args
     from monolith.serving.setup import prepare
@@ -199,10 +204,14 @@ def test_prepare_builds_target_and_draft_caches(checkpoint, tmp_path):
     draft.mkdir()
     write_checkpoint(draft, with_head=False, vocab_size=50, target_hidden_size=256, target_layer_ids=[0, 1])
     args = parse_args(['--model', str(path), '--draft', str(draft), '--pack', str(tmp_path/'cache'),
-                       '--max-context', '16', '--draft-quantization', 'nvfp4'])
-    info = SimpleNamespace(name='Apple M5 Max', gpu_cores=40, apple_family=10)
+                       '--max-context', str(requested), '--draft-quantization', 'nvfp4'])
+    info = SimpleNamespace(name=chip, gpu_cores=cores, apple_family=family)
     assets = prepare(args, device_info=info)
-    assert assets.capacity == 18 and assets.max_context == 16 and assets.gamma == 3
+    assert args.max_context == assets.max_context == expected
+    assert assets.capacity == expected + 2 and assets.gamma == 3
+    if chip == 'Apple M6':
+        assert assets.prefill_chunk_size == 128
+        assert assets.recipes == {}
     doc = json.loads((assets.draft_pack/'manifest.json').read_text())
     assert doc['quantize']['format'] == 'nvfp4'
     assert any(s['format'] == 'nvfp4' for s in doc['slabs'])
@@ -261,3 +270,61 @@ def test_load_session_uses_seven_fixed_dspark_proposals(checkpoint, tmp_path, mo
     assert unset.drafter.gamma==7 and unset.verify_length==7
     explicit=generate.load_session(str(path),'unused',**options,drafter_options={'block_size':8},verify='cost')
     assert explicit.drafter.gamma==8 and explicit.verify=='cost'
+
+
+@pytest.mark.parametrize('context,rows,prefix', [(8192,128,True), (16384,128,False),
+                                                (32768,128,False), (65536,32,False)])
+@pytest.mark.parametrize('dtype', ['turbo4', 'q4_0'])
+def test_m6_four_bit_serving_policy(context, rows, prefix, dtype):
+    from monolith.backends.metal import get_backend
+    backend = get_backend('m6')
+    for drafter in (True, False):
+        assert backend.serving_context_limit(drafter=drafter, kv_cache_dtype=dtype) == 65536
+    assert backend.serving_prefill_chunk({}, max_context=context, kv_cache_dtype=dtype) == rows
+    assert backend.serving_prefix_cache(max_context=context, kv_cache_dtype=dtype) == prefix
+    for dtype in ('bf16', 'q8_0'):
+        assert backend.serving_context_limit(drafter=True, kv_cache_dtype=dtype) == 8192
+        assert backend.serving_prefix_cache(max_context=context, kv_cache_dtype=dtype)
+
+
+@pytest.mark.parametrize('context,rows,prefix', [(32768,128,False), (65536,32,False), (131072,32,False)])
+@pytest.mark.parametrize('dtype', ['turbo4', 'q4_0'])
+def test_prepare_four_bit_long_context(checkpoint, tmp_path, monkeypatch, context, rows, prefix, dtype):
+    pytest.importorskip('fastapi')
+    from monolith.serve import parse_args
+    from monolith.serving import setup
+    from tests.dspark_synth import write_checkpoint
+    path, _ = checkpoint
+    draft = tmp_path/'draft'
+    draft.mkdir()
+    write_checkpoint(draft, with_head=False, vocab_size=50, target_hidden_size=256, target_layer_ids=[0, 1])
+    # Tiny synthetic attention heads cannot use Turbo4; isolate serving policy
+    # here. Codec/real-model tests cover the actual head shape and allocation.
+    monkeypatch.setattr('monolith.nn.kv_quant.configure_kv_cache', lambda *a, **kw: None)
+    packed = []
+    def pack(checkpoint, model, root, **kw):
+        packed.append(kw)
+        return Path(root)
+    monkeypatch.setattr(setup, 'ensure_pack', pack)
+    args = parse_args(['--model', str(path), '--draft', str(draft), '--pack', str(tmp_path/'cache'),
+                       '--kv-cache-dtype', dtype, '--max-context', str(context)])
+    info = SimpleNamespace(name='Apple M6', gpu_cores=12, apple_family=11)
+    assets = setup.prepare(args, device_info=info)
+    expected = min(context, 65536)
+    assert args.max_context == assets.max_context == expected
+    assert assets.capacity == expected + 2
+    assert all(p['capacity'] == assets.capacity for p in packed)
+    assert assets.prefill_chunk_size == rows and assets.prefix_cache == prefix
+    assert assets.recipes == {}
+    key, opts = assets.options(expected-128)
+    assert key is None and opts['kv_cache_dtype'] == dtype
+    assert opts['max_context'] == expected+2 and opts['verify_length'] == 3
+    assert 'decoder_kernel_config' not in opts
+    for invalid in ('16', str(rows*2)):
+        args.prefill_chunk_size = (int(invalid), False)
+        with pytest.raises(ValueError, match='prefill-chunk-size'):
+            setup.prepare(args, device_info=info)
+    args.prefill_chunk_size = (None, True)
+    args.prefix_cache_dir = str(tmp_path/'prefixes')
+    with pytest.raises(ValueError, match='prefix-cache-dir'):
+        setup.prepare(args, device_info=info)

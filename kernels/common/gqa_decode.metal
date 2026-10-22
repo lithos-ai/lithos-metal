@@ -29,10 +29,55 @@
 // params' position / pad0); T = the params' t_active (γ is static); pad1 = the second projection's row stride.
 // (the params record and the helpers are in gqa_common.metal, concatenated ahead of this file)
 
+#ifndef TURBO4_PREPARED_Q
+#define TURBO4_PREPARED_Q 0
+#endif
+#if !M6_MMA_CORE_ONLY
+#if TURBO4_PREPARED_Q
+#if !K_TURBO4_ROTATED || DRAFT
+#error "Prepared Turbo4 queries require target rotated-domain attention"
+#endif
+// Only current queries are materialized (T * heads * D FP32 values), shared
+// across all key partitions. Historical K/V remain packed throughout.
+kernel void gqa_prepare_turbo4(device const ushort* qkvg [[buffer(0)]],
+                              device const ushort* cos_t [[buffer(3)]], device const ushort* sin_t [[buffer(4)]],
+                              device const float* q_norm [[buffer(5)]], constant GqaParams& p [[buffer(9)]],
+                              device float* rotated_q [[buffer(13)]],
+#if STEP_STATE
+                              device const StepState* st [[buffer(15)]],
+#endif
+                              uint gid [[thread_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+#if STEP_STATE
+  if (st->done) return;
+#if LM_MODE == 1
+  const uint T = st->n_inject, position = st->position - st->n_inject;
+#elif LM_MODE == 2
+  const uint T = st->n_chain, position = st->position + CHAIN_I;
+#elif LM_MODE == 3
+  const uint T = st->n_inject + st->n_chain, position = st->position - st->n_inject;
+#else
+  const uint T = st->t_this_step, position = st->position;
+#endif
+#else
+  const uint T = p.t_active, position = p.position;
+#endif
+  const uint row = gid / 32u, t = row / p.heads, h = row % p.heads;
+  if (t >= T) return;
+  float q[DL];
+  load_dl(qkvg + t * p.in_stride + p.q_off + h * D + lane * DL, q);
+  norm_rope(q, q_norm, cos_t + (position + t) * D, sin_t + (position + t) * D, p.eps, lane);
+  kv_rotate_head(q, lane, false);
+  store_part(rotated_q + row * D + lane * DL, q);
+}
+#endif
+
 kernel void gqa_decode(device const ushort* qkvg [[buffer(0)]], device ushort* k_cache [[buffer(1)]], device ushort* v_cache [[buffer(2)]],
                        device const ushort* cos_t [[buffer(3)]], device const ushort* sin_t [[buffer(4)]],
                        device const float* q_norm [[buffer(5)]], device const float* k_norm [[buffer(6)]],
                        device float* part_o [[buffer(7)]], device float* part_md [[buffer(8)]], constant GqaParams& p [[buffer(9)]],
+#if TURBO4_PREPARED_Q
+                       device const float* rotated_q [[buffer(13)]],
+#endif
 #if STEAL
                        device atomic_uint* cursors [[buffer(10)]],
 #if STEAL_HITS
@@ -69,6 +114,10 @@ kernel void gqa_decode(device const ushort* qkvg [[buffer(0)]], device ushort* k
 #endif
 #else
   const uint T = p.t_active, position = p.position, n_new = 0u;
+#endif
+#if M6_MMA_DISPATCH
+  // Complementary to the M6 matrix core; both share the unchanged merge.
+  if (T >= 8u && position + n_new + T >= 1024u) return;
 #endif
   const uint qpos0 = position + n_new;                         // the first query position (DRAFT: after the new context)
 #if EXACT_SUB
@@ -122,8 +171,16 @@ kernel void gqa_decode(device const ushort* qkvg [[buffer(0)]], device ushort* k
     for (uint r = 0; r < RBMAX; r++) {
       if (r < nr) {
         const uint row = r0 + r, t = row / rep, h = j * rep + (row % rep);
+#if TURBO4_PREPARED_Q
+        load_part(rotated_q + (t * p.heads + h) * D + lane * DL, q[r]);
+#else
         load_dl(qkvg + t * p.in_stride + p.q_off + h * D + lane * DL, q[r]);
         norm_rope(q[r], q_norm, cos_t + (qpos0 + t) * D, sin_t + (qpos0 + t) * D, p.eps, lane);
+#if K_TURBO4_ROTATED
+        // One rotation per query in this partition, reused for every key.
+        kv_rotate_head(q[r], lane, false);
+#endif
+#endif
       } else {
         for (uint e = 0; e < DL; e++) q[r][e] = 0.0f;
       }
@@ -139,15 +196,15 @@ kernel void gqa_decode(device const ushort* qkvg [[buffer(0)]], device ushort* k
         if (key >= k1) break;
         float kf[DL];
         if (key < position) {
-          load_dl(k_cache + (key * p.kv_heads + j) * D + lane * DL, kf);
+          kv_attention_load<K_CACHE_TYPE>(k_cache, key * p.kv_heads + j, kf, lane);
 #if DRAFT
         } else if (key < qpos0) {                          // a new context position: k/v from the features' projection, appended
           const uint tk = key - position;
           load_dl(kvp + tk * p.pad1 + j * D + lane * DL, kf);
           norm_rope(kf, k_norm, cos_t + key * D, sin_t + key * D, p.eps, lane);
           if (rg == 0) {
-            store_dl(k_cache + (key * p.kv_heads + j) * D + lane * DL, kf);
-            copy_dl(v_cache + (key * p.kv_heads + j) * D + lane * DL, kvp + tk * p.pad1 + p.kv_heads * D + j * D + lane * DL);
+            kv_store<K_CACHE_TYPE>(k_cache, key * p.kv_heads + j, kf, lane);
+            kv_copy<V_CACHE_TYPE>(v_cache, key * p.kv_heads + j, kvp + tk * p.pad1 + p.kv_heads * D + j * D + lane * DL, lane);
           }
         } else {                                           // the block's own key: normed and RoPE'd, never appended
           const uint tk = key - qpos0;
@@ -159,9 +216,10 @@ kernel void gqa_decode(device const ushort* qkvg [[buffer(0)]], device ushort* k
           const uint tk = key - position;
           load_dl(qkvg + tk * p.in_stride + p.k_off + j * D + lane * DL, kf);
           norm_rope(kf, k_norm, cos_t + key * D, sin_t + key * D, p.eps, lane);
-          if (rg == 0 && key >= qpos0 + s0) {              // append k (normed, RoPE'd) and v to the caches once
-            store_dl(k_cache + (key * p.kv_heads + j) * D + lane * DL, kf);
-            copy_dl(v_cache + (key * p.kv_heads + j) * D + lane * DL, qkvg + tk * p.in_stride + p.v_off + j * D + lane * DL);
+          const bool append = rg == 0 && key >= qpos0 + s0;
+          kv_attention_encode<K_CACHE_TYPE>(k_cache, key * p.kv_heads + j, kf, lane, append);
+          if (append) {                                  // append v once; K was reconstructed in registers above
+            kv_copy<V_CACHE_TYPE>(v_cache, key * p.kv_heads + j, qkvg + tk * p.in_stride + p.v_off + j * D + lane * DL, lane);
           }
         }
 #endif
@@ -193,12 +251,15 @@ kernel void gqa_decode(device const ushort* qkvg [[buffer(0)]], device ushort* k
         for (uint u = 0; u < PV_UNROLL; u++) {
           const uint key = k0 + g * 32u + kk + u;
           if (key >= k1) { for (uint e = 0; e < DL; e++) vf[u][e] = 0.0f; }
-          else if (key < position) load_dl(v_cache + (key * p.kv_heads + j) * D + lane * DL, vf[u]);
+          else if (key < position) kv_attention_load<V_CACHE_TYPE>(v_cache, key * p.kv_heads + j, vf[u], lane);
 #if DRAFT
           else if (key < qpos0) load_dl(kvp + (key - position) * p.pad1 + p.kv_heads * D + j * D + lane * DL, vf[u]);
           else load_dl(qkvg + (key - qpos0) * p.in_stride + p.v_off + j * D + lane * DL, vf[u]);
 #else
-          else load_dl(qkvg + (key - position) * p.in_stride + p.v_off + j * D + lane * DL, vf[u]);
+          else {
+            load_dl(qkvg + (key - position) * p.in_stride + p.v_off + j * D + lane * DL, vf[u]);
+            kv_attention_encode<V_CACHE_TYPE>(nullptr, 0, vf[u], lane, false);
+          }
 #endif
         }
         for (uint u = 0; u < PV_UNROLL; u++) {
@@ -256,6 +317,10 @@ kernel void gqa_merge(device const float* part_o [[buffer(0)]], device const flo
   const uint T = p.t_active, ctx = p.position + T;
 #endif
   if (t >= T) return;
+#if M6_PV_MERGE_DISPATCH
+  // The matrix PV stage includes the merge and epilogue for these rows.
+  if (T >= M6_PV_MIN_ROWS && ctx >= 1024u) return;
+#endif
   const uint rep = p.heads / p.kv_heads;
   const uint j = h / rep, row = t * rep + (h % rep);
 #if EXACT_SUB
@@ -287,6 +352,11 @@ kernel void gqa_merge(device const float* part_o [[buffer(0)]], device const flo
     }
   }
   const float inv = d_g > 0.0f ? 1.0f / d_g : 0.0f;
+#if V_TURBO4_ROTATED
+  // All partials are in the same linear transform domain. Preserve their fold
+  // and softmax corrections, then inverse once before BF16 rounding and gate.
+  kv_rotate_head(o, lane, true);
+#endif
   for (uint e = 0; e < DL; e++) {
     float y = round_bf16(o[e] * inv);
     if (p.has_gate) {
@@ -300,3 +370,5 @@ kernel void gqa_merge(device const float* part_o [[buffer(0)]], device const flo
 #endif
   }
 }
+
+#endif // !M6_MMA_CORE_ONLY: the M6 matrix pipeline uses separate v1/merge pipelines.

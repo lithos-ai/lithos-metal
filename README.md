@@ -83,6 +83,7 @@ see the [model adapter design](docs/design/models.md) for supported structures a
 | M5 Max, 40 GPU cores | Measured target/draft recipes for the large Qwen models, including mixer megakernels |
 | M5 Pro, 20 GPU cores | Measured kernels and configurations for smaller models |
 | M3 Pro, 18 GPU cores | Probe-derived configuration |
+| M2 Max, 30 GPU cores | Native shaders with direct encoding; qualification and limits in the [backend notes](monolith/backends/metal/m2_max_30c/README.md) |
 | M3 Max, 30 GPU cores | Unmeasured native fallback; DSpark serving fits through 20480 context on 36 GB |
 | M3 Ultra, 60 GPU cores | Measured profile with the Apple9 matrix tile |
 | M4 Pro, 20 GPU cores | Measured profile with the Apple9 matrix tile |

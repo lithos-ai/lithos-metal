@@ -24,6 +24,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from spec_bench import PROMPTS  # noqa: E402
 
 
+
+def decode_tps(decode_tokens: int, decode_wall_ms: float) -> float:
+    """Wall tok/s over the decode phase. Prefill-only runs (-n 1) skip decode, so both
+    counters stay at 0; return 0.0 instead of dividing by zero.
+    """
+    if decode_tokens <= 0 or decode_wall_ms <= 0:
+        return 0.0
+    return decode_tokens / (decode_wall_ms / 1e3)
+
+
 def mlx_generate(model, tokenizer, ids, n):
     """(tokens, wall tok/s) of one greedy mlx-lm generation over the prompt ids (the stream's last response carries the
     generation rate over the whole decode)."""
@@ -105,7 +115,7 @@ def main() -> int:
             for who in order:
                 if who == "ours":
                     gen = sess.generate(ids, a.max_new_tokens)
-                    tps = gen.decode_tokens / (gen.decode_wall_ms / 1e3)
+                    tps = decode_tps(gen.decode_tokens, gen.decode_wall_ms)
                     rec = {"tps": tps, "gpu_ms_per_token": gen.ms_per_token, "wall_ms_per_token": gen.decode_wall_ms / max(1, gen.decode_tokens),
                            "host_pct": 100 * gen.host_busy_ms / max(gen.decode_wall_ms, 1e-9)}
                     toks["ours"] = gen.tokens

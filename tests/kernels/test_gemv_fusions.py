@@ -245,6 +245,31 @@ def test_autotuner_picks_and_caches(dev, tmp_path):
     assert again.tune_gemm(info, 8, "residual").grid_mode == m.grid_mode
 
 
+@pytest.mark.parametrize("tpc", [1, 2])
+def test_autotuner_times_crews_at_the_dispatched_geometry(dev, tmp_path, tpc):
+    """A crew is timed at the SIMD-groups the emitter dispatches it at, the profile's threadgroups per core included
+    (#59), and a cache timed at another count or before the fix is not reused."""
+    import json
+
+    from monolith.compiler.autotune import CACHE_VERSION, Autotuner
+    from monolith.compiler.emit import _Ctx
+
+    cores = dev.info().gpu_cores
+    tuner = Autotuner(dev, cores, str(tmp_path / "autotune.json"), threadgroups_per_core=tpc)
+    ctx = _Ctx(None, [], None, 1, 12 * cores * tpc, 384, cores=cores)
+    for mode in ("crew", "crew2", "crew3", "crew4"):
+        n_sg, n_tg, tg = tuner.grid(mode, 0)
+        assert (n_sg, (n_tg, 1, 1), (tg, 1, 1)) == ctx.geometry(mode, 0)
+        assert kernels.gemm_geometry(mode, 64, cores * tpc)[0] == ctx.geometry(mode, 64)[0]
+    entry = {"k": {"macros": {}, "grid_mode": "crew", "ms": 1.0, "default_ms": 1.0}}
+    for stale in ({"choices": entry}, {"version": CACHE_VERSION, "threadgroups_per_core": 3 - tpc, "choices": entry}):
+        (tmp_path / "stale.json").write_text(json.dumps(stale))
+        assert Autotuner(dev, cores, str(tmp_path / "stale.json"), threadgroups_per_core=tpc).choices == {}
+    tuner.choices = dict(entry)
+    tuner.save("test-chip")
+    assert Autotuner(dev, cores, str(tmp_path / "autotune.json"), threadgroups_per_core=tpc).choices == entry
+
+
 def test_autotuner_times_a_statistic_producer_with_its_statistic(dev, tmp_path):
     """An op that writes the next norm's statistic is timed with it in every variant, the default included, in its own
     cache entry, and only it is offered the in-threadgroup row split (tgsplit: STAT_TG needs the statistic)."""

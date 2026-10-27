@@ -87,7 +87,8 @@ see the [model adapter design](docs/design/models.md) for supported structures a
 | M3 Ultra, 60 GPU cores | Measured profile with the Apple9 matrix tile |
 | M4 Pro, 20 GPU cores | Measured profile with the Apple9 matrix tile |
 | M4 Pro, 16 GPU cores | Unmeasured native fallback |
-| M4 Max, 32 or 40 GPU cores | Unmeasured native fallback |
+| M4 Max, 40 GPU cores | Measured profile with the Apple9 matrix tile |
+| M4 Max, 32 GPU cores | Unmeasured native fallback |
 | M5 Max, 32 GPU cores | Independent, unmeasured native fallback |
 
 Backend selection uses the chip name, GPU family, and core count. Unmeasured backends have no automatic

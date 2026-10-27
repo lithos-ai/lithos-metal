@@ -28,6 +28,7 @@ from ..formats.blm import PackInfo
 from ..formats.fp import f32_to_bf16
 
 NOISE_MARGIN = 0.03           # a variant replaces the default only if faster by more than this fraction
+CACHE_VERSION = 2             # 2: crews timed at the profile's threadgroups per core (#59); older caches are re-timed
 
 
 def gemv_key(info: PackInfo, t: int, epilogue: Optional[str], norm_fed: bool, stat_parts: int = 64, stat_out: bool = False) -> str:
@@ -103,16 +104,22 @@ class KernelChoices:
 
 
 class Autotuner:
-    def __init__(self, device, gpu_cores: int, cache_path: Optional[str] = None, *, reps: int = 5, warmup_ms: float = 30.0) -> None:
+    def __init__(self, device, gpu_cores: int, cache_path: Optional[str] = None, *, reps: int = 5, warmup_ms: float = 30.0,
+                 threadgroups_per_core: int = 1) -> None:
+        """``threadgroups_per_core``: the profile's, so a crew is timed at the SIMD-groups the emitter dispatches it
+        at (``12 × cores × threadgroups_per_core × crew_factor``)."""
         from ..runtime import _native as nt
 
         self.nt, self.dev, self.cores = nt, device, gpu_cores
+        self.tpc = max(1, int(threadgroups_per_core))
         self.reps, self.warmup_ms = reps, warmup_ms
         self.cache_path = Path(cache_path) if cache_path else None
         self.choices: Dict[str, Dict[str, Any]] = {}
         if self.cache_path and self.cache_path.exists():
             with open(self.cache_path) as f:
-                self.choices = json.load(f).get("choices", {})
+                cached = json.load(f)
+            if cached.get("version") == CACHE_VERSION and cached.get("threadgroups_per_core", 1) == self.tpc:
+                self.choices = cached.get("choices", {})
         self.queue = nt.Queue(device)
 
     # ---- timing ------------------------------------------------------------------------------------------------
@@ -137,7 +144,7 @@ class Autotuner:
         if mode == "block":
             n_sg = n_blocks
             return n_sg, -(-(n_sg * 32) // 64), 64
-        n_sg = 12 * self.cores * kernels.crew_factor(mode)
+        n_sg = 12 * self.cores * self.tpc * kernels.crew_factor(mode)
         return n_sg, -(-(n_sg * 32) // 384), 384
 
     # ---- GEMV ----------------------------------------------------------------------------------------------------
@@ -294,7 +301,7 @@ class Autotuner:
         n_tiles = -(-info.n // tn)
         results = []
         for mode, mpso in psos.items():
-            n_sg, n_tg, tg = kernels.gemm_geometry(mode, n_tiles, self.cores, min(384, mpso.max_threads_per_threadgroup))
+            n_sg, n_tg, tg = kernels.gemm_geometry(mode, n_tiles, self.cores * self.tpc, min(384, mpso.max_threads_per_threadgroup))
             grid = (n_tg, 1, 1)
             prm = kernels.gemm_params(info.n, n_tiles, n_sg, tm, n_blocks=pinfo.n_blocks)
             pprm = kernels.x_permute_params(info.k, tm, tm, wpw, tk, parts if (permute and norm_fed) else 1, 1e-6)
@@ -376,4 +383,5 @@ class Autotuner:
         if self.cache_path:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.cache_path, "w") as f:
-                json.dump({"chip": chip, "cores": self.cores, "written": time.strftime("%Y-%m-%d %H:%M"), "choices": self.choices}, f, indent=1)
+                json.dump({"chip": chip, "cores": self.cores, "version": CACHE_VERSION, "threadgroups_per_core": self.tpc,
+                           "written": time.strftime("%Y-%m-%d %H:%M"), "choices": self.choices}, f, indent=1)

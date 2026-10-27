@@ -51,7 +51,7 @@ class ReuseTuner(Autotuner):
             print(str(ex), flush=True)
             return Choice({}, 'crew')
 if a.cache:
-    s.tuner = ReuseTuner(s.dev, s.dev.info().gpu_cores, cache_new)
+    s.tuner = ReuseTuner(s.dev, s.dev.info().gpu_cores, cache_new, threadgroups_per_core=s.profile.threadgroups_per_core)
     s.tuner.choices = CachedOnly(s.tuner.choices)
 tok = AutoTokenizer.from_pretrained(a.model, local_files_only=True)
 prompts = json.loads(Path(a.prompts).read_text())

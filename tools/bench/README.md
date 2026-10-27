@@ -118,6 +118,24 @@ from the report. The [results README](results/README.md) explains how to restore
 historical raw evidence, including the M1 sweep used by `m1_gate_table.py`.
 `p13` in `probes/` is the standalone precursor of the M1 harness.
 
+## A chip's serve configuration
+
+`serve_ab.py` measures decode and time to first token the way `serve` compiles them: sessions from
+`serving.setup.prepare` with serve's options (DSpark verifies its seven proposals plus the anchor), the configuration's
+measured kernel choices, greedy with EOS off. Run one process per arm and alternate the arms; `--profile` loads another
+configuration (an older one for the "before" arm), `--no-choices` keeps the default geometry. `prefill_tile_sweep.py`
+times the prompt pass's 32-row tiles at one geometry per process inside serve's prompt program and picks each shape's
+geometry from the runs (`--choose`), the `TM32` entries of a configuration's `kernel_choices`; the decode entries are the
+live autotuner's cache (`python -m monolith.generate`). `prefill_exact_edges.py --measured-choices` checks that large
+exact prompt chunks stay bit-identical to 128-row ones with those choices.
+
+```bash
+python tools/bench/serve_ab.py decode --arm after --model M --draft D --pack ROOT --out ab.jsonl
+python tools/bench/serve_ab.py ttft --arm after --model M --draft D --pack ROOT --chunk 512-exact --out ttft.jsonl
+python tools/bench/prefill_tile_sweep.py --mode ksplit4 --model M --draft D --pack ROOT --chunk 512 --out tm32.jsonl
+python tools/bench/prefill_tile_sweep.py --choose tm32.jsonl
+```
+
 ## Fixed-token decoder layers versus MLX
 
 `layer_fixed_vs_mlx.py` measures a dependency chain of distinct checkpoint decoder

@@ -74,13 +74,13 @@ def test_m3_ultra_60c_is_its_own_device():
 
 @pytest.mark.parametrize('backend', sorted(BACKENDS))
 def test_every_backend_takes_the_served_model_in_its_prefill_hook(backend):
-    # serving.setup passes the served model: an override without the argument would fail at startup
-    get_backend(backend).serving_prefill_chunk({}, None)
+    # serving.setup passes the served model and the chip configuration: an override without them would fail at startup
+    get_backend(backend).serving_prefill_chunk({}, None, None)
 
 
 def test_unmeasured_backends_have_no_borrowed_tuning():
     configs = load_configs()
-    for name in ('apple-m3-max-30c', 'apple-m4-pro-16c', 'apple-m4-max-32c', 'apple-m4-max-40c', 'apple-m5-max-32c'):
+    for name in ('apple-m3-max-30c', 'apple-m4-pro-16c', 'apple-m4-max-32c', 'apple-m5-max-32c'):
         config = configs[name]
         assert config.validation == 'unmeasured'
         assert config.accelerator == 'off'
@@ -88,6 +88,21 @@ def test_unmeasured_backends_have_no_borrowed_tuning():
         assert config.threadgroups_per_core == 1
     assert configs['apple-m5-max-40c'].validation == 'measured'
     assert configs['apple-m5-max-40c'].gdn_mixer_fusion['workers'] == 80
+
+
+def test_m4_max_40c_is_measured_and_the_32c_is_not():
+    configs = load_configs()
+    config = configs['apple-m4-max-40c']
+    assert config.validation == 'measured' and config.accelerator == 'on' and config.cost_t
+    assert not config.gdn_mixer_fusion
+    assert configs['apple-m4-max-32c'].validation == 'unmeasured'
+    with pytest.raises(ValueError, match='40 GPU cores'):
+        get_backend(config.backend).validate_device(config,
+            SimpleNamespace(name='Apple M4 Max', gpu_cores=32, apple_family=9))
+    backend = get_backend('m4_max')
+    assert backend.serving_prefill_chunk({}, None, config) == 512
+    assert backend.serving_prefill_chunk({}, None, configs['apple-m4-max-32c']) is None
+    assert backend.serving_prefill_chunk({}) is None
 
 
 def test_registry_loads_only_chip_configs_and_recipe_references_resolve():
@@ -290,7 +305,7 @@ def test_kernel_choices_look_up_the_tuners_keys_without_timing():
 
 
 
-@pytest.mark.parametrize('name', ['apple-m3-ultra-60c', 'apple-m4-pro-20c', 'apple-m5-max-40c'])
+@pytest.mark.parametrize('name', ['apple-m3-ultra-60c', 'apple-m4-pro-20c', 'apple-m4-max-40c', 'apple-m5-max-40c'])
 def test_shipped_kernel_choices_are_valid_geometries(name, tmp_path):
     from monolith.backends.metal.config import kernel_choices, load_configs
     configs = load_configs()

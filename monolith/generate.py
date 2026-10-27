@@ -182,7 +182,8 @@ class Session:
 
             device_key = f"{info.name.replace(' ', '-').lower()}-{info.gpu_cores}c"
             chip = f"{device_key}-{get_backend(self.profile.backend).cache_identity(self.profile)}"
-            self.tuner = Autotuner(self.dev, info.gpu_cores, str(Path(pack_dir) / f"autotune.{chip}.json"))
+            self.tuner = Autotuner(self.dev, info.gpu_cores, str(Path(pack_dir) / f"autotune.{chip}.json"),
+                                   threadgroups_per_core=self.profile.threadgroups_per_core)
         elif measured_choices and self.profile.raw.get("kernel_choices"):
             # serve's sessions: the configuration's measured choices, timed on the chip once; otherwise the default geometry
             from .backends.metal.config import kernel_choices

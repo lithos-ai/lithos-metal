@@ -26,6 +26,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument('cmd', choices=['run', 'report', 'plan'])
 ap.add_argument('--out', required=True)
 ap.add_argument('--model', default='nvidia/Qwen3.8-27B-NVFP4')
+ap.add_argument('--draft', default=None, help="the drafter (serve's --draft; default: the model's catalog drafter)")
+ap.add_argument('--pack', default=None, help="pack-cache root (serve's --pack)")
+ap.add_argument('--measured-choices', action='store_true',
+                help="compile with the configuration's measured kernel choices, as serve does (default: the default geometry)")
 ap.add_argument('--groups', default='128,cache,4096,8192,16384')
 ap.add_argument('--chunk', type=int, default=512)
 ap.add_argument('--max-new', type=int, default=32)
@@ -108,8 +112,8 @@ class NS:
 
 ns = NS()
 ns.model, ns.revision, ns.download_dir, ns.local_files_only = a.model, None, None, True
-ns.draft, ns.no_draft, ns.draft_revision, ns.draft_block_size = None, False, None, None
-ns.max_context, ns.draft_quantization, ns.draft_pack, ns.pack = a.max_context, 'auto', None, None
+ns.draft, ns.no_draft, ns.draft_revision, ns.draft_block_size = a.draft, False, None, None
+ns.max_context, ns.draft_quantization, ns.draft_pack, ns.pack = a.max_context, 'auto', None, a.pack
 ns.kernel_config, ns.kernel_config_key = None, None
 assets = prepare(ns)
 tok = AutoTokenizer.from_pretrained(str(assets.model_dir))
@@ -234,7 +238,7 @@ def session_for(prompt_tokens, exact, cache):
         kw.update(prefix_cache=True, prefix_cache_min_tokens=128)
     t = time.time()
     session = load_session(str(assets.model_dir), str(assets.pack_dir), **options, eos=-1, temperature=0.0, autotune=False,
-                           **shared, **kw)
+                           measured_choices=a.measured_choices, **shared, **kw)
     if exact and not session.prefill_exact:
         raise SystemExit(f'prefill_exact_edges: --chunk {a.chunk} does not run the exact graph')
     shared.update(device=session.dev, pipeline_cache=session._pipelines)

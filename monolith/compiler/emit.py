@@ -288,10 +288,13 @@ def _norm_precision(stat: Optional[Value]) -> Dict[str, str]:
 
 def _norm_apply(ctx: _Ctx, h: Value, stat: Value, nw: Value, eps: float, out: Tuple[str, int], t_c: int, t_src: int,
                 name: str = "norm_apply") -> None:
-    k = ctx.kernel("norm_apply", kernels.norm_apply_source(), "norm_apply", dict(ctx.t_macros(t_c, t_src), **_norm_precision(stat)))
     kdim = ctx.shape(h)[1]
+    split = kernels.norm_apply_split(kdim)
+    k = ctx.kernel("norm_apply", kernels.norm_apply_source(), "norm_apply",
+                   dict(ctx.t_macros(t_c, t_src), NA_SPLIT=f"{split}u", **_norm_precision(stat)))
     prm = ctx.params("norm_apply", kernels.norm_apply_params(kdim, t_c, ctx.stat_parts.get(stat.name, 1), eps))
-    ctx.add(k, [(0, *ctx.buf(h)), (1, *ctx.buf(stat)), (2, *ctx.windows[nw.name]), (3, *out), (4, prm, 0)], (t_c, 1, 1), (32, 1, 1), name, writes=[3])
+    ctx.add(k, [(0, *ctx.buf(h)), (1, *ctx.buf(stat)), (2, *ctx.windows[nw.name]), (3, *out), (4, prm, 0)], (t_c * split, 1, 1), (32, 1, 1), name,
+            writes=[3])
 
 
 def _norm_apply_op(ctx: _Ctx, op: Op) -> None:

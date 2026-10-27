@@ -495,6 +495,11 @@ def norm_apply_source() -> str:
     return PRELUDE + template("activation_math.metal") + template("norm_apply.metal")
 
 
+def norm_apply_split(k: int) -> int:
+    """SIMD-groups per token of a norm_apply dispatch (NA_SPLIT): one 32-lane round of 8 columns each, up to 32."""
+    return max(1, min(32, k // 256))
+
+
 def norm_apply_params(k: int, t_active: int, stat_parts: int, eps: float) -> bytes:
     return struct.pack("<IIIf", k, t_active, stat_parts, eps)
 

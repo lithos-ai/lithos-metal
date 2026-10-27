@@ -80,6 +80,28 @@ def test_norm_apply(dev):
     assert bf16_ulp_diff(out[:-1], x_ref[:-1]).max() <= 1 and np.all(out[-1] == 0)   # fp32 rsqrt vs numpy: ≤ 1 BF16 ULP at a rounding boundary
 
 
+@pytest.mark.parametrize("k", [5120, 17408])
+def test_norm_apply_split_is_the_unsplit_op(dev, k):
+    """NA_SPLIT SIMD-groups per token (each a slice of the row, each folding the partials itself) write the
+    one-SIMD-group dispatch's bytes, and leave an inactive token's row alone."""
+    rng = np.random.default_rng(5)
+    t, parts, eps = 3, 320, 1e-6
+    h = f32_to_bf16(rng.standard_normal((t, k)).astype(np.float32) * 2)
+    nw = (1.0 + rng.standard_normal(k).astype(np.float32) * 0.1).astype(np.float32)
+    partials = rng.dirichlet(np.ones(parts), size=t) * (bf16_to_f32(h).astype(np.float64) ** 2).sum(-1)[:, None]
+    ins = [nt.Buffer(dev, h.tobytes()), nt.Buffer(dev, partials.astype(np.float32).tobytes()), nt.Buffer(dev, nw.tobytes())]
+    outs = []
+    for split in (1, kernels.norm_apply_split(k)):
+        pso = nt.Pipeline(nt.Library(dev, kernels.norm_apply_source(), {"NA_SPLIT": f"{split}u"}), "norm_apply")
+        x = nt.Buffer(dev, t * k * 2); x.fill(0)
+        d = (nt.Dispatch().pipeline(pso).buffer(0, ins[0]).buffer(1, ins[1]).buffer(2, ins[2]).buffer(3, x)
+             .bytes(4, kernels.norm_apply_params(k, t - 1, parts, eps)).grid(t * split).threadgroup(32))
+        _run(dev, d)
+        outs.append(np.frombuffer(x.read(0, t * k * 2), dtype=np.uint16).reshape(t, k))
+    assert kernels.norm_apply_split(k) > 1
+    assert np.array_equal(outs[0], outs[1]) and np.all(outs[1][-1] == 0)
+
+
 def _argmax(dev, logits_f32, t_active):
     t, vocab = logits_f32.shape
     lb = f32_to_bf16(logits_f32)

@@ -60,6 +60,13 @@ static inline void decode_word(uint4 q, thread float* out) {
   uint w[4] = {q.x, q.y, q.z, q.w};
   for (uint e = 0; e < 32; e++) out[e] = float((w[e >> 3] >> ((e & 7u) * 4u)) & 0xFu);
 }
+// the codes left in place, code · 16^(e mod 8) (exact in float): gemv_T multiplies them by activations prescaled by
+// 16^-(e mod 8), the same products to the bit, one shift fewer per weight (MLX's qdot does the same)
+#define DECODE_X_PRESCALE 1
+static inline void decode_word_prescaled(uint4 q, thread float* out) {
+  uint w[4] = {q.x, q.y, q.z, q.w};
+  for (uint e = 0; e < 32; e++) out[e] = float(w[e >> 3] & (0xFu << ((e & 7u) * 4u)));
+}
 // group g of this lane-row: the 16-bit pair (scale, bias) in uint g of the unit's scale region — scale low, bias high
 #if SCALE_F16
 static inline float decode_scale(thread const uint* sw, uint g) { return float(as_type<half>(ushort(sw[g] & 0xFFFFu))); }

@@ -28,6 +28,8 @@ from ..formats.blm import PackInfo
 from ..formats.fp import f32_to_bf16
 
 NOISE_MARGIN = 0.03           # a variant replaces the default only if faster by more than this fraction
+CACHE_VERSION = 3             # 2: crews timed at the profile's threadgroups per core (#59); 3: tgsplit for every op, the
+                              # emitter's norm_apply geometry; older caches are re-timed
 
 
 def gemv_key(info: PackInfo, t: int, epilogue: Optional[str], norm_fed: bool, stat_parts: int = 64, stat_out: bool = False) -> str:
@@ -103,16 +105,22 @@ class KernelChoices:
 
 
 class Autotuner:
-    def __init__(self, device, gpu_cores: int, cache_path: Optional[str] = None, *, reps: int = 5, warmup_ms: float = 30.0) -> None:
+    def __init__(self, device, gpu_cores: int, cache_path: Optional[str] = None, *, reps: int = 5, warmup_ms: float = 30.0,
+                 threadgroups_per_core: int = 1) -> None:
+        """``threadgroups_per_core``: the profile's, so a crew is timed at the SIMD-groups the emitter dispatches it
+        at (``12 × cores × threadgroups_per_core × crew_factor``)."""
         from ..runtime import _native as nt
 
         self.nt, self.dev, self.cores = nt, device, gpu_cores
+        self.tpc = max(1, int(threadgroups_per_core))
         self.reps, self.warmup_ms = reps, warmup_ms
         self.cache_path = Path(cache_path) if cache_path else None
         self.choices: Dict[str, Dict[str, Any]] = {}
         if self.cache_path and self.cache_path.exists():
             with open(self.cache_path) as f:
-                self.choices = json.load(f).get("choices", {})
+                cached = json.load(f)
+            if cached.get("version") == CACHE_VERSION and cached.get("threadgroups_per_core", 1) == self.tpc:
+                self.choices = cached.get("choices", {})
         self.queue = nt.Queue(device)
 
     # ---- timing ------------------------------------------------------------------------------------------------
@@ -137,7 +145,7 @@ class Autotuner:
         if mode == "block":
             n_sg = n_blocks
             return n_sg, -(-(n_sg * 32) // 64), 64
-        n_sg = 12 * self.cores * kernels.crew_factor(mode)
+        n_sg = 12 * self.cores * self.tpc * kernels.crew_factor(mode)
         return n_sg, -(-(n_sg * 32) // 384), 384
 
     # ---- GEMV ----------------------------------------------------------------------------------------------------
@@ -181,20 +189,23 @@ class Autotuner:
                 variants.append(("apply", {"rg": rg, "mode": mode, "fuse": False, "rsplit": rs}))
                 if norm_fed:
                     variants.append(("fused", {"rg": rg, "mode": mode, "fuse": True, "rsplit": rs}))
-        if stat_out and epilogue != "silu_mul":
-            # a statistic producer's row split inside one threadgroup (STAT_TG): its partials stay the unsplit op's
-            # (gemv_T takes STAT_TG without silu_mul's paired rows)
+        if not stat_out or epilogue != "silu_mul":
+            # the row split inside one threadgroup: a block's RSPLIT items are the SIMD-groups of one threadgroup, every
+            # block in flight at once (Apple9's wide int4 slabs: 4-row items stream ~9 % faster than 16-row blocks); a
+            # statistic producer's split keeps its partials the unsplit op's (STAT_TG, without silu_mul's paired rows)
             for rg in rgs:
                 for rs in kernels.gemv_rsplits(info.rows, rg, epilogue):
                     if rs > 1:
                         variants.append(("apply", {"rg": rg, "mode": "tgsplit", "fuse": False, "rsplit": rs}))
+                        if norm_fed and not stat_out:
+                            variants.append(("fused", {"rg": rg, "mode": "tgsplit", "fuse": True, "rsplit": rs}))
         results = []
         default_ms = None
         for _, v in variants:
             try:
                 macros = kernels.gemv_macros(pinfo, t=t, rg=v["rg"], epilogue=epilogue, norm=v["fuse"], out_bf16=True, rsplit=v["rsplit"],
                                              stat_out=stat_out)
-                if v["mode"] == "tgsplit":
+                if v["mode"] == "tgsplit" and stat_out:
                     macros["STAT_TG"] = "1"
             except ValueError:
                 continue
@@ -203,11 +214,12 @@ class Autotuner:
             prm = kernels.gemv_params(info.n, pinfo.n_blocks, n_sg, t, eps=1e-6, stat_parts=parts)
             ds = []
             if norm_fed and not v["fuse"]:
-                apso = nt.Pipeline(nt.Library(self.dev, kernels.norm_apply_source(), {}), "norm_apply")
+                split = kernels.norm_apply_split(info.k)                  # the emitter's norm_apply geometry
+                apso = nt.Pipeline(nt.Library(self.dev, kernels.norm_apply_source(), {"NA_SPLIT": f"{split}u"}), "norm_apply")
                 aprm = kernels.norm_apply_params(info.k, t, parts, 1e-6)
             for c in range(copies):
                 if norm_fed and not v["fuse"]:
-                    ds.append(nt.Dispatch().pipeline(apso).buffer(0, xbuf).buffer(1, stat).buffer(2, nw).buffer(3, xn).bytes(4, aprm).grid(t).threadgroup(32))
+                    ds.append(nt.Dispatch().pipeline(apso).buffer(0, xbuf).buffer(1, stat).buffer(2, nw).buffer(3, xn).bytes(4, aprm).grid(t * split).threadgroup(32))
                 d = (nt.Dispatch().pipeline(pso).buffer(0, wbuf, c * len(data)).buffer(1, rsbuf).buffer(2, xn if (norm_fed and not v["fuse"]) else xbuf)
                      .buffer(3, ybuf).bytes(4, prm).grid(grid).threadgroup(tg))
                 if v["fuse"]:
@@ -225,6 +237,13 @@ class Autotuner:
             results.append((ms, v, macros))
         results.sort(key=lambda r: r[0])
         best_ms, bv, bmacros = results[0]
+        if stat_out and bv["mode"] != "tgsplit":
+            # a statistic producer's split is the next norm's partial count: every SIMD-group of a fused consumer (and
+            # norm_apply's single one) folds them — 5120 partials of a 16-way crew split cost the 27B's gate|up ~40 µs
+            # against the in-threadgroup split's 320 — so a tgsplit within the noise margin takes the choice
+            tg = next((r for r in results if r[1]["mode"] == "tgsplit"), None)
+            if tg is not None and tg[0] <= best_ms * (1 + NOISE_MARGIN):
+                best_ms, bv, bmacros = tg
         if default_ms is not None and best_ms > default_ms * (1 - NOISE_MARGIN):
             bv = {"rg": int(kernels.gemv_macros(pinfo, t=t, epilogue=epilogue, out_bf16=True)["RG"]), "mode": "crew", "fuse": False, "rsplit": 1}
             bmacros = kernels.gemv_macros(pinfo, t=t, epilogue=epilogue, out_bf16=True)
@@ -294,7 +313,7 @@ class Autotuner:
         n_tiles = -(-info.n // tn)
         results = []
         for mode, mpso in psos.items():
-            n_sg, n_tg, tg = kernels.gemm_geometry(mode, n_tiles, self.cores, min(384, mpso.max_threads_per_threadgroup))
+            n_sg, n_tg, tg = kernels.gemm_geometry(mode, n_tiles, self.cores * self.tpc, min(384, mpso.max_threads_per_threadgroup))
             grid = (n_tg, 1, 1)
             prm = kernels.gemm_params(info.n, n_tiles, n_sg, tm, n_blocks=pinfo.n_blocks)
             pprm = kernels.x_permute_params(info.k, tm, tm, wpw, tk, parts if (permute and norm_fed) else 1, 1e-6)
@@ -376,4 +395,5 @@ class Autotuner:
         if self.cache_path:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.cache_path, "w") as f:
-                json.dump({"chip": chip, "cores": self.cores, "written": time.strftime("%Y-%m-%d %H:%M"), "choices": self.choices}, f, indent=1)
+                json.dump({"chip": chip, "cores": self.cores, "version": CACHE_VERSION, "threadgroups_per_core": self.tpc,
+                           "written": time.strftime("%Y-%m-%d %H:%M"), "choices": self.choices}, f, indent=1)

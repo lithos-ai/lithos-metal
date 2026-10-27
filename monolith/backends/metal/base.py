@@ -80,6 +80,7 @@ class MetalBackend:
         """Only opt matching workloads into recipes validated on this chip."""
         return {}
 
-    def serving_prefill_chunk(self, recipes, model=None):
-        """Prompt rows per pass that ``optimize_prefill`` is tuned for on a served workload, if any."""
+    def serving_prefill_chunk(self, recipes, model=None, config=None):
+        """Prompt rows per pass that ``optimize_prefill`` is tuned for on a served workload, if any. ``config`` is
+        the selected chip configuration (a backend that serves several core counts tells them apart by it)."""
         return None

@@ -74,6 +74,14 @@
 #ifndef T_LO
 #define T_LO 0                       // with T_HI: a predicated per-T variant (design §5.7) — it runs only when T_LO < T_act <= T_HI and
 #endif                               // returns at once otherwise, so a step's ALU work follows its actual T, not the program's T_max
+#ifndef DECODE_X_PRESCALE
+#define DECODE_X_PRESCALE 0          // the format's decode_word_prescaled leaves the codes in place (code · 16^(e mod 8)): the
+#endif                               // converted activations are prescaled by 16^-(e mod 8) after the bias sums, products unchanged
+#if DECODE_X_PRESCALE && X_PRECONVERT
+#define X_PRESCALE(e) as_type<float>((127u - 4u * ((e) & 7u)) << 23)
+#else
+#define X_PRESCALE(e) 1.0f
+#endif
 #ifndef SCALE_BIAS
 #define SCALE_BIAS 0                 // a format with a per-group bias (affine INT4: w = scale·code + bias): acc += bias · Σ x over the group
 #endif
@@ -323,6 +331,9 @@ kernel void gemv_T(device const uint4* w [[buffer(0)]], device const float* row_
                                        // Σ x over each scale group of the word, for the bias term
         for (uint t = 0; t < T; t++) for (uint g = 0; g < GPW; g++) { float s = 0.0f; for (uint e = 0; e < WPG; e++) s += xh[j][t][g * WPG + e]; xsh[j][t][g] = s; }
 #endif
+#if DECODE_X_PRESCALE
+        for (uint t = 0; t < T; t++) for (uint e = 0; e < WPW; e++) xh[j][t][e] *= X_PRESCALE(e);
+#endif
   }
 #endif
 #if STAT_TG
@@ -448,6 +459,9 @@ kernel void gemv_T(device const uint4* w [[buffer(0)]], device const float* row_
         float xs[T][GPW];                                       // Σ x over each scale group of the word, for the bias term
         for (uint t = 0; t < T; t++) for (uint g = 0; g < GPW; g++) { float s = 0.0f; for (uint e = 0; e < WPG; e++) s += xf[t][g * WPG + e]; xs[t][g] = s; }
 #endif
+#if DECODE_X_PRESCALE
+        for (uint t = 0; t < T; t++) for (uint e = 0; e < WPW; e++) xf[t][e] *= X_PRESCALE(e);
+#endif
 #endif
 #else
         uint4 xq[T][XW];
@@ -482,7 +496,11 @@ kernel void gemv_T(device const uint4* w [[buffer(0)]], device const float* row_
         for (uint i = 0; i < RG; i++) {
           uint4 q = sub_word(wb[unit_word(lane, r0 + i, j)], lane);
           float wv[WPW];
+#if DECODE_X_PRESCALE && X_PRECONVERT
+          decode_word_prescaled(q, wv);
+#else
           decode_word(q, wv);
+#endif
           for (uint t = 0; t < T; t++) {
 #if !X_PRECONVERT
             uint xw[XW * 4];

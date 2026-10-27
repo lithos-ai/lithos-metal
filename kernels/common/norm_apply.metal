@@ -1,7 +1,11 @@
 // norm_apply: x[t][k] = bf16(h[t][k] · r[t] · norm_w[k]), r[t] = rsqrt(Σ stat[t·stat_parts ..] / K + eps) — the RMSNorm
 // scaling as its own dispatch, writing the BF16 normalized activation the reference's norm produces. The default
 // over gemv_T's NORM=1: re-scaling the chunk per row group costs 5–19 % of an ALU-bound GEMV while this dispatch
-// costs ~2 µs (docs/research/gemv-kernel-study.md §3d). One SIMD-group per token; K % 8 == 0.
+// costs ~2 µs (docs/research/gemv-kernel-study.md §3d). NA_SPLIT SIMD-groups per token, each a K/NA_SPLIT slice of
+// it (each folds the statistic's partials itself, the same sum in the same order); K % 8 == 0.
+#ifndef NA_SPLIT
+#define NA_SPLIT 1u                  // one SIMD-group of a 5120-wide row is a chain of 20 dependent rounds (~12 µs on M4 Max)
+#endif
 #ifndef STEP_STATE
 #define STEP_STATE 0
 #endif
@@ -27,7 +31,7 @@ kernel void norm_apply(device const ushort* h [[buffer(0)]], device const float*
                        device const StepState* st [[buffer(15)]],
 #endif
                        uint gid [[thread_position_in_grid]], uint lane [[thread_index_in_simdgroup]], uint sw [[threads_per_simdgroup]]) {
-  const uint t = gid / sw;
+  const uint t = gid / (sw * NA_SPLIT), slice = (gid / sw) % NA_SPLIT;
 #if STEP_STATE
   if (st->done || t >= ((T_SRC == 1) ? st->n_inject : ((T_SRC == 3) ? st->n_chain : ((T_SRC == 4) ? st->n_inject + st->n_chain : ((T_SRC == 2) ? T_STATIC_ROWS : st->t_this_step))))) return;
 #else
@@ -39,7 +43,7 @@ kernel void norm_apply(device const ushort* h [[buffer(0)]], device const float*
   const float r = rsqrt(ssq / float(p.k) + p.eps);
   device const uint4* row = (device const uint4*)(h + (ulong)t * p.k);
   device uint4* out = (device uint4*)(x + (ulong)t * p.k);
-  for (uint j = lane; j < p.k / 8u; j += 32u) {
+  for (uint j = slice * 32u + lane; j < p.k / 8u; j += 32u * NA_SPLIT) {
     uint4 q = row[j];
     float4 n0 = *(device const float4*)(norm_w + 8u * j), n1 = *(device const float4*)(norm_w + 8u * j + 4u);
     q.x = pack_bf16x2(norm_scale(bf16lo(q.x), r, n0.x), norm_scale(bf16hi(q.x), r, n0.y));

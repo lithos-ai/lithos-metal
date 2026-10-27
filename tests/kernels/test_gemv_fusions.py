@@ -228,7 +228,7 @@ def test_autotuner_picks_and_caches(dev, tmp_path):
     rng = np.random.default_rng(1)
     _, info, _ = pack_spec(random_spec("bf16", 512, K, rng), PackLayout(rows=16))
     c = tuner.tune_gemv(info, 1, "residual", False)
-    assert isinstance(c, Choice) and c.ms > 0 and c.ms <= c.default_ms * 1.001 and c.grid_mode in ("crew", "crew2", "crew3", "crew4", "block")
+    assert isinstance(c, Choice) and c.ms > 0 and c.ms <= c.default_ms * 1.001 and c.grid_mode in ("crew", "crew2", "crew3", "crew4", "block", "tgsplit")
     cn = tuner.tune_gemv(info, 1, None, True)
     assert cn.ms > 0 and isinstance(cn.fuse_norm, bool)
     g = tuner.tune_gdn(4, 4, 128, 128, 4, 1)
@@ -245,9 +245,35 @@ def test_autotuner_picks_and_caches(dev, tmp_path):
     assert again.tune_gemm(info, 8, "residual").grid_mode == m.grid_mode
 
 
+@pytest.mark.parametrize("tpc", [1, 2])
+def test_autotuner_times_crews_at_the_dispatched_geometry(dev, tmp_path, tpc):
+    """A crew is timed at the SIMD-groups the emitter dispatches it at, the profile's threadgroups per core included
+    (#59), and a cache timed at another count or before the fix is not reused."""
+    import json
+
+    from monolith.compiler.autotune import CACHE_VERSION, Autotuner
+    from monolith.compiler.emit import _Ctx
+
+    cores = dev.info().gpu_cores
+    tuner = Autotuner(dev, cores, str(tmp_path / "autotune.json"), threadgroups_per_core=tpc)
+    ctx = _Ctx(None, [], None, 1, 12 * cores * tpc, 384, cores=cores)
+    for mode in ("crew", "crew2", "crew3", "crew4"):
+        n_sg, n_tg, tg = tuner.grid(mode, 0)
+        assert (n_sg, (n_tg, 1, 1), (tg, 1, 1)) == ctx.geometry(mode, 0)
+        assert kernels.gemm_geometry(mode, 64, cores * tpc)[0] == ctx.geometry(mode, 64)[0]
+    entry = {"k": {"macros": {}, "grid_mode": "crew", "ms": 1.0, "default_ms": 1.0}}
+    for stale in ({"choices": entry}, {"version": CACHE_VERSION, "threadgroups_per_core": 3 - tpc, "choices": entry}):
+        (tmp_path / "stale.json").write_text(json.dumps(stale))
+        assert Autotuner(dev, cores, str(tmp_path / "stale.json"), threadgroups_per_core=tpc).choices == {}
+    tuner.choices = dict(entry)
+    tuner.save("test-chip")
+    assert Autotuner(dev, cores, str(tmp_path / "autotune.json"), threadgroups_per_core=tpc).choices == entry
+
+
 def test_autotuner_times_a_statistic_producer_with_its_statistic(dev, tmp_path):
     """An op that writes the next norm's statistic is timed with it in every variant, the default included, in its own
-    cache entry, and only it is offered the in-threadgroup row split (tgsplit: STAT_TG needs the statistic)."""
+    cache entry; every op is offered the in-threadgroup row split (tgsplit), a statistic producer's with STAT_TG, and
+    a statistic producer takes it within the noise margin of the fastest (its partial count is the next norm's)."""
     from monolith.compiler.autotune import Autotuner, gemv_key
 
     tuner = Autotuner(dev, dev.info().gpu_cores, str(tmp_path / "autotune.json"), reps=2, warmup_ms=5.0)
@@ -255,11 +281,15 @@ def test_autotuner_times_a_statistic_producer_with_its_statistic(dev, tmp_path):
     _, info, _ = pack_spec(random_spec("fp8_e4m3", 512, K, rng), PackLayout(rows=16))
     plain = tuner.tune_gemv(info, 1, "residual", False)
     variants = tuner.choices[gemv_key(info, 1, "residual", False)]["variants"]
-    assert plain.grid_mode != "tgsplit" and all(v["mode"] != "tgsplit" for _, v in variants)
+    assert plain.ms > 0 and "tgsplit" in {v["mode"] for _, v in variants}
     c = tuner.tune_gemv(info, 1, "residual", False, stat_out=True)            # not the plain entry: timed again, with the statistic
-    modes = {v["mode"] for _, v in tuner.choices[gemv_key(info, 1, "residual", False, stat_out=True)]["variants"]}
+    stat_variants = tuner.choices[gemv_key(info, 1, "residual", False, stat_out=True)]["variants"]
+    modes = {v["mode"] for _, v in stat_variants}
     assert "tgsplit" in modes and {"crew", "block"} <= modes
     assert c.ms > 0 and c.ms <= c.default_ms * 1.001
+    best_tg = min(ms for ms, v in stat_variants if v["mode"] == "tgsplit")
+    if best_tg <= min(ms for ms, _ in stat_variants) * 1.03 and best_tg < c.default_ms * 0.97:
+        assert c.grid_mode == "tgsplit"
 
 
 def test_row_range_equals_the_slice_of_the_whole(dev):

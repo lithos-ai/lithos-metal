@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
+from monolith.compiler.autotune import Autotuner
 from monolith.generate import load_session
 from monolith.formats.fp import bf16_to_f32,f32_to_bf16
 from monolith.runtime import Engine
@@ -63,6 +64,8 @@ def main():
     s.model.tables=lambda: tables
     indices=list(map(int,a.layers.split(','))) if a.layers else sorted(set([0,s.model.n_layers//2,s.model.n_layers-1]))
     base_profile=copy.deepcopy(s.profile)
+    # a tuner times crews at one threadgroups_per_core (#59): the other counts get their own, in memory
+    tuners={base_profile.threadgroups_per_core:s.tuner}
     selection_path=Path(str(a.out)+'.selected.json')
     selected=json.loads(selection_path.read_text()) if selection_path.exists() else []
     completed={(r['T'],r['context']) for r in selected}
@@ -86,6 +89,8 @@ def main():
                 a.attentions.split(','),(False,True),('off','on'),(1,2,4),('alu_first','bus_first')):
             config=dict(attention=attention,commute_norm=norm,accelerator=accelerator,threadgroups_per_core=crew,sibling_order=sibling)
             s.profile=copy.deepcopy(base_profile);s.profile.threadgroups_per_core=crew;s.profile.sibling_order=sibling
+            if s.tuner is not None:
+                s.tuner=tuners.setdefault(crew,Autotuner(s.dev,s.dev.info().gpu_cores,None,threadgroups_per_core=crew))
             s.attention=attention;s.commute_norm=norm;s.accelerator=accelerator
             row=dict(T=t,context=ctx,layers=indices,config=config)
             engine=None
@@ -116,6 +121,7 @@ def main():
             with a.out.open('a') as f:f.write(json.dumps(row)+'\n')
             del engine;count+=1
             if count%32==0:print('SEARCH',t,ctx,count,'unique',len(seen),'best',None if best is None else round(best['ratio'],4),flush=True)
+        s.tuner=tuners[base_profile.threadgroups_per_core]
         s.tuner.save(s.dev.info().name)
         selected.append(dict(T=t,context=ctx,unique=len(seen),best=best))
         Path(str(a.out)+'.selected.json').write_text(json.dumps(selected,indent=2))
